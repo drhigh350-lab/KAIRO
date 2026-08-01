@@ -3,15 +3,31 @@
  * Run with: node tests/engine.test.js
  */
 
-import { KairoEngine, Question, LearnModule } from "../src/index.js";
+import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter } from "../src/index.js";
+import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag } from "../src/utils/constants.js";
 
 let passCount = 0;
 let failCount = 0;
 
+// Supports both sync and async test functions — a sync fn's return value
+// isn't thenable, so it falls through to the original synchronous path
+// unchanged; an async fn's rejection is caught the same way a sync throw
+// is. Call sites for async tests must `await test(...)` themselves (top-
+// level await is already used elsewhere in this file).
 function test(name, fn) {
   try {
-    fn();
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      return result.then(() => {
+        passCount++;
+        console.log(`  ✅ ${name}`);
+      }).catch(err => {
+        failCount++;
+        console.log(`  ❌ ${name}: ${err.message}`);
+        console.log(`     ${err.stack?.split('\n')[1]?.trim() || ''}`);
+      });
+    }
     passCount++;
     console.log(`  ✅ ${name}`);
   } catch (err) {
@@ -768,6 +784,194 @@ test('Learn Module state round-trips through toJSON/fromJSON', () => {
   const restored = LearnModule.fromJSON(learnEngine, snapshot);
   assertEqual(restored.completedLessons.length, learnEngine.learn.completedLessons.length, 'Restored module should carry completed lesson history');
   assertEqual(restored.activeLessons.size, learnEngine.learn.activeLessons.size, 'Restored module should carry active lesson state');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SUPABASE SYNC TESTS
+// No live network calls — SupabaseSyncAdapter's row-mapping and
+// SyncManager's merge logic are pure functions over plain objects, so
+// they're verified directly / against a minimal mocked PostgREST client.
+// ═══════════════════════════════════════════════════════════════
+
+test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.students row round-trip', () => {
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+
+  const p = new StudentProfile({
+    studentId: 'sp1', name: 'Ada', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery', targetUniversity: 'UNILAG',
+    authUserId: 'auth-uuid-1', dateOfBirth: Date.now() - 17 * 365 * 24 * 60 * 60 * 1000,
+    examType: 'UTME', examYear: 2027, targetUTMEScore: 300,
+    preferredStudyDurationMin: 30, preferredStudyPeriod: 'evening',
+    device: { os: 'android' }, referralSource: 'whatsapp',
+    parentGuardianContact: { phone: '0800' }, languageRegion: 'yoruba'
+  });
+  p.macroState = 'compounding';
+  p.macroStateHistory = [{ from: 'building', to: 'compounding', at: Date.now() }];
+  p.learningState = 'reinforcing';
+  p.learningStateHistory = [{ from: 'practising', to: 'reinforcing', at: Date.now() }];
+  p.journeyStage = 'establishment';
+  p.journeyStageHistory = [{ from: 'activation', to: 'establishment', at: Date.now() }];
+  p.reEngagement = { some: 'state' };
+  p.crossModuleMilestones = { some: 'state' };
+  p.continuation = { some: 'state' };
+  p.comms = { some: 'state' };
+  p.learn = { some: 'state' };
+  p.notificationHistory = [{ id: 'n1', readAt: Date.now() }];
+  p.lastSessionAt = Date.now();
+  p.totalQuestionsAnswered = 42;
+  p.totalCorrect = 30;
+  p.streakData = { currentMomentum: 5, protectedGapsUsed: 1, lastSessionDate: '2026-08-01', windowSessions: [1, 2] };
+  p.atRiskTriggeredAt = Date.now() - 1000;
+  p.recoverySessionCount = 2;
+  p.eliteScoreHistory = [{ total: 70 }];
+  p.responseTimeBaselines = { 'Chemistry:Stoichiometry': 15000 };
+
+  const original = p.toJSON();
+  const row = adapter._profileToRow(original, original.authUserId);
+  row.id = 'row-id-1';                    // owned by the DB (primary key), not part of the push payload
+  row.created_at = new Date().toISOString(); // DB-generated default
+  const restored = adapter._rowToProfile(row);
+
+  // Fields intentionally NOT covered by the students-row round-trip:
+  // studentId (-> row id, a separate concern from the payload), sessions
+  // (its own kairo.sessions table), createdAt (DB-generated, never pushed).
+  const excluded = new Set(['studentId', 'sessions', 'createdAt']);
+
+  for (const key of Object.keys(original)) {
+    if (excluded.has(key)) continue;
+    assert(key in restored, `Field "${key}" from StudentProfile.toJSON() has no matching entry in _rowToProfile()'s output — it would silently stop reaching Supabase.`);
+  }
+
+  // Spot-check value fidelity for the fields this fix specifically closed
+  // (previously entirely absent from the mapping).
+  assertEqual(restored.journeyStage, 'establishment', 'journeyStage should round-trip exactly');
+  assertEqual(restored.learningState, 'reinforcing', 'learningState should round-trip exactly');
+  assertEqual(restored.comms.some, 'state', 'comms JSONB blob should round-trip exactly');
+  assertEqual(restored.learn.some, 'state', 'learn JSONB blob should round-trip exactly');
+  assertEqual(restored.examYear, 2027, 'Identity field examYear should round-trip exactly');
+  assertEqual(restored.notificationHistory.length, 1, 'notificationHistory should round-trip exactly');
+});
+
+test('SyncManager applies a genuinely newer remote concept state onto the live graph', () => {
+  const syncEngine = new (engine.constructor)({
+    studentId: 'sync_test_001', name: 'Sync Student',
+    examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  const conceptId2 = syncEngine.addConcept({ name: 'Ionic Bonding', subject: 'Chemistry', topic: 'Bonding', subtopic: 'Ionic' });
+  const localNode = syncEngine.graph.getConcept(conceptId2);
+  localNode.retentionState = RetentionState.FORMING;
+  localNode.lastSeenAt = Date.now() - 10000; // older than the remote row below
+  syncEngine.sync.attachRemote(null, syncEngine); // real sync() only ever calls _applyRemote once an engine is attached
+
+  syncEngine.sync._applyRemote({
+    remoteProfile: null,
+    remoteConceptStates: [{
+      concept_id: conceptId2, retention_state: 'reinforced', confidence_score: 0.9,
+      last_seen_at: new Date().toISOString(), decay_estimate: 0.95,
+      next_review_estimate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      error_pattern_tags: {}, reinforced_cycles: 2, personal_decay_rate: 0.8
+    }],
+    remoteAttempts: [{
+      concept_id: conceptId2, correct: true, response_time_ms: 8000,
+      answered_at: new Date().toISOString(), error_tag: null,
+      question_id: 'remote_q1', question_difficulty: 2
+    }]
+  });
+
+  assertEqual(localNode.retentionState, RetentionState.REINFORCED, 'A genuinely newer remote state should overwrite local state');
+  assert(localNode.attemptHistory.some(a => a.questionId === 'remote_q1'), 'Remote attempts should merge into local attempt history, not be discarded');
+});
+
+test('SyncManager never overwrites local concept state with a stale remote copy', () => {
+  const syncEngine2 = new (engine.constructor)({
+    studentId: 'sync_test_002', name: 'Sync Student 2',
+    examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  const conceptId3 = syncEngine2.addConcept({ name: 'Covalent Bonding', subject: 'Chemistry', topic: 'Bonding', subtopic: 'Covalent' });
+  const localNode2 = syncEngine2.graph.getConcept(conceptId3);
+  localNode2.retentionState = RetentionState.HELD;
+  localNode2.lastSeenAt = Date.now(); // newer than the stale remote row below
+  syncEngine2.sync.attachRemote(null, syncEngine2);
+
+  syncEngine2.sync._applyRemote({
+    remoteProfile: null,
+    remoteConceptStates: [{
+      concept_id: conceptId3, retention_state: 'fading', confidence_score: 0.2,
+      last_seen_at: new Date(Date.now() - 100000).toISOString(), decay_estimate: 0.3,
+      next_review_estimate: null, error_pattern_tags: {}, reinforced_cycles: 0, personal_decay_rate: 1.2
+    }],
+    remoteAttempts: []
+  });
+
+  assertEqual(localNode2.retentionState, RetentionState.HELD, 'A stale remote copy should never overwrite a genuinely newer local state');
+});
+
+await test('fullSync pushes queued sessions through pushSession (kairo.sessions)', async () => {
+  const calls = [];
+  const mockClient = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; },
+            gt() { return builder; }, is() { return builder; },
+            maybeSingle() { return builder; }, single() { return builder; },
+            insert(rows) { calls.push({ table, op: 'insert', rows }); return builder; },
+            update(row) { calls.push({ table, op: 'update', row }); return builder; },
+            upsert(rows) { calls.push({ table, op: 'upsert', rows }); return builder; },
+            then(resolve) {
+              if (table === 'students') return resolve({ data: { id: 'stu1', auth_user_id: 'auth1' }, error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const adapter = new SupabaseSyncAdapter(mockClient, null);
+  await adapter.fullSync({
+    authUserId: 'auth1', studentId: 'stu1',
+    profile: { name: 'Test' },
+    conceptNodes: [],
+    pendingAttempts: [],
+    pendingSessions: [{ id: 'sess1', mode: 'standard', plan: [], questionsAnswered: 5, correctCount: 4, eliteScore: { total: 80 }, startedAt: Date.now(), completedAt: Date.now() }],
+    since: null
+  });
+
+  const sessionPush = calls.find(c => c.table === 'sessions' && c.op === 'upsert');
+  assert(sessionPush, 'fullSync should push queued sessions through pushSession (kairo.sessions upsert) — this was previously dead code, never invoked');
+  assertEqual(sessionPush.rows.id, 'sess1', 'Pushed session row should carry the session id');
+});
+
+await test('Notifications: pull and mark-read only, matching the real RLS shape (no INSERT policy exists)', async () => {
+  const calls2 = [];
+  const mockClient2 = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; }, is() { return builder; },
+            update(row) { calls2.push({ table, op: 'update', row }); return builder; },
+            then(resolve) {
+              return resolve({ data: table === 'notifications' ? [{ id: 'n1', read_at: null }] : null, error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+  const adapter2 = new SupabaseSyncAdapter(mockClient2, null);
+  const unread = await adapter2.pullNotifications('stu1', { unreadOnly: true });
+  assertEqual(unread.length, 1, 'pullNotifications should return the rows Supabase gives back');
+
+  await adapter2.markNotificationRead('n1');
+  const markCall = calls2.find(c => c.table === 'notifications' && c.op === 'update');
+  assert(markCall && markCall.row.read_at, 'markNotificationRead should UPDATE read_at — the only write kairo.notifications RLS actually permits');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

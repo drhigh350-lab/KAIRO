@@ -11,13 +11,32 @@
  * no anonymous path — every student row requires a signed-in auth user.
  *
  * Table map (all under the `kairo` schema, never `public`):
- *   kairo.students        <-> StudentProfile.js
+ *   kairo.students        <-> StudentProfile.js — every field on
+ *                              StudentProfile.toJSON() has a matching
+ *                              column (including the SJEE/Learning-State/
+ *                              Comms/Learn module-state JSONB blobs and the
+ *                              Student Intelligence Model §1 Identity
+ *                              fields, added by migration
+ *                              add_sjee_comms_learn_and_identity_columns_
+ *                              to_students). Keep _profileToRow/
+ *                              _rowToProfile and this list in lockstep with
+ *                              StudentProfile.toJSON() — a field missing
+ *                              from either silently stops reaching Supabase.
  *   kairo.concepts        <-> ConceptNode.js (static fields)
  *   kairo.concept_states  <-> ConceptNode.js (per-student dynamic fields)
  *   kairo.questions       <-> qim/Question.js
- *   kairo.sessions        <-> session lifecycle (index.js)
+ *   kairo.sessions        <-> session lifecycle (index.js) — pushed via
+ *                              KairoEngine.endSession() queuing a
+ *                              `{ type: 'session' }` sync item
  *   kairo.attempts        <-> per-attempt records (append-only)
- *   kairo.notifications   <-> NotificationEngine.js
+ *   kairo.notifications   <-> read + mark-read only (pullNotifications,
+ *                              markNotificationRead below). RLS grants this
+ *                              table SELECT/UPDATE but no INSERT — rows are
+ *                              meant to be created server-side, not by this
+ *                              client adapter. This is distinct from
+ *                              NotificationEngine.js's own local candidate
+ *                              history, which round-trips through
+ *                              kairo.students.notification_history instead.
  */
 
 export class SupabaseSyncAdapter {
@@ -67,6 +86,14 @@ export class SupabaseSyncAdapter {
   // Field mapping (camelCase JS <-> snake_case SQL)
   // ─────────────────────────────────────────────
 
+  /**
+   * StudentProfile.toJSON() -> kairo.students row. Every field this maps
+   * has a real column (see migration add_sjee_comms_learn_and_identity_
+   * columns_to_students) — this must stay in lockstep with both
+   * StudentProfile.toJSON() and the live schema, or a field silently stops
+   * reaching Supabase (exactly the gap this mapping used to have for the
+   * SJEE/Learning-State/Comms/Learn fields and the SIM §1 Identity fields).
+   */
   _profileToRow(profileData, authUserId) {
     return {
       auth_user_id: authUserId,
@@ -88,6 +115,38 @@ export class SupabaseSyncAdapter {
       streak_window_sessions: profileData.streakData?.windowSessions || [],
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
+      notification_history: profileData.notificationHistory || [],
+
+      // Student Intelligence Model §1 — Identity
+      date_of_birth: profileData.dateOfBirth ? new Date(profileData.dateOfBirth).toISOString().slice(0, 10) : null,
+      exam_type: profileData.examType || 'UTME',
+      exam_year: profileData.examYear ?? null,
+      target_utme_score: profileData.targetUTMEScore ?? null,
+      registration_date: profileData.registrationDate ? new Date(profileData.registrationDate).toISOString() : new Date().toISOString(),
+      preferred_study_duration_min: profileData.preferredStudyDurationMin ?? null,
+      preferred_study_period: profileData.preferredStudyPeriod || null,
+      device: profileData.device || null,
+      referral_source: profileData.referralSource || null,
+      parent_guardian_contact: profileData.parentGuardianContact || null,
+      language_region: profileData.languageRegion || null,
+
+      // Student Intelligence Model §5 — Learning State
+      learning_state: profileData.learningState || 'new_learner',
+      learning_state_history: profileData.learningStateHistory || [],
+
+      // Student Journey & Engagement Engine
+      journey_stage: profileData.journeyStage || 'arrival',
+      journey_stage_history: profileData.journeyStageHistory || [],
+      re_engagement: profileData.reEngagement || null,
+      cross_module_milestones: profileData.crossModuleMilestones || null,
+      continuation: profileData.continuation || null,
+
+      // Notifications & Communication Systems
+      comms: profileData.comms || null,
+
+      // Learn Module
+      learn: profileData.learn || null,
+
       updated_at: new Date().toISOString()
     };
   }
@@ -117,7 +176,34 @@ export class SupabaseSyncAdapter {
       },
       atRiskTriggeredAt: row.at_risk_triggered_at ? new Date(row.at_risk_triggered_at).getTime() : null,
       recoverySessionCount: row.recovery_session_count,
-      createdAt: row.created_at ? new Date(row.created_at).getTime() : null
+      notificationHistory: row.notification_history || [],
+
+      dateOfBirth: row.date_of_birth ? new Date(row.date_of_birth).getTime() : null,
+      examType: row.exam_type,
+      examYear: row.exam_year,
+      targetUTMEScore: row.target_utme_score,
+      registrationDate: row.registration_date ? new Date(row.registration_date).getTime() : null,
+      preferredStudyDurationMin: row.preferred_study_duration_min,
+      preferredStudyPeriod: row.preferred_study_period,
+      device: row.device,
+      referralSource: row.referral_source,
+      parentGuardianContact: row.parent_guardian_contact,
+      languageRegion: row.language_region,
+
+      learningState: row.learning_state,
+      learningStateHistory: row.learning_state_history || [],
+
+      journeyStage: row.journey_stage,
+      journeyStageHistory: row.journey_stage_history || [],
+      reEngagement: row.re_engagement,
+      crossModuleMilestones: row.cross_module_milestones,
+      continuation: row.continuation,
+
+      comms: row.comms,
+      learn: row.learn,
+
+      createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null
     };
   }
 
@@ -267,6 +353,35 @@ export class SupabaseSyncAdapter {
   }
 
   // ─────────────────────────────────────────────
+  // Notifications (kairo.notifications) — read + mark-read only.
+  // RLS on this table grants SELECT and UPDATE to the owning student but
+  // deliberately no INSERT policy — rows are meant to be created
+  // server-side (e.g. a future scheduled job reading concept_states), not
+  // fabricated by the client. There is no pushNotifications() here on
+  // purpose; adding one would just fail against live RLS.
+  // ─────────────────────────────────────────────
+
+  async pullNotifications(studentId, { unreadOnly = false } = {}) {
+    let query = this._table('notifications')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+    if (unreadOnly) query = query.is('read_at', null);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async markNotificationRead(notificationId) {
+    const { error } = await this._table('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', notificationId);
+    if (error) throw error;
+    return true;
+  }
+
+  // ─────────────────────────────────────────────
   // Read-only shared content (kairo.concepts, kairo.questions)
   // ─────────────────────────────────────────────
 
@@ -295,12 +410,15 @@ export class SupabaseSyncAdapter {
   // all attempts retained" conflict rule.
   // ─────────────────────────────────────────────
 
-  async fullSync({ authUserId, studentId, profile, conceptNodes, pendingAttempts, since }) {
+  async fullSync({ authUserId, studentId, profile, conceptNodes, pendingAttempts, pendingSessions = [], since }) {
     this.syncStatus.status = 'syncing';
     try {
       await this.pushProfile(profile, authUserId, studentId);
       await this.pushConceptStates(conceptNodes, studentId);
       await this.pushAttempts(pendingAttempts, studentId);
+      for (const session of pendingSessions) {
+        await this.pushSession(session, studentId);
+      }
 
       const remoteProfile = await this.pullProfile(studentId);
       const remoteConceptStates = await this.pullConceptStates(studentId);

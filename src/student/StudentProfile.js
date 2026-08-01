@@ -61,6 +61,7 @@ export class StudentProfile {
     this.continuation = null;      // ContinuationEngine.toJSON() snapshot
     this.comms = null;             // CommsService.toJSON() snapshot
     this.learn = null;             // LearnModule.toJSON() snapshot
+    this.notificationHistory = []; // NotificationEngine's local candidate history (kairo.students.notification_history)
     this.sessions = [];          // completed session metadata
     this.responseTimeBaselines = {};
     this.eliteScoreHistory = [];
@@ -251,6 +252,7 @@ export class StudentProfile {
       continuation: this.continuation,
       comms: this.comms,
       learn: this.learn,
+      notificationHistory: this.notificationHistory,
       sessions: this.sessions,
       responseTimeBaselines: this.responseTimeBaselines,
       eliteScoreHistory: this.eliteScoreHistory,

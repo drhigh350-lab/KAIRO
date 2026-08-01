@@ -247,6 +247,7 @@ export class KairoEngine {
     this.sessionStartTime = Date.now();
     this.currentSession = {
       sessionId: `sess_${Date.now()}`,
+      mode: 'standard', // overridden to 'recovery' by startRecoverySession(); matches kairo.sessions' mode CHECK constraint
       startedAt: this.sessionStartTime,
       plan,
       completed: [],
@@ -373,6 +374,24 @@ export class KairoEngine {
 
     const touched = [...new Set(this.currentSession.completed.map(a => a.conceptId))];
     this.scheduler.scheduleNextReviews(this.graph, touched);
+
+    // kairo.sessions has carried a full row shape for this since the schema
+    // was created (pushSession() below), but nothing ever queued a session
+    // for it — Practice's single largest write-traffic source (per the
+    // Practice Module spec) was silently never reaching Supabase.
+    this.sync.queue({
+      type: 'session',
+      data: {
+        id: this.currentSession.sessionId,
+        mode: this.currentSession.mode || 'standard',
+        plan: this.currentSession.plan,
+        questionsAnswered: this.currentSession.questionsAnswered,
+        correctCount: this.currentSession.correctCount,
+        eliteScore: score,
+        startedAt: this.currentSession.startedAt,
+        completedAt: this.currentSession.completedAt
+      }
+    });
 
     await this.store.saveGraph(this.graph);
     this._snapshotSjeeState();
@@ -522,6 +541,7 @@ export class KairoEngine {
 
     const welcome = this.kai.proactiveMessage('recovery_welcome');
     const plan = this.startSession();
+    this.currentSession.mode = 'recovery';
     plan.kaiMessage = welcome;
     plan.isRecovery = true;
     return plan;
