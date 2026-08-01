@@ -3,7 +3,7 @@
  * Run with: node tests/engine.test.js
  */
 
-import { KairoEngine } from "../src/index.js";
+import { KairoEngine, Question, LearnModule } from "../src/index.js";
 import { RetentionState, ErrorTag } from "../src/utils/constants.js";
 
 let passCount = 0;
@@ -625,6 +625,150 @@ test('Comms service deduplicates the same fact within a delivery window', () => 
   assertEqual(second, null, 'Same fact should not be delivered twice in the same window');
 });
 
+
+// ═══════════════════════════════════════════════════════════════
+// LEARN MODULE TESTS
+// ═══════════════════════════════════════════════════════════════
+
+const learnEngine = new (engine.constructor)({
+  studentId: 'learn_test_001', name: 'Learn Student',
+  examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+  targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+});
+await learnEngine.init();
+
+const learnConceptId = learnEngine.addConcept({
+  name: 'Balancing Redox Equations',
+  subject: 'Chemistry', topic: 'Electrochemistry', subtopic: 'Redox Reactions',
+  difficultyWeight: 1.3
+});
+
+const learnQuestion = new Question({
+  id: 'lq1',
+  subject: 'Chemistry', topic: 'Electrochemistry', subtopic: 'Redox Reactions',
+  learningObjective: 'Assign oxidation states correctly before balancing a redox equation.',
+  conceptsTested: [{ conceptId: learnConceptId, weight: 'primary' }],
+  difficultyRating: 3, cognitiveLevel: 'application', calculationLoad: 'moderate',
+  stem: 'Balance the following redox equation...',
+  options: [
+    { label: 'A', text: 'Option A', isCorrect: true },
+    { label: 'B', text: 'Option B', isCorrect: false },
+    { label: 'C', text: 'Option C', isCorrect: false }
+  ],
+  correctOption: 'A',
+  explanation: 'Assign oxidation states to each atom, then balance electrons lost and gained.',
+  distractors: [
+    { option: 'B', misconceptionId: 'confused_similar_concepts', explanation: 'This mixes up oxidation and reduction.' }
+  ],
+  lifecycleState: 'live'
+});
+learnEngine.questionGraph.addQuestion(learnQuestion);
+learnEngine.misconceptions.mapDistractor('lq1', 'B', 'confused_similar_concepts');
+
+test('Learn: fromIncorrectAnswer builds a full lesson for a conceptual gap', () => {
+  const lesson = learnEngine.learn.fromIncorrectAnswer({
+    questionId: 'lq1', conceptId: learnConceptId, selectedOption: 'B', errorTag: ErrorTag.CONCEPTUAL_GAP
+  });
+  assert(!lesson.compressed, 'A conceptual_gap lesson should not be compressed');
+  assert(lesson.steps.coreConcept.learningObjective.includes('oxidation states'), 'Learning objective should come from the anchoring question');
+  assert(lesson.steps.commonMisconceptions[0].ownMistake === true, "Student's own mistake should be named first");
+  assert(lesson.steps.examInsight, 'Exam insight should be present');
+  assert(lesson.steps.keyIdea, 'Key idea (memory aid) should be present');
+});
+
+test('Learn: careless_slip compresses to a light lesson', () => {
+  const lesson2 = learnEngine.learn.fromIncorrectAnswer({
+    questionId: 'lq1', conceptId: learnConceptId, selectedOption: 'B', errorTag: ErrorTag.CARELESS_SLIP
+  });
+  assert(lesson2.compressed, 'careless_slip should trigger compression');
+  assertEqual(lesson2.steps.coreConcept.conceptSummary, null, 'Compressed lesson should skip the fuller concept summary');
+});
+
+test('Learn: reinforcement attempt caps a Fading->Reinforced jump at Held', () => {
+  const concept = learnEngine.graph.getConcept(learnConceptId);
+  concept.retentionState = RetentionState.FADING;
+  concept.decayEstimate = 0.3;
+  const result = learnEngine.learn.submitReinforcementAttempt({ conceptId: learnConceptId, correct: true, responseTimeMs: 15000, questionId: 'lq1' });
+  assertEqual(result.conceptState, RetentionState.HELD, 'A freshly-taught correct answer should cap at Held, not Reinforced');
+  assert(result.masteryCheck.cappedToHeld, 'masteryCheck should flag the cap');
+  assert(result.masteryCheck.holding, 'Held counts as holding for the Mastery Check');
+});
+
+test('Learn: completing a lesson clears it from active and records history', () => {
+  const outcome = learnEngine.learn.completeLesson({ conceptId: learnConceptId });
+  assertEqual(outcome.masteryHolding, true, 'Mastery check from the prior reinforcement attempt should carry through');
+  assertEqual(learnEngine.learn.resumeLesson(learnConceptId), null, 'Completed lesson should no longer be resumable');
+  assertEqual(learnEngine.learn.completedLessons.length, 1, 'Completed lesson should be recorded');
+});
+
+test('Learn: re-generating a lesson without completing counts as an abandonment', () => {
+  learnEngine.learn.fromBookmark({ conceptId: learnConceptId }); // opens a fresh lesson
+  learnEngine.learn.fromBookmark({ conceptId: learnConceptId }); // abandons the first, opens a second
+  assertEqual(learnEngine.learn.abandonCounts.get(learnConceptId), 1, 'Reopening an unfinished lesson should count as one abandonment');
+});
+
+test('Learn: repeated abandonment biases the next lesson toward compression', () => {
+  // A fresh, still-Forming concept — the earlier reinforcement-attempt test
+  // already made learnConceptId genuinely Held/mastered, which would
+  // (correctly, per §10.3) route back through the already-mastered branch
+  // instead of exercising the abandonment-bias path this test targets.
+  const abandonConceptId = learnEngine.addConcept({
+    name: 'Half-Reactions', subject: 'Chemistry', topic: 'Electrochemistry', subtopic: 'Redox Reactions'
+  });
+  learnEngine.graph.getConcept(abandonConceptId).recordAttempt({
+    conceptId: abandonConceptId, correct: false, responseTimeMs: 20000,
+    timestamp: Date.now(), errorTag: ErrorTag.CONCEPTUAL_GAP, questionId: null
+  });
+
+  learnEngine.learn.fromBookmark({ conceptId: abandonConceptId }); // open 1
+  learnEngine.learn.fromBookmark({ conceptId: abandonConceptId }); // abandons #1 -> count 1
+  learnEngine.learn.fromBookmark({ conceptId: abandonConceptId }); // abandons #2 -> count 2
+  const lesson3 = learnEngine.learn.fromBookmark({ conceptId: abandonConceptId }); // abandons #3 -> count 3
+
+  assert(lesson3.compressionReasons.includes('repeated_abandonment'), 'Two or more abandonments should bias toward the compressed flow');
+  learnEngine.learn.completeLesson({ conceptId: abandonConceptId }); // clean up
+});
+
+test('Learn: already-mastered concept gets a lightweight lesson, not a full remediation', () => {
+  const heldConceptId = learnEngine.addConcept({
+    name: 'Mole Concept', subject: 'Chemistry', topic: 'Stoichiometry', subtopic: 'Mole Calculations'
+  });
+  const heldConcept = learnEngine.graph.getConcept(heldConceptId);
+  heldConcept.retentionState = RetentionState.HELD;
+  heldConcept.confidenceScore = 0.9;
+
+  const lesson = learnEngine.learn.fromInsights({ conceptId: heldConceptId });
+  assert(lesson.alreadyMastered, 'A confidently Held concept should not get a full remediation lesson');
+  assertEqual(lesson.steps.coreConcept, null, 'Already-mastered lesson skips Core Concept entirely');
+});
+
+test('Learn: a concept with no linked questions is marked sparse, not padded', () => {
+  const sparseConceptId = learnEngine.addConcept({
+    name: 'Untagged Concept', subject: 'Chemistry', topic: 'New Topic', subtopic: 'Nothing Authored Yet'
+  });
+  const lesson = learnEngine.learn.fromWeakTopicRecommendation({ conceptId: sparseConceptId });
+  assert(lesson.contentSparse, 'A concept with zero linked live questions should be marked sparse');
+  assertEqual(lesson.steps.simpleBreakdown.sparse, true, 'Simple breakdown should honestly report sparse content');
+});
+
+test('Learn Home surfaces a genuinely Forming concept as a recommended repair candidate', () => {
+  const formingId = learnEngine.addConcept({
+    name: 'Formal Charge', subject: 'Chemistry', topic: 'Electrochemistry', subtopic: 'Redox Reactions'
+  });
+  const formingConcept = learnEngine.graph.getConcept(formingId);
+  formingConcept.recordAttempt({ conceptId: formingId, correct: false, responseTimeMs: 20000, timestamp: Date.now(), errorTag: ErrorTag.CONCEPTUAL_GAP, questionId: null });
+
+  const home = learnEngine.learn.getLearnHome();
+  assert(home.recommendedConcepts.some(c => c.id === formingId), 'A Forming concept should surface as a recommended concept in Learn Home');
+  assert(!home.coldStart, 'Learn Home should not report cold-start once real attempt history exists');
+});
+
+test('Learn Module state round-trips through toJSON/fromJSON', () => {
+  const snapshot = learnEngine.learn.toJSON();
+  const restored = LearnModule.fromJSON(learnEngine, snapshot);
+  assertEqual(restored.completedLessons.length, learnEngine.learn.completedLessons.length, 'Restored module should carry completed lesson history');
+  assertEqual(restored.activeLessons.size, learnEngine.learn.activeLessons.size, 'Restored module should carry active lesson state');
+});
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) {

@@ -60,6 +60,7 @@ export class StudentProfile {
     this.crossModuleMilestones = null; // CrossModuleMilestones.toJSON() snapshot
     this.continuation = null;      // ContinuationEngine.toJSON() snapshot
     this.comms = null;             // CommsService.toJSON() snapshot
+    this.learn = null;             // LearnModule.toJSON() snapshot
     this.sessions = [];          // completed session metadata
     this.responseTimeBaselines = {};
     this.eliteScoreHistory = [];
@@ -249,6 +250,7 @@ export class StudentProfile {
       crossModuleMilestones: this.crossModuleMilestones,
       continuation: this.continuation,
       comms: this.comms,
+      learn: this.learn,
       sessions: this.sessions,
       responseTimeBaselines: this.responseTimeBaselines,
       eliteScoreHistory: this.eliteScoreHistory,

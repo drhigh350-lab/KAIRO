@@ -341,6 +341,34 @@ Four-level resolution hierarchy: intrinsic deadline → Preferred Study Period �
 
 Ties the above together: an Orchestrator-approved candidate goes in, a resolved `{ channel, rendered, sendTime }` (or `null`, a legitimate "say nothing" outcome) comes out. Deduplicates at the point of send via a `factKey`, a defensive second gate beyond the Orchestrator's own selection stage. Produces the interaction log (delivered/opened/acted-upon) that feeds back into SJEE §5.8's dismissal-learning loop — this layer never interprets that log itself, only produces it.
 
+## 18. Learn Module
+
+The understanding-repair layer (spec `docs/specs/KAIRO_LEARN_MODULE.md`). Where Review is about *timing* (is it due to fade) and Practice is the *loop* (attempt, feedback, adapt), Learn is about *comprehension* — the deliberate detour a student takes when a question just revealed a genuine gap. It runs no intelligence of its own (§7.1): every read and write flows through the same `KnowledgeGraph`, `ExplanationEngine`, `MisconceptionLibrary`, and `QuestionRelationshipGraph` every other module already uses. Lives in `src/learn/LearnModule.js`.
+
+### 18.1 Entry points (§3)
+
+Seven constructors, each just a thin wrapper around one shared lesson builder, differing only in the context/emotional framing they carry (§3.10's table): `fromIncorrectAnswer` (the primary path, §3.2), `fromPracticeSummary` (session-level corroborated pattern, §3.3), `fromReview` (timing + comprehension overlap, §3.4), `fromWeakTopicRecommendation` (DDE-proactive, §3.5), `fromDashboard` (§3.6), `fromInsights` (self-directed, §3.7), `fromBookmark` (self-flagged intent, §3.9).
+
+### 18.2 Lesson generation (§5–6)
+
+`_buildLesson()` reuses `ExplanationEngine.generate()` for the Explanation/Exam-Insight/Key-Idea content rather than re-deriving it — Learn renders the same trusted structure everywhere else in Kairo (§5.4), it never maintains a parallel one. A real wrong answer gets the full distractor breakdown; a concept-only entry with no real attempt gets the lighter correct-answer rendering (`attempt.correct = true`) so exam tips and memory anchors still surface without fabricating a "why you got this wrong."
+
+Every personalisation dimension that points toward a shorter lesson — `careless_slip` (§5.13), two or more prior abandonments on the same concept (§10.1), fragile consistency (Wavering/Recovering/At Risk macro-state, §8.7), or exam-proximity pressure-testing on a partially-known concept (§8.6) — drives one shared `compressed` flag with a `compressionReasons` array for transparency, rather than combinatorial special-casing per reason.
+
+`Concept Summary`/`Simple Breakdown` content is sourced only from genuinely authored `Question.explanation` text (never fabricated academic content) — where none exists for a concept, the lesson honestly reports `contentSparse: true` (§10.4) instead of padding. Repeat lessons on the same concept rotate through distinct authored explanations by prior-attempt count rather than re-serving the one that already didn't land (§8.3, §10.2).
+
+### 18.3 The Reinforced-promotion cap (§7.3)
+
+The Mini Reinforcement Activity (§5.10) writes through the identical attempt-recording path every other module uses (`ConceptNode.recordAttempt`), but a freshly-taught correct answer is not allowed to carry a concept all the way from Fading to Reinforced in the same lesson — `submitReinforcementAttempt()` detects that specific transition and caps it at Held, since Reinforced specifically requires recall *after* forgetting had a chance to occur (Learning Engine §2.2), which a moment-of-teaching answer cannot yet demonstrate. Review remains architecturally where Reinforced is actually earned (Review Module §7.3) — Learn can close a gap; it cannot manufacture the appearance of one being closed.
+
+### 18.4 Already-mastered and abandonment handling (§10.1, §10.3)
+
+A concept that's already confidently Held/Reinforced gets a lightweight lesson offering Related Questions or a direct return to Practice, never a forced full remediation (§10.3) — this check runs before compression logic and takes precedence over it, since respecting genuine mastery matters more than any abandonment-driven bias. Re-generating a lesson for a concept that already has an unfinished one in `activeLessons` is read as an implicit abandonment of the first (§10.1) — no separate UI-driven signal required, though `abandonLesson()`/`resumeLesson()` are also exposed directly for callers that have one.
+
+### 18.5 Persistence
+
+`LearnModule.toJSON()`/`fromJSON()` follow the same snapshot pattern as `ReEngagementEngine`/`CrossModuleMilestones`/`CommsService` — wired into `KairoEngine._snapshotSjeeState()` and `init()`, with `StudentProfile.learn` as the round-trip field.
+
 ---
 
 *This is a living document. As real student behavior data starts to disagree with these assumptions, the architecture should be reviewed and revised — not treated as fixed spec.*

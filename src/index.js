@@ -52,6 +52,7 @@ import { ContentPackManager } from "./offline/ContentPackManager.js";
 
 // Supabase
 import { SupabaseSyncAdapter } from "./supabase/SupabaseSyncAdapter.js";
+import { LearnModule } from "./learn/LearnModule.js";
 import { ReviewModule } from "./review/ReviewModule.js";
 import { CBTExamMode } from "./cbt/CBTExamMode.js";
 import { ChallengesModule } from "./challenges/ChallengesModule.js";
@@ -97,6 +98,7 @@ export class KairoEngine {
     this.levelSystem = new LevelSystem(this.profile);
     this.badgeSystem = new BadgeSystem(this.profile);
     this.onboarding = new OnboardingEngine(this);
+    this.learn = new LearnModule(this);
     this.review = new ReviewModule(this);
     this.cbt = new CBTExamMode(this);
     this.challenges = new ChallengesModule(this);
@@ -114,18 +116,19 @@ export class KairoEngine {
   }
 
   /**
-   * Snapshot ReEngagementEngine and CrossModuleMilestones state onto
-   * the profile so it round-trips through StudentProfile.toJSON() —
-   * these hold structured records that don't fit the simple
-   * current-value mirroring pattern macroState/learningState/
-   * journeyStage use, so they're snapshotted explicitly before save
-   * rather than written on every internal state change.
+   * Snapshot ReEngagementEngine, CrossModuleMilestones, and LearnModule
+   * state onto the profile so it round-trips through
+   * StudentProfile.toJSON() — these hold structured records that don't
+   * fit the simple current-value mirroring pattern macroState/
+   * learningState/journeyStage use, so they're snapshotted explicitly
+   * before save rather than written on every internal state change.
    */
   _snapshotSjeeState() {
     this.profile.reEngagement = this.reEngagement.toJSON();
     this.profile.crossModuleMilestones = this.crossModuleMilestones.toJSON();
     this.profile.continuation = this.continuation.toJSON();
     this.profile.comms = this.comms.toJSON();
+    this.profile.learn = this.learn.toJSON();
   }
 
   async init() {
@@ -148,6 +151,7 @@ export class KairoEngine {
       this.crossModuleMilestones = CrossModuleMilestones.fromJSON(this.profile, savedProfile.crossModuleMilestones);
       this.continuation = ContinuationEngine.fromJSON(this.profile, savedProfile.continuation);
       this.comms = CommsService.fromJSON(this.profile, savedProfile.comms);
+      this.learn = LearnModule.fromJSON(this, savedProfile.learn);
       this.levelSystem = new LevelSystem(this.profile);
       this.badgeSystem = new BadgeSystem(this.profile);
     }
@@ -599,6 +603,7 @@ export {
   OnboardingEngine,
   ContentPackManager,
   SupabaseSyncAdapter,
+  LearnModule,
   ReviewModule,
   CBTExamMode,
   ChallengesModule,
