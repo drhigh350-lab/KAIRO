@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { MissionCard, Card } from '../../components';
 import { KaiMark } from '../onboarding/shared';
 import type { Course } from '../onboarding/data';
+import { liveChallenge } from '../challenges/data';
 
 interface HomeDashboardState {
   name?: string;
@@ -66,7 +67,12 @@ export function HomeDashboard() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <PromoCard title="JAMB CBT Exam Mode" body="Simulate the real computer-based test experience." accent="navy" onClick={() => navigate('/cbt')} />
-        <PromoCard title="Challenges" body="Compete with students across Nigeria. Climb the leaderboard." accent="blue" onClick={() => navigate('/challenges')} />
+        <PromoCard
+          title="Challenges"
+          body={liveChallenge ? `${liveChallenge.title} is live — ${liveChallenge.participantCount.toLocaleString()} students already joined.` : 'Compete with students across Nigeria. Climb the leaderboard.'}
+          accent="blue"
+          onClick={() => navigate('/challenges')}
+        />
       </div>
 
       <Card style={{ background: 'var(--kairo-blue-100)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
