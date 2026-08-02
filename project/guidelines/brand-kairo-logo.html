@@ -1,0 +1,41 @@
+<!-- @dsCard group="Brand" viewport="760x320" name="Kairo Logo" subtitle="Transparent brand asset — recolors per surface" -->
+<link rel="stylesheet" href="../styles.css">
+<script src="../assets/kairo-logo-masks.js"></script>
+<style>
+.kairo-logo-card{font-family:var(--font-body,Inter,sans-serif)}
+.kairo-mask{background-color:var(--logo-c,#012748);-webkit-mask-image:var(--logo-src);mask-image:var(--logo-src);-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:left center;mask-position:left center;transition:background-color .15s}
+.surf-btn{border:1px solid var(--kairo-blue-200,#d8dee6);background:#fff;color:var(--text-body,#0b1c2c);font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer}
+.surf-btn[aria-pressed="true"]{background:var(--kairo-navy-900,#012748);color:#fff;border-color:var(--kairo-navy-900,#012748)}
+</style>
+<div class="kairo-logo-card" style="display:flex;flex-direction:column;gap:14px;padding:16px;background:var(--color-bg-canvas,#f4f6f8)">
+<div style="display:flex;gap:8px;align-items:center">
+<span style="font-size:11px;color:var(--color-text-muted,#5b6b7a);margin-right:4px">Surface:</span>
+<button class="surf-btn" id="btn-light" aria-pressed="true">Light</button>
+<button class="surf-btn" id="btn-dark" aria-pressed="false">Dark / Navy</button>
+</div>
+<div id="stage" style="display:flex;align-items:center;gap:28px;height:170px;padding:24px;border-radius:8px;background:#ffffff;transition:background-color .15s">
+<div class="kairo-mask" id="mark" style="width:110px;height:110px"></div>
+<div class="kairo-mask" id="word" style="width:220px;height:100px"></div>
+</div>
+<div style="font-size:11px;color:var(--color-text-muted,#5b6b7a);line-height:1.5;max-width:560px">
+No background plate, no shadow, no distortion. The mark and wordmark are a single alpha asset recolored via CSS — Navy on light surfaces, white on dark/navy surfaces. Never paste the logo as a flattened image with its own background.
+</div>
+</div>
+<script>
+(function(){
+var stage=document.getElementById('stage'),mark=document.getElementById('mark'),word=document.getElementById('word');
+mark.style.setProperty('--logo-src','url('+JSON.stringify(window.KAIRO_LOGO_MASKS.mark)+')');
+word.style.setProperty('--logo-src','url('+JSON.stringify(window.KAIRO_LOGO_MASKS.wordmark)+')');
+var btnLight=document.getElementById('btn-light'),btnDark=document.getElementById('btn-dark');
+function setSurface(dark){
+stage.style.background=dark?'#012748':'#ffffff';
+mark.style.setProperty('--logo-c',dark?'#ffffff':'#012748');
+word.style.setProperty('--logo-c',dark?'#ffffff':'#012748');
+btnLight.setAttribute('aria-pressed',String(!dark));
+btnDark.setAttribute('aria-pressed',String(dark));
+}
+btnLight.addEventListener('click',function(){setSurface(false)});
+btnDark.addEventListener('click',function(){setSurface(true)});
+setSurface(false);
+})();
+</script>

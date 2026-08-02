@@ -1,0 +1,69 @@
+function KaiMark({ size = 64, tone = 'navy', check = false }) {
+  const ring = tone === 'white' ? 'rgba(255,255,255,0.55)' : 'var(--kairo-blue-500)';
+  const disc = tone === 'white' ? '#fff' : 'var(--kairo-navy-900)';
+  return (
+    <div style={{ width: size, height: size, position: 'relative', flexShrink: 0 }}>
+      <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `2px solid ${ring}` }} />
+      <div style={{ position: 'absolute', width: '60%', height: '60%', top: '20%', left: '20%', borderRadius: '50%', background: disc, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {check && <svg width="46%" height="46%" viewBox="0 0 24 24" fill="none" stroke={tone === 'white' ? 'var(--kairo-navy-900)' : '#fff'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>}
+      </div>
+      <div style={{ position: 'absolute', width: '15%', height: '15%', top: '6%', right: '4%', borderRadius: '50%', background: 'var(--kairo-gold-500)' }} />
+    </div>
+  );
+}
+
+function KairoWordmark({ tone = 'navy', width = 128 }) {
+  const color = tone === 'white' ? '#fff' : 'var(--kairo-navy-900)';
+  const src = window.KAIRO_LOGO_MASKS.wordmark;
+  return <div style={{ width, height: width * 0.42, backgroundColor: color, WebkitMaskImage: `url('${src}')`, maskImage: `url('${src}')`, WebkitMaskSize: 'contain', maskSize: 'contain', WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskPosition: 'center' }} />;
+}
+
+function StepIndicator({ step, total }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {Array.from({ length: total }).map((_, i) => {
+        const active = i <= step - 1;
+        const current = i === step - 1;
+        return <div key={i} style={{ width: current ? 22 : 8, height: 8, borderRadius: 4, background: active ? 'var(--kairo-navy-900)' : 'var(--kairo-ink-100)', transition: 'all var(--dur-base)' }} />;
+      })}
+    </div>
+  );
+}
+
+function FlowHeader({ onBack, step, total }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px 8px' }}>
+      <div onClick={onBack} style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-heading)' }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
+      </div>
+      {step != null && <StepIndicator step={step} total={total} />}
+      <div style={{ width: 32 }} />
+    </div>
+  );
+}
+
+function SkipLink({ children, onClick }) {
+  return <div onClick={onClick} style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}>{children}</div>;
+}
+
+function OrDivider() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-faint)', fontSize: 12 }}>
+      <div style={{ flex: 1, height: 1, background: 'var(--color-border-subtle)' }} /> OR <div style={{ flex: 1, height: 1, background: 'var(--color-border-subtle)' }} />
+    </div>
+  );
+}
+
+function GoogleButton({ onClick, children = 'Continue with Google' }) {
+  const { Button } = window.KairoDesignSystem_1c2e7f;
+  return (
+    <Button variant="secondary" size="lg" fullWidth onClick={onClick} icon={null}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z" /><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16.1 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.6 4 24 4c-7.7 0-14.3 4.3-17.7 10.7z" /><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.1-5.1l-6.5-5.5C29.5 35 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.6 5C9.6 39.6 16.2 44 24 44z" /><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.5 5.5C41.4 36 44 30.5 44 24c0-1.2-.1-2.4-.4-3.5z" /></svg>
+        {children}
+      </span>
+    </Button>
+  );
+}
+
+window.KairoOnboardingUI = { KaiMark, KairoWordmark, StepIndicator, FlowHeader, SkipLink, OrDivider, GoogleButton };
