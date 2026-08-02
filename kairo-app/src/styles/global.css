@@ -1,0 +1,18 @@
+@import './colors.css';
+@import './typography.css';
+@import './spacing.css';
+@import './shadows.css';
+@import './base.css';
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--kairo-blue-100);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
