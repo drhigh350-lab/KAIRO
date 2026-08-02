@@ -1,0 +1,36 @@
+name: Deploy kairo-app to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kairo-app/**'
+      - '.github/workflows/deploy-kairo-app.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: kairo-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: kairo-app
+        run: npm ci
+
+      - name: Build
+        working-directory: kairo-app
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: kairo-app
+          command: deploy
