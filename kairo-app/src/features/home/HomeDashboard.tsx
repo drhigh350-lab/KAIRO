@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { MissionCard, Card } from '../../components';
 import { KaiMark } from '../onboarding/shared';
 import type { Course } from '../onboarding/data';
+import { liveChallenge } from '../challenges/data';
 
 interface HomeDashboardState {
   name?: string;
@@ -23,7 +24,7 @@ export function HomeDashboard() {
     { label: 'Topic Practice', d: 'M12 2a10 10 0 100 20 10 10 0 000-20zM12 8a4 4 0 100 8 4 4 0 000-8z', onClick: () => navigate('/practice', { state: { entry: 'topic' } }) },
     { label: 'Mixed Practice', d: 'M16 3h5v5M4 20L21 3M21 16v5h-5M4 4l5 5', onClick: () => navigate('/practice', { state: { entry: 'mixed' } }) },
     { label: 'Exam Mode', d: 'M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z', onClick: () => navigate('/cbt') },
-    { label: 'Challenges', d: 'M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z' },
+    { label: 'Challenges', d: 'M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z', onClick: () => navigate('/challenges') },
     { label: 'See All', d: 'M5 12h14M12 5l7 7-7 7' },
   ];
 
@@ -66,7 +67,12 @@ export function HomeDashboard() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <PromoCard title="JAMB CBT Exam Mode" body="Simulate the real computer-based test experience." accent="navy" onClick={() => navigate('/cbt')} />
-        <PromoCard title="Challenges" body="Compete with students across Nigeria. Climb the leaderboard." accent="blue" />
+        <PromoCard
+          title="Challenges"
+          body={liveChallenge ? `${liveChallenge.title} is live — ${liveChallenge.participantCount.toLocaleString()} students already joined.` : 'Compete with students across Nigeria. Climb the leaderboard.'}
+          accent="blue"
+          onClick={() => navigate('/challenges')}
+        />
       </div>
 
       <Card style={{ background: 'var(--kairo-blue-100)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>

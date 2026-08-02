@@ -9,6 +9,7 @@ import { CbtFlow } from './features/cbt/CbtFlow';
 import { Review } from './features/review/Review';
 import { Insights } from './features/insights/Insights';
 import { Profile } from './features/profile/Profile';
+import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 
 export default function App() {
   const { pathname } = useLocation();
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/practice/*" element={<PracticeFlow />} />
         <Route path="/cbt/*" element={<CbtFlow />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/challenges/*" element={<ChallengesFlow />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
