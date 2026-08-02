@@ -2,7 +2,7 @@
 
 > **Think Smart. Perform Elite.**
 
-Kairo is the AI-powered learning engine behind [TECHMED](https://techmed.pages.dev/). It is not a quiz app. It is an academic operating system designed to help Nigerian students become better learners — not just better test-takers.
+Kairo is the AI-powered learning engine behind [TECHMED](https://techmedng.com/). It is not a quiz app. It is an academic operating system designed to help Nigerian students become better learners — not just better test-takers.
 
 ## Philosophy
 
@@ -18,7 +18,7 @@ If a design decision can't be traced back to that question, it doesn't belong in
 |---|---|
 | Tracks correct/incorrect counts | Tracks *why* you got it wrong |
 | Static question banks | Living knowledge graph with prerequisite chains |
-| Generic XP points | **Elite Score** — rewards retention and consistency, not volume |
+| Generic XP points | **Kairo Score** — rewards retention and consistency, not volume |
 | Binary "mastered / not mastered" | Five retention states: Unseen → Forming → Held → Fading → Reinforced |
 | Fixed difficulty | Per-concept adaptive difficulty with macro-state awareness |
 | Punishing streaks | **Momentum Streak** with protected gap days |
@@ -104,7 +104,7 @@ console.log('Elite Score:', summary.eliteScore.total);
 | **Fading** | Decay estimate dropped — urgent review needed |
 | **Reinforced** | Successfully recalled after fading. *This is real learning.* |
 
-### Elite Score (Replaces XP)
+### Kairo Score (Replaces XP)
 
 - **Accuracy (45%)** — weighted by difficulty and recency
 - **Retention (35%)** — rewards Reinforced transitions
@@ -148,7 +148,7 @@ node tests/engine.test.js
 - **TECHMED** — The ecosystem
 - **Kairo** — The learning intelligence platform
 - **Kai** — The AI study companion
-- **Tagline:** Think Smart. Perform Elite.
+- **Tagline:** Seize the Moment
 
 ## License
 
