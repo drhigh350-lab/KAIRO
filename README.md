@@ -1,6 +1,6 @@
 # Kairo Learning Engine
 
-> **Think Smart. Perform Elite.**
+> **Seize the Moment**
 
 Kairo is the AI-powered learning engine behind [TECHMED](https://techmedng.com/). It is not a quiz app. It is an academic operating system designed to help Nigerian students become better learners — not just better test-takers.
 
