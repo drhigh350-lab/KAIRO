@@ -27,6 +27,23 @@ Each subject folder holds:
 - Not yet seeded into `kairo.questions` in Supabase (that table is still
   empty — see `docs/SUPABASE_SETUP.md` §6).
 
+## chemistry/ — TechMed JAMB Chemistry Question Bank (200 questions)
+
+- Source: `TechMed_JAMB_Chemistry_Questions.csv`, columns `Subject, Topic,
+  Q#, Question, Option A-D, Correct Answer, Explanation, Why Other
+  Options Are Wrong` (a different column-naming convention from the
+  Biology bank — the importer now handles both).
+- Structural import: 200/200 rows converted, 0 skipped (same checks as
+  Biology: exactly one correct option per row, non-empty stem, non-empty
+  explanation and distractor rationale, no duplicate Q# or duplicate
+  question text). Single subject (Chemistry), 17 topics.
+- `lifecycleState: 'imported'` — same caveat as Biology: not yet through
+  the remaining QA gates (concept attachment, misconception mapping,
+  difficulty calibration), and not yet seeded into `kairo.questions`.
+- Content accuracy has not been independently re-verified here (mirrors
+  how Biology was handled) — flag any suspected error back through the
+  normal review path rather than treating this as QA-passed content.
+
 ## Regenerating the JSON from CSV
 
 ```
@@ -34,4 +51,13 @@ node scripts/import-question-bank.js \
   content/question-banks/biology/Biology_UTME_Revelation_200_Questions.csv \
   content/question-banks/biology/biology_utme_revelation_200.json \
   --subject Biology --examBody JAMB --source "UTME Revelation"
+
+node scripts/import-question-bank.js \
+  content/question-banks/chemistry/TechMed_JAMB_Chemistry_Questions.csv \
+  content/question-banks/chemistry/chemistry_jamb_200.json \
+  --examBody JAMB --source "TechMed JAMB Question Bank"
 ```
+
+The importer accepts either column convention: `Question Number` or
+`Q#`; `Explanation (Why Correct)` or `Explanation`; an explicit
+`--subject` flag or a `Subject` column in the CSV itself.

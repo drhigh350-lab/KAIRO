@@ -78,9 +78,13 @@ function toQuestion(rec, { subject, examBody, source }, index) {
       isCorrect: l === correctLetter
     }));
 
+  const questionNumber = rec['Question Number'] || rec['Q#'] || index + 1;
+  const explanation = rec['Explanation (Why Correct)'] || rec['Explanation'] || null;
+  const resolvedSubject = subject || rec['Subject'] || null;
+
   return {
-    id: `${slugify(subject)}_${String(rec['Question Number'] || index + 1).padStart(4, '0')}`,
-    subject,
+    id: `${slugify(resolvedSubject)}_${String(questionNumber).padStart(4, '0')}`,
+    subject: resolvedSubject,
     topic: rec['Topic'] || null,
     subtopic: rec['Section'] || null,
     learningObjective: null,
@@ -102,7 +106,7 @@ function toQuestion(rec, { subject, examBody, source }, index) {
     stem: rec['Question'],
     options,
     correctOption: correctLetter,
-    explanation: rec['Explanation (Why Correct)'] || null,
+    explanation,
     distractorRationale: rec['Why Other Options Are Wrong'] || null,
     lifecycleState: 'imported',
     empiricalStats: {
