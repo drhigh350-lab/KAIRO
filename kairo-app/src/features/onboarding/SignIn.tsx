@@ -10,9 +10,13 @@ export interface SignInProps {
 export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
   return (
     <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, flex: 1 }}>
-      <div onClick={onBack} style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', cursor: 'pointer', color: 'var(--text-heading)' }}>
+      <button type="button" onClick={onBack} aria-label="Back" style={{
+        width: 32, height: 32, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-8px',
+        display: 'flex', alignItems: 'center', cursor: 'pointer', color: 'var(--text-heading)',
+        background: 'none', border: 'none', padding: 0, borderRadius: '50%',
+      }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
-      </div>
+      </button>
       <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
         <KaiMark size={56} />
         <div>

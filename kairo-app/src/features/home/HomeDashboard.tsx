@@ -34,7 +34,10 @@ export function HomeDashboard() {
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-heading)' }}>Kairo</div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--kairo-navy-900)" strokeWidth="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0" /></svg>
-          <div onClick={() => navigate('/profile')} style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--kairo-blue-100)', cursor: 'pointer' }} />
+          <button type="button" onClick={() => navigate('/profile')} aria-label="Open profile" style={{
+            width: 34, height: 34, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-7px',
+            borderRadius: '50%', background: 'var(--kairo-blue-100)', cursor: 'pointer', border: 'none', padding: 0,
+          }} />
         </div>
       </div>
       <div>
@@ -98,7 +101,13 @@ function PromoCard({ title, body, accent, onClick }: PromoCardProps) {
     display: 'flex', flexDirection: 'column', gap: 10, cursor: onClick ? 'pointer' : 'default', boxShadow: isNavy ? 'var(--shadow-lg)' : 'var(--shadow-card)',
   };
   return (
-    <div onClick={onClick} style={style}>
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e as unknown as Parameters<typeof onClick>[0]); } } : undefined}
+      style={style}
+    >
       <div style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{title}</div>
       <div style={{ fontSize: 12, opacity: isNavy ? 0.8 : 1, color: isNavy ? 'var(--kairo-blue-200)' : 'var(--text-muted)', lineHeight: 1.4 }}>{body}</div>
       <div style={{ fontSize: 12, fontWeight: 600, color: isNavy ? '#fff' : 'var(--kairo-blue-700)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 'auto' }}>

@@ -47,9 +47,13 @@ export interface FlowHeaderProps {
 export function FlowHeader({ onBack, step, total }: FlowHeaderProps) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px 8px' }}>
-      <div onClick={onBack} style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-heading)' }}>
+      <button type="button" onClick={onBack} aria-label="Back" style={{
+        width: 32, height: 32, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-8px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-heading)',
+        background: 'none', border: 'none', padding: 0, borderRadius: '50%',
+      }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
-      </div>
+      </button>
       {step != null && <StepIndicator step={step} total={total} />}
       <div style={{ width: 32 }} />
     </div>
@@ -62,7 +66,12 @@ export interface SkipLinkProps {
 }
 
 export function SkipLink({ children, onClick }: SkipLinkProps) {
-  return <div onClick={onClick} style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}>{children}</div>;
+  return (
+    <button type="button" onClick={onClick} style={{
+      display: 'block', width: '100%', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer',
+      textDecoration: 'underline', textUnderlineOffset: '3px', background: 'none', border: 'none', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+    }}>{children}</button>
+  );
 }
 
 export function OrDivider() {

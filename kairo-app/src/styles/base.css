@@ -7,3 +7,4 @@ a{color:var(--text-link);text-decoration:none}
 a:hover{color:var(--text-link-hover);text-decoration:underline}
 button{font-family:inherit}
 img{max-width:100%;display:block}
+[role="button"]:focus-visible,button:focus-visible{outline:none;box-shadow:var(--focus-ring)}

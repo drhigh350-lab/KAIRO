@@ -61,7 +61,7 @@ export function ChallengeResults({ challenge, answers, onBackToHub }: ChallengeR
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
         <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>Calculating your results…</div>
       </div>
     );
@@ -121,10 +121,13 @@ export function ChallengeResults({ challenge, answers, onBackToHub }: ChallengeR
         </Card>
 
         <Card>
-          <div onClick={() => setShowReview((v) => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em' }}>QUESTION REVIEW</div>
+          <button type="button" onClick={() => setShowReview((v) => !v)} aria-expanded={showReview} style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', width: '100%',
+            background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em' }}>QUESTION REVIEW</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--kairo-blue-700)' }}>{showReview ? 'Hide' : 'Show'}</span>
-          </div>
+          </button>
           {showReview && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
               {challenge.questions.map((q, i) => (

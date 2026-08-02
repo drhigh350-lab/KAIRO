@@ -88,9 +88,13 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
       </div>
 
       <div className="app-footer-bar" style={{ padding: '10px 18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div onClick={toggleFlag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: flagged[current] ? 'var(--kairo-gold-600)' : 'var(--text-muted)', cursor: 'pointer' }}>
+        <button type="button" onClick={toggleFlag} aria-pressed={!!flagged[current]} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 600,
+          color: flagged[current] ? 'var(--kairo-gold-600)' : 'var(--text-muted)', cursor: 'pointer',
+          background: 'none', border: 'none', minHeight: 'var(--touch-min)', fontFamily: 'inherit', width: '100%',
+        }}>
           <FlagIcon filled={!!flagged[current]} /> {flagged[current] ? 'Flagged for review' : 'Flag this question'}
-        </div>
+        </button>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
             <Button variant="secondary" size="lg" fullWidth disabled={current === 0} onClick={() => setCurrent((c) => Math.max(0, c - 1))}>Previous</Button>
@@ -122,11 +126,12 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
                   if (isAnswered) { bg = 'var(--kairo-blue-100)'; color = 'var(--kairo-navy-900)'; border = 'var(--kairo-blue-500)'; }
                   if (isFlagged) { bg = 'var(--accent-gold-bg)'; color = 'var(--kairo-gold-600)'; border = 'var(--kairo-gold-500)'; }
                   if (isCurrent) { border = 'var(--kairo-navy-900)'; }
+                  const statusLabel = isCurrent ? ', current question' : isFlagged ? ', flagged' : isAnswered ? ', answered' : ', unanswered';
                   return (
-                    <div key={i} onClick={() => jumpTo(i)} style={{
-                      aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)',
-                      border: `1.5px solid ${border}`, background: bg, color, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    }}>{i + 1}</div>
+                    <button type="button" key={i} onClick={() => jumpTo(i)} aria-label={`Question ${i + 1}${statusLabel}`} style={{
+                      aspectRatio: '1', minHeight: 'var(--touch-min)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-sm)',
+                      border: `1.5px solid ${border}`, background: bg, color, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>{i + 1}</button>
                   );
                 })}
               </div>

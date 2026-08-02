@@ -28,5 +28,10 @@ interface SkipLinkAltProps {
 }
 
 function SkipLinkAlt({ onClick }: SkipLinkAltProps) {
-  return <div onClick={onClick} style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-link)', cursor: 'pointer', fontWeight: 500 }}>I already have an account</div>;
+  return (
+    <button type="button" onClick={onClick} style={{
+      display: 'block', width: '100%', textAlign: 'center', fontSize: 14, color: 'var(--text-link)', cursor: 'pointer', fontWeight: 500,
+      background: 'none', border: 'none', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+    }}>I already have an account</button>
+  );
 }
