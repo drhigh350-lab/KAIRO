@@ -1,5 +1,5 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { PhoneShell } from './layout/PhoneShell';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
 import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
@@ -12,11 +12,8 @@ import { Profile } from './features/profile/Profile';
 import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 
 export default function App() {
-  const { pathname } = useLocation();
-  const onSplash = pathname === '/';
-
   return (
-    <PhoneShell statusBarTone={onSplash ? 'white' : 'navy'} statusBarBg={onSplash ? 'var(--kairo-navy-900)' : 'transparent'}>
+    <AppShell>
       <Routes>
         <Route path="/" element={<Splash />} />
         <Route path="/onboarding/*" element={<OnboardingFlow />} />
@@ -34,6 +31,6 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </PhoneShell>
+    </AppShell>
   );
 }

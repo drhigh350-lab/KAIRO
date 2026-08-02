@@ -41,7 +41,7 @@ export function PracticeSummary({ results, onHome, onAction }: PracticeSummaryPr
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>{total} questions · {formatTime(totalTime)}</div>
       </div>
 
-      <div style={{ padding: '0 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card>
           <div style={{ display: 'flex' }}>
             <StatTile label="Answered" value={total} />
@@ -72,16 +72,17 @@ export function PracticeSummary({ results, onHome, onAction }: PracticeSummaryPr
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', marginBottom: 6 }}>SUGGESTED NEXT</div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {recommendations.map((r) => (
-              <div key={r.key} onClick={() => !r.disabled && onAction && onAction(r.key)} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 2px', cursor: r.disabled ? 'default' : 'pointer',
-                opacity: r.disabled ? 0.45 : 1, borderTop: '1px solid var(--color-border-subtle)',
+              <button key={r.key} type="button" disabled={r.disabled} onClick={() => onAction && onAction(r.key)} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 2px', minHeight: 'var(--touch-min)',
+                cursor: r.disabled ? 'default' : 'pointer', width: '100%', textAlign: 'left', background: 'none', fontFamily: 'inherit',
+                opacity: r.disabled ? 0.45 : 1, border: 'none', borderTop: '1px solid var(--color-border-subtle)',
               }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-heading)' }}>{r.label}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{r.detail}</div>
                 </div>
                 {!r.disabled && <ChevronRight />}
-              </div>
+              </button>
             ))}
           </div>
         </Card>

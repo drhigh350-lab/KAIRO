@@ -16,7 +16,7 @@ export function ExamInstructions({ onBack, onBegin }: ExamInstructionsProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="Instructions" />
-      <div style={{ padding: '10px 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: 'var(--text-heading)' }}>Before you begin</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {rules.map((r, i) => (

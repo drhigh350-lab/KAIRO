@@ -23,7 +23,7 @@ export function ExamSetup({ onBack, onContinue }: ExamSetupProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="CBT Exam Mode" />
-      <div style={{ padding: '10px 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>Your subject combination for this simulation.</div>
         <Card>
           {cbtSubjects.map((s, i) => (

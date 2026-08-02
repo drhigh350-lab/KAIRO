@@ -1,4 +1,13 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+
+/** Closes an overlay (modal/menu) on the Escape key, for the lifetime of the overlay. */
+function useEscapeToClose(onClose: () => void) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+}
 
 export function BackIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>;
@@ -38,10 +47,18 @@ export interface ScreenHeaderProps {
 }
 export function ScreenHeader({ onBack, title, right }: ScreenHeaderProps) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 6px', fontFamily: 'var(--font-body)' }}>
-      <div onClick={onBack} style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: onBack ? 'pointer' : 'default', color: 'var(--text-heading)' }}>
-        {onBack && <BackIcon />}
-      </div>
+    <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 6px', fontFamily: 'var(--font-body)' }}>
+      {onBack ? (
+        <button type="button" onClick={onBack} aria-label="Back" style={{
+          width: 36, height: 36, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-6px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-heading)',
+          background: 'none', border: 'none', padding: 0, borderRadius: '50%',
+        }}>
+          <BackIcon />
+        </button>
+      ) : (
+        <div style={{ width: 36, height: 36 }} />
+      )}
       <div style={{ fontWeight: 700, fontSize: 'var(--fs-body-lg)', color: 'var(--text-heading)' }}>{title}</div>
       <div style={{ minWidth: 36, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
     </div>
@@ -56,16 +73,17 @@ export interface OptionRowProps {
 }
 export function OptionRow({ label, selected, onClick, subtitle }: OptionRowProps) {
   return (
-    <div onClick={onClick} style={{
+    <button type="button" onClick={onClick} aria-pressed={selected} style={{
       padding: '16px 18px', borderRadius: 'var(--radius-md)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       border: `1.5px solid ${selected ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: selected ? 'var(--kairo-blue-100)' : '#fff', marginBottom: 10,
+      width: '100%', minHeight: 'var(--touch-min)', textAlign: 'left', fontFamily: 'inherit',
     }}>
       <div>
         <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-heading)' }}>{label}</div>
         {subtitle && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{subtitle}</div>}
       </div>
       <ChevronRight />
-    </div>
+    </button>
   );
 }
 
@@ -84,17 +102,20 @@ export function KaiPanel({ note, onAction }: KaiPanelProps) {
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-body)', lineHeight: 1.55 }}>{note}</div>
       </div>
-      <div onClick={() => setExpanded(!expanded)} style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} style={{
+        marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+        background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
+      }}>
         Ask Kai for more
         <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-base)' }}><ChevronRight /></span>
-      </div>
+      </button>
       {expanded && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
           {actions.map((a) => (
-            <span key={a} onClick={() => onAction && onAction(a)} style={{
+            <button type="button" key={a} onClick={() => onAction && onAction(a)} style={{
               fontSize: 12, fontWeight: 600, color: 'var(--kairo-navy-900)', background: '#fff', border: '1px solid var(--color-border-subtle)',
-              padding: '8px 12px', borderRadius: 'var(--radius-pill)', cursor: 'pointer',
-            }}>{a}</span>
+              padding: '8px 12px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+            }}>{a}</button>
           ))}
         </div>
       )}
@@ -121,10 +142,10 @@ export function ConfidenceRating({ value, onChange }: ConfidenceRatingProps) {
         {levels.map((l) => {
           const active = value === l.key;
           return (
-            <div key={l.key} onClick={() => onChange(l.key)} style={{
-              flex: 1, textAlign: 'center', padding: '10px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+            <button type="button" key={l.key} aria-pressed={active} onClick={() => onChange(l.key)} style={{
+              flex: 1, textAlign: 'center', padding: '10px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
               border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-navy-900)' : '#fff', color: active ? '#fff' : 'var(--text-body)',
-            }}>{l.label}</div>
+            }}>{l.label}</button>
           );
         })}
       </div>
@@ -166,19 +187,21 @@ export interface OverflowMenuProps {
   onClose: () => void;
 }
 export function OverflowMenu({ items, onClose }: OverflowMenuProps) {
+  useEscapeToClose(onClose);
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 30 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+    <div onClick={onClose} role="presentation" style={{ position: 'absolute', inset: 0, zIndex: 30 }}>
+      <div onClick={(e) => e.stopPropagation()} role="menu" style={{
         position: 'absolute', top: 54, right: 16, background: '#fff', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
         border: '1px solid var(--color-border-subtle)', minWidth: 210, padding: 6, fontFamily: 'var(--font-body)',
       }}>
         {items.map((it, idx) => (
-          <div key={idx} onClick={() => { it.onClick?.(); onClose(); }} style={{
-            display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+          <button type="button" key={idx} role="menuitem" onClick={() => { it.onClick?.(); onClose(); }} style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', width: '100%',
+            textAlign: 'left', background: 'none', border: 'none', minHeight: 'var(--touch-min)', fontFamily: 'inherit',
             fontSize: 13.5, fontWeight: 600, color: it.tone === 'danger' ? 'var(--state-danger)' : 'var(--text-heading)',
           }}>
             {it.icon}{it.label}
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -282,9 +305,10 @@ export interface ModalProps {
   onClose: () => void;
 }
 export function Modal({ children, onClose }: ModalProps) {
+  useEscapeToClose(onClose);
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(11,23,32,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 30 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', fontFamily: 'var(--font-body)' }}>
+    <div onClick={onClose} role="presentation" style={{ position: 'absolute', inset: 0, background: 'rgba(11,23,32,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 30 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ background: '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', fontFamily: 'var(--font-body)' }}>
         {children}
       </div>
     </div>

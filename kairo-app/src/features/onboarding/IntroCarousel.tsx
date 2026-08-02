@@ -26,12 +26,18 @@ export function IntroCarousel({ onDone }: IntroCarouselProps) {
   const [i, setI] = useState(0);
   const s = slides[i];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px 24px 28px', fontFamily: 'var(--font-body)' }}>
-      <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', minHeight: 18 }} onClick={onDone}>{!s.final && 'Skip'}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', padding: '20px 24px 28px', fontFamily: 'var(--font-body)' }}>
+      <div style={{ textAlign: 'right', minHeight: 18 }}>
+        {!s.final && (
+          <button type="button" onClick={onDone} style={{
+            fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+          }}>Skip</button>
+        )}
+      </div>
       <div style={{ marginTop: 20 }}>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 28, color: 'var(--text-heading)', lineHeight: 1.15 }}>{s.title}</div>
         <div style={{ width: 40, height: 3, background: 'var(--kairo-gold-500)', margin: '10px 0 14px' }} />
-        <div style={{ fontSize: 15, color: 'var(--text-muted)', lineHeight: 1.55 }}>{s.body}</div>
+        <div style={{ fontSize: 16, color: 'var(--text-muted)', lineHeight: 1.55 }}>{s.body}</div>
       </div>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
         {s.img && <img src={s.img} style={{ maxHeight: 260, borderRadius: 16 }} />}

@@ -14,9 +14,9 @@ export interface BottomNavProps {
 
 export function BottomNav({ items, active, onChange }: BottomNavProps) {
   return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-around', alignItems: 'center', background: '#fff',
-      borderTop: '1px solid var(--color-border-subtle)', padding: '10px 4px', fontFamily: 'var(--font-body)',
+    <div className="app-bottomnav" style={{
+      display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+      borderTop: '1px solid var(--color-border-subtle)', padding: '10px 4px 10px', fontFamily: 'var(--font-body)',
     }}>
       {items.map((item) => {
         const isActive = item.key === active;

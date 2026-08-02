@@ -19,12 +19,20 @@ interface RowProps {
 
 function Row({ s, active, favourite, onClick, onToggleFav }: RowProps) {
   return (
-    <div onClick={onClick} style={{
-      padding: '14px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    <div style={{
+      padding: '2px 4px 2px 16px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-blue-100)' : '#fff', marginBottom: 8,
     }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-heading)' }}>{s.label}</div>
-      <svg onClick={onToggleFav} width="18" height="18" viewBox="0 0 24 24" fill={favourite ? 'var(--kairo-gold-500)' : 'none'} stroke={favourite ? 'var(--kairo-gold-600)' : 'var(--kairo-ink-300)'} strokeWidth="2"><path d="M12 17.3l-6.2 3.6 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7z" /></svg>
+      <button type="button" onClick={onClick} aria-pressed={active} style={{
+        flex: 1, textAlign: 'left', fontSize: 15, fontWeight: 600, color: 'var(--text-heading)', background: 'none', border: 'none',
+        padding: '12px 0', minHeight: 'var(--touch-min)', fontFamily: 'inherit', cursor: 'pointer',
+      }}>{s.label}</button>
+      <button type="button" onClick={onToggleFav} aria-label={favourite ? `Remove ${s.label} from favourites` : `Add ${s.label} to favourites`} aria-pressed={favourite} style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'var(--touch-min)', height: 'var(--touch-min)',
+        background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
+      }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill={favourite ? 'var(--kairo-gold-500)' : 'none'} stroke={favourite ? 'var(--kairo-gold-600)' : 'var(--kairo-ink-300)'} strokeWidth="2"><path d="M12 17.3l-6.2 3.6 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7z" /></svg>
+      </button>
     </div>
   );
 }
@@ -43,7 +51,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys }: SubjectSelectProps
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="Practice" />
-      <div style={{ padding: '10px 20px 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '10px 20px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 16 }}>Choose a subject to practise.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--color-border-subtle)', marginBottom: 20 }}>
           <span style={{ color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>

@@ -60,8 +60,8 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
             {types.map((t) => {
               const active = type === t.key;
               return (
-                <div key={t.key} onClick={() => !t.locked && setType(t.key)} style={{
-                  padding: '14px 16px', borderRadius: 'var(--radius-md)', display: 'flex', gap: 12, alignItems: 'flex-start',
+                <button type="button" key={t.key} disabled={t.locked} aria-pressed={active} onClick={() => setType(t.key)} style={{
+                  padding: '14px 16px', borderRadius: 'var(--radius-md)', display: 'flex', gap: 12, alignItems: 'flex-start', width: '100%', textAlign: 'left', fontFamily: 'inherit',
                   cursor: t.locked ? 'default' : 'pointer', opacity: t.locked ? 0.55 : 1,
                   border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-blue-100)' : '#fff',
                 }}>
@@ -76,7 +76,7 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
                     <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-heading)' }}>{t.label}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }}>{t.desc}</div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -89,11 +89,11 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
             {difficulties.map((d) => {
               const active = difficulty === d.key;
               return (
-                <div key={d.key} onClick={() => setDifficulty(d.key)} style={{
-                  padding: '10px 14px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                <button type="button" key={d.key} aria-pressed={active} onClick={() => setDifficulty(d.key)} style={{
+                  padding: '10px 14px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
                   border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`,
                   background: active ? 'var(--kairo-navy-900)' : '#fff', color: active ? '#fff' : 'var(--text-body)',
-                }}>{d.label}</div>
+                }}>{d.label}</button>
               );
             })}
           </div>
@@ -105,16 +105,16 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
             {lengths.map((n) => {
               const active = !customOpen && length === n;
               return (
-                <div key={n} onClick={() => { setCustomOpen(false); setLength(n); }} style={{
-                  flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14,
+                <button type="button" key={n} aria-pressed={active} onClick={() => { setCustomOpen(false); setLength(n); }} style={{
+                  flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
                   border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-navy-900)' : '#fff', color: active ? '#fff' : 'var(--text-body)',
-                }}>{n}</div>
+                }}>{n}</button>
               );
             })}
-            <div onClick={() => setCustomOpen(true)} style={{
-              flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14,
+            <button type="button" aria-pressed={customOpen} onClick={() => setCustomOpen(true)} style={{
+              flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
               border: `1.5px solid ${customOpen ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: customOpen ? 'var(--kairo-navy-900)' : '#fff', color: customOpen ? '#fff' : 'var(--text-body)',
-            }}>Custom</div>
+            }}>Custom</button>
           </div>
           {customOpen && (
             <input

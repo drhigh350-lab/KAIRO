@@ -57,7 +57,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 8px' }}>
+      <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 8px' }}>
         <IconButton onClick={() => setShowExitConfirm(true)}><CloseIcon /></IconButton>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Question {index + 1} of {total}</div>
         {challenge.timeLimitSec ? (
@@ -82,7 +82,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
 
       <div style={{ padding: '0 20px' }}><ProgressBar value={index + 1} max={total} /></div>
 
-      <div style={{ padding: '22px 20px', flex: 1, overflowY: 'auto' }}>
+      <div style={{ padding: '22px 20px', flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{challenge.theme}</div>
         <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
 
@@ -98,7 +98,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
             return (
               <button key={i} disabled={submitted} onClick={() => setSelected(i)} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `1.5px solid ${border}`,
-                background: bg, color: 'var(--text-body)', fontSize: 15, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
+                background: bg, color: 'var(--text-body)', fontSize: 16, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
                 display: 'flex', gap: 10, alignItems: 'center',
               }}>
                 <span style={{
@@ -120,7 +120,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
         )}
       </div>
 
-      <div style={{ padding: '16px 20px 24px' }}>
+      <div className="app-footer-bar" style={{ padding: '16px 20px 24px' }}>
         {!submitted ? (
           <Button variant="primary" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit</Button>
         ) : (

@@ -35,7 +35,7 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
   const canContinue = !!data.examYear;
 
   return (
-    <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, overflowY: 'auto' }}>
+    <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1 }}>
       <FlowHeader onBack={onBack} step={step} total={total} />
       <div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--text-heading)' }}>Tell us about yourself</div>
@@ -48,10 +48,10 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
           {examYears.map((y) => {
             const active = data.examYear === y;
             return (
-              <div key={y} onClick={() => setData({ ...data, examYear: y })} style={{
-                flex: 1, textAlign: 'center', padding: '10px 6px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              <button type="button" key={y} aria-pressed={active} onClick={() => setData({ ...data, examYear: y })} style={{
+                flex: 1, textAlign: 'center', padding: '10px 6px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
                 border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-navy-900)' : '#fff', color: active ? '#fff' : 'var(--text-body)',
-              }}>{y}</div>
+              }}>{y}</button>
             );
           })}
         </div>
@@ -64,7 +64,10 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
         {showList && (
           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: '#fff', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-card)', maxHeight: 220, overflowY: 'auto', zIndex: 5 }}>
             {filtered.map((c) => (
-              <div key={c.name} onClick={() => pickCourse(c)} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--text-body)', cursor: 'pointer', borderBottom: '1px solid var(--color-border-subtle)' }}>{c.name}</div>
+              <button type="button" key={c.name} onClick={() => pickCourse(c)} style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '12px 16px', fontSize: 14, color: 'var(--text-body)', cursor: 'pointer',
+                borderLeft: 'none', borderRight: 'none', borderTop: 'none', borderBottom: '1px solid var(--color-border-subtle)', background: 'none', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+              }}>{c.name}</button>
             ))}
             {filtered.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>No matching course.</div>}
           </div>
@@ -81,10 +84,13 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
         {data.subjects.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             {data.subjects.map((s) => (
-              <span key={s} onClick={() => toggleSubject(s)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--kairo-blue-700)', background: 'var(--kairo-blue-100)', padding: '7px 10px 7px 12px', borderRadius: 'var(--radius-pill)', cursor: 'pointer' }}>
+              <button type="button" key={s} onClick={() => toggleSubject(s)} aria-label={`Remove ${s}`} style={{
+                display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--kairo-blue-700)', background: 'var(--kairo-blue-100)',
+                padding: '7px 10px 7px 12px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', border: 'none', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+              }}>
                 {s}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--kairo-blue-700)" strokeWidth="2.5"><path d="M6 6l12 12M18 6L6 18" /></svg>
-              </span>
+              </button>
             ))}
           </div>
         )}
@@ -93,9 +99,12 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
         {subjectQuery && (
           <div style={{ marginTop: 6, background: '#fff', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-card)', maxHeight: 180, overflowY: 'auto' }}>
             {subjectMatches.map((s) => (
-              <div key={s} onClick={() => addSubject(s)} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--text-body)', cursor: 'pointer', borderBottom: '1px solid var(--color-border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
+              <button type="button" key={s} onClick={() => addSubject(s)} style={{
+                width: '100%', padding: '12px 16px', fontSize: 14, color: 'var(--text-body)', cursor: 'pointer', minHeight: 'var(--touch-min)',
+                borderLeft: 'none', borderRight: 'none', borderTop: 'none', borderBottom: '1px solid var(--color-border-subtle)', display: 'flex', justifyContent: 'space-between', background: 'none', fontFamily: 'inherit',
+              }}>
                 {s} <span style={{ color: 'var(--kairo-blue-700)', fontWeight: 600 }}>+ Add</span>
-              </div>
+              </button>
             ))}
             {subjectMatches.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>No matching subject.</div>}
           </div>

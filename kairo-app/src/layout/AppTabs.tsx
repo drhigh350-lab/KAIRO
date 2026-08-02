@@ -26,8 +26,8 @@ export function AppTabs() {
   const items: BottomNavItem[] = TABS.map((t) => ({ key: t.key, label: t.label, icon: icon(t.d) }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
         <Outlet />
       </div>
       <BottomNav

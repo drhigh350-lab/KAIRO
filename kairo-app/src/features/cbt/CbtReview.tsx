@@ -13,7 +13,7 @@ export function CbtReview({ answers, questions, onBack }: CbtReviewProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="Incorrect Questions" />
-      <div style={{ padding: '10px 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
         {incorrect.length === 0 && <div style={{ fontSize: 14, color: 'var(--text-muted)', textAlign: 'center', marginTop: 40 }}>No incorrect answers — well done.</div>}
         {incorrect.map((q) => (
           <Card key={q.i}>
