@@ -43,7 +43,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys }: SubjectSelectProps
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="Practice" />
-      <div style={{ padding: '10px 20px 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '10px 20px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 16 }}>Choose a subject to practise.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--color-border-subtle)', marginBottom: 20 }}>
           <span style={{ color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>

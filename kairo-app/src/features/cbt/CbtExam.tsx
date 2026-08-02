@@ -55,7 +55,7 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--color-bg-canvas)' }}>
       {warned && secondsLeft > 295 && <InlineToast tone="caution">5 minutes remaining — review flagged questions if you can.</InlineToast>}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 10px' }}>
+      <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px 10px' }}>
         <IconButton onClick={onExit}><CloseIcon /></IconButton>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--kairo-blue-700)', textTransform: 'uppercase', letterSpacing: '.03em' }}>{q.subject}</span>
@@ -67,7 +67,7 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
         </div>
       </div>
 
-      <div style={{ padding: '4px 18px 18px', flex: 1, overflowY: 'auto' }}>
+      <div style={{ padding: '4px 18px 18px', flex: 1 }}>
         <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600 }}>Question {current + 1} of {questions.length}</div>
         <div style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--text-body)', marginTop: 12, fontWeight: 500 }}>{q.stem}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
@@ -77,7 +77,7 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
               <button key={i} onClick={() => selectOption(i)} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)',
                 border: `1.5px solid ${isSelected ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: isSelected ? 'var(--kairo-blue-100)' : '#fff',
-                color: 'var(--text-body)', fontSize: 15, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', gap: 10, alignItems: 'center',
+                color: 'var(--text-body)', fontSize: 16, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', gap: 10, alignItems: 'center',
               }}>
                 <span style={{ width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isSelected ? 'var(--kairo-navy-900)' : 'var(--kairo-ink-300)'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, background: isSelected ? 'var(--kairo-navy-900)' : 'transparent', color: isSelected ? '#fff' : 'var(--text-muted)' }}>{String.fromCharCode(65 + i)}</span>
                 {opt}
@@ -87,7 +87,7 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
         </div>
       </div>
 
-      <div style={{ padding: '10px 18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="app-footer-bar" style={{ padding: '10px 18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div onClick={toggleFlag} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: flagged[current] ? 'var(--kairo-gold-600)' : 'var(--text-muted)', cursor: 'pointer' }}>
           <FlagIcon filled={!!flagged[current]} /> {flagged[current] ? 'Flagged for review' : 'Flag this question'}
         </div>

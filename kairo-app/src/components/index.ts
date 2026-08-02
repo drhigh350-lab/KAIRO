@@ -19,6 +19,5 @@ export * from './kairo/QuestionCard';
 export * from './kairo/SessionSummaryCard';
 
 export * from './navigation/BottomNav';
-export * from './navigation/TopBar';
 
 export * from './brand/Logo';

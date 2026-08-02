@@ -33,7 +33,7 @@ export function CbtSummary({ answers, questions, onHome, onReview }: CbtSummaryP
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>Here's how your simulation went.</div>
       </div>
 
-      <div style={{ padding: '0 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card>
           <div style={{ display: 'flex' }}>
             <StatTile label="Answered" value={`${Object.keys(answers).length}/${total}`} />

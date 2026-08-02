@@ -1,0 +1,50 @@
+/* Real, full-viewport app shell — no device chrome, no fake status bar.
+   Mobile: fills the browser viewport it's actually running in.
+   Desktop: a responsive expansion only — capped to a comfortable reading
+   width (per Question Experience §8.2), never a centered phone mockup. */
+
+.app-shell {
+  width: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-canvas);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+@media (min-width: 640px) {
+  .app-shell {
+    max-width: var(--container-max);
+    margin: 0 auto;
+    border-left: 1px solid var(--color-border-subtle);
+    border-right: 1px solid var(--color-border-subtle);
+  }
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--color-bg-canvas);
+  padding-top: calc(14px + var(--safe-top));
+}
+
+.app-bottomnav {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: var(--kairo-white);
+  padding-bottom: var(--safe-bottom);
+}
+
+/* A sticky in-screen footer action bar (question submit rows, exam nav
+   controls) — keeps the primary action reachable without scrolling past a
+   long question stem, without re-introducing a nested scroll container. */
+.app-footer-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
+  background: var(--color-bg-canvas);
+  padding-bottom: var(--safe-bottom);
+}

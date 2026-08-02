@@ -41,7 +41,7 @@ export function PracticeSummary({ results, onHome, onAction }: PracticeSummaryPr
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>{total} questions · {formatTime(totalTime)}</div>
       </div>
 
-      <div style={{ padding: '0 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card>
           <div style={{ display: 'flex' }}>
             <StatTile label="Answered" value={total} />

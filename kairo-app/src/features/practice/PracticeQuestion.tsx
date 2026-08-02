@@ -57,14 +57,17 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative' }}>
       {toastMsg && <InlineToast>{toastMsg}</InlineToast>}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 8px' }}>
-        <IconButton onClick={onExit}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Question {index + 1} of {total}</div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <IconButton active={bookmarked} onClick={() => setBookmarked(!bookmarked)}><BookmarkIcon filled={bookmarked} /></IconButton>
-          <IconButton onClick={() => setShowCalc(true)}><CalcIcon /></IconButton>
-          <IconButton onClick={() => setShowOverflow(true)}><OverflowIcon /></IconButton>
+      <div className="app-topbar" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 20px 10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <IconButton onClick={onExit}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Question {index + 1} of {total}</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <IconButton active={bookmarked} onClick={() => setBookmarked(!bookmarked)}><BookmarkIcon filled={bookmarked} /></IconButton>
+            <IconButton onClick={() => setShowCalc(true)}><CalcIcon /></IconButton>
+            <IconButton onClick={() => setShowOverflow(true)}><OverflowIcon /></IconButton>
+          </div>
         </div>
+        <ProgressBar value={index + 1} max={total} />
       </div>
       {showOverflow && <OverflowMenu items={overflowItems} onClose={() => setShowOverflow(false)} />}
       {showCalc && (
@@ -73,9 +76,8 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
           <MiniCalculator />
         </Modal>
       )}
-      <div style={{ padding: '0 20px' }}><ProgressBar value={index + 1} max={total} /></div>
 
-      <div style={{ padding: '22px 20px', flex: 1, overflowY: 'auto' }}>
+      <div style={{ padding: '22px 20px', flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{question.subject} · {question.topic}</div>
         <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
 
@@ -91,7 +93,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
             return (
               <button key={i} disabled={submitted} onClick={() => setSelected(i)} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `1.5px solid ${border}`,
-                background: bg, color: 'var(--text-body)', fontSize: 15, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
+                background: bg, color: 'var(--text-body)', fontSize: 16, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
                 display: 'flex', gap: 10, alignItems: 'center', transition: 'background var(--dur-base), border-color var(--dur-base)',
               }}>
                 <span style={{
@@ -119,7 +121,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
         )}
       </div>
 
-      <div style={{ padding: '16px 20px 24px' }}>
+      <div className="app-footer-bar" style={{ padding: '16px 20px 24px' }}>
         {!submitted ? (
           <Button variant="primary" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit Answer</Button>
         ) : (

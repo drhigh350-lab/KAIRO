@@ -3,16 +3,25 @@
 @import './spacing.css';
 @import './shadows.css';
 @import './base.css';
+@import './layout.css';
 
-html, body, #root {
+html {
   height: 100%;
 }
 
 body {
-  background: var(--kairo-blue-100);
+  min-height: 100%;
+  background: var(--color-bg-canvas);
+}
+
+@media (min-width: 640px) {
+  body {
+    background: var(--color-bg-sunken);
+  }
 }
 
 #root {
   display: flex;
   flex-direction: column;
+  min-height: 100dvh;
 }

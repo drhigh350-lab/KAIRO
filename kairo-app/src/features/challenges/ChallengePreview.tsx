@@ -20,7 +20,7 @@ export function ChallengePreview({ challenge, onBack, onJoin, onViewResult, onGo
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="Challenge Preview" />
 
-      <div style={{ padding: '4px 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ padding: '4px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--kairo-blue-700)' }}>{challenge.theme}</div>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--text-heading)', marginTop: 6 }}>{challenge.title}</div>

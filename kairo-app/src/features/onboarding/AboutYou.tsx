@@ -35,7 +35,7 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
   const canContinue = !!data.examYear;
 
   return (
-    <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, overflowY: 'auto' }}>
+    <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1 }}>
       <FlowHeader onBack={onBack} step={step} total={total} />
       <div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--text-heading)' }}>Tell us about yourself</div>

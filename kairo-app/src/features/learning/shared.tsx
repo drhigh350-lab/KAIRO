@@ -38,7 +38,7 @@ export interface ScreenHeaderProps {
 }
 export function ScreenHeader({ onBack, title, right }: ScreenHeaderProps) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 6px', fontFamily: 'var(--font-body)' }}>
+    <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 6px', fontFamily: 'var(--font-body)' }}>
       <div onClick={onBack} style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: onBack ? 'pointer' : 'default', color: 'var(--text-heading)' }}>
         {onBack && <BackIcon />}
       </div>

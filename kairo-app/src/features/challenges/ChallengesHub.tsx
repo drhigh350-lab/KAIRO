@@ -45,7 +45,7 @@ export function ChallengesHub({ onBack, onSelect }: ChallengesHubProps) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
       <ScreenHeader onBack={onBack} title="Challenges" right={<StreakBadge days={5} />} />
 
-      <div style={{ padding: '0 20px 24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 22 }}>
         <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
           {liveChallenge
             ? `${liveChallenge.title} is live right now — ${liveChallenge.participantCount.toLocaleString()} students already joined.`
