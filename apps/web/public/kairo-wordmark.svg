@@ -1,0 +1,21 @@
+<svg viewBox="0 0 220 56" role="img" aria-label="Kairo" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Static fallback wordmark for non-React contexts (email, og:image,
+    etc). The live SplashScreen component renders this text inline in
+    the DOM instead of via this file, so it can inherit the page's
+    loaded Poppins font — see SplashWordmark.tsx for why. This file
+    falls back to a generic bold sans stack since a standalone SVG
+    asset can't reliably pull a Google Font when referenced externally.
+  -->
+  <text
+    x="50%"
+    y="50%"
+    dominant-baseline="central"
+    text-anchor="middle"
+    font-family="'Poppins', 'Segoe UI', Arial, sans-serif"
+    font-size="44"
+    font-weight="700"
+    fill="#ffffff"
+    letter-spacing="0.5"
+  >Kairo</text>
+</svg>

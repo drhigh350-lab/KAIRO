@@ -4,6 +4,9 @@
   "description": "Kairo — The AI-powered learning engine behind TECHMED. Built for retention, not recognition.",
   "type": "module",
   "main": "src/index.js",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "test": "node tests/engine.test.js",
     "dev": "node --watch src/index.js"
