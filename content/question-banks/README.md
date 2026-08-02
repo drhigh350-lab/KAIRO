@@ -44,6 +44,19 @@ Each subject folder holds:
   how Biology was handled) — flag any suspected error back through the
   normal review path rather than treating this as QA-passed content.
 
+## physics/ — UTME Physics Question Bank (200 questions)
+
+- Source: `UTME_Physics_200_Questions.csv`, columns `Subject, Topic,
+  Question, Option A-D, Correct Answer, Explanation` — no separate
+  question-number column and no separate "why other options are wrong"
+  column (the single `Explanation` field folds both together here).
+- Structural import: 200/200 rows converted, 0 skipped (same checks as
+  Biology/Chemistry). Single subject (Physics), 28 topics.
+- `distractorRationale` is `null` for every question in this bank (no
+  source column to populate it from) — same `lifecycleState: 'imported'`
+  caveat as the other two banks applies.
+- Content accuracy has not been independently re-verified here.
+
 ## Regenerating the JSON from CSV
 
 ```
@@ -56,6 +69,11 @@ node scripts/import-question-bank.js \
   content/question-banks/chemistry/TechMed_JAMB_Chemistry_Questions.csv \
   content/question-banks/chemistry/chemistry_jamb_200.json \
   --examBody JAMB --source "TechMed JAMB Question Bank"
+
+node scripts/import-question-bank.js \
+  content/question-banks/physics/UTME_Physics_200_Questions.csv \
+  content/question-banks/physics/physics_utme_200.json \
+  --examBody JAMB --source "UTME Physics Question Bank"
 ```
 
 The importer accepts either column convention: `Question Number` or
