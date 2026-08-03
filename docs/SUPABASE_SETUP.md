@@ -321,18 +321,34 @@ migration `add_kairo_anti_cheat_validation` + follow-up
   reads empty. Verified end-to-end with a test transaction exercising all
   6 paths (2 valid inserts, 4 forged/implausible ones correctly rejected).
 
+## 5c. Fifth pass — repeatable content-catalog seeding script
+
+`scripts/seed-content-catalog.js` closes the "no admin/service-role
+tooling" gap: given one or more QIM-shaped question-bank JSON files (the
+output of `scripts/import-question-bank.js`), it derives concepts,
+links `conceptsTested`, and upserts both tables using the service role
+key — the same steps done by hand this session, now repeatable. Dry-run
+by default (prints what it would do; nothing is written until `--apply`,
+since the service role key bypasses every RLS policy in the project, not
+just `kairo`). `--promote-live` runs each question through the real
+`QuestionLifecycle.validate()` (imported from `src/qim/`, never
+reimplemented) and only sets `lifecycle_state: 'live'` on rows that
+actually pass every QA gate — content that fails is left alone and
+reported, never force-promoted. Verified against the real 800-question/
+201-concept local content: dry run reports the identical 201 concepts
+and 800/800 passing QA gates that are actually live today.
+
+Building this surfaced a real drift bug: the `learningObjective`
+backfill and `live` promotion from §5 (Third pass) were applied directly
+to the live table via SQL, but never written back to the local
+`content/question-banks/*.json` files — so the repo's own copy of the
+content still had `learningObjective: null` and `lifecycleState:
+'imported'`, silently out of sync with what's actually live. Fixed by
+applying the identical backfill to the local files; `git diff` against
+this pass is now just that sync fix, nothing else changed.
+
 ## 6. What is still NOT done
 
-- **`kairo.questions` (800 rows, all `lifecycle_state: 'live'`) and
-  `kairo.concepts` (201 rows) are seeded and linked** (see §5, Third
-  pass) and reachable from the engine via `loadContentCatalog()` /
-  `getQuestionForConcept()`. Biology, Chemistry, Physics, and Use of
-  English only — no other subject has any seeded content yet.
-- **No admin/service-role tooling** for writing to `kairo.questions`
-  / `kairo.concepts` (both are read-only to authenticated clients by
-  design — see the RLS policies). The current 800/201 rows were seeded
-  by hand (direct SQL + a Supabase Studio CSV import); there's still no
-  repeatable script for adding more content later.
 - **The onboarding subject picker offers 8 subjects
   (`OnboardingEngine.getNextStep()`'s `'subjects'` step: English,
   Mathematics, Physics, Chemistry, Biology, Government, Economics,
@@ -375,14 +391,48 @@ migration `add_kairo_anti_cheat_validation` + follow-up
   that closed the sync gaps, not something to build without a product
   conversation first given the scope (admin roles, leaderboards,
   sharing infra).
-- **Two parallel notification systems exist**: the legacy
-  `src/notifications/NotificationEngine.js` (in-memory candidate
-  generation, now correctly persisting to
-  `kairo.students.notification_history`) and the spec-accurate
-  `src/sjee/NotificationOrchestrator.js` + `src/comms/*` pipeline
-  built later per the SJEE and Notifications & Communication Systems
-  specs. They were never reconciled — worth a deliberate decision on
-  consolidating rather than leaving both live.
+- **The notification stack is not "two parallel systems" — it's three
+  non-interoperating layers, and the deeper two don't fit each other.**
+  Investigated properly this pass rather than just re-flagging the
+  existing note:
+  1. `src/notifications/NotificationEngine.js` — legacy, live, generates
+     6 candidate types (daily recap, streak, exam proximity, challenge
+     complete, weekly reflection, recovery) and delivers them itself
+     directly into its own queue/history. This is the only one of the
+     three actually wired into the running engine today.
+  2. `src/sjee/NotificationOrchestrator.js` — spec-accurate arbitration
+     (tone gate, journey-stage gate, frequency budget, channel
+     selection). Fully built and unit-tested in isolation, but
+     `new NotificationOrchestrator(this.profile)` in `index.js` is its
+     only reference anywhere — `.submit()`/`.arbitrate()` are never
+     called by anything live. Same for `ReEngagementEngine`,
+     `CrossModuleMilestones`, and `ContinuationEngine`, which are all
+     candidate *sources* meant to feed it (confirmed by grepping for
+     every call site of each — none exist outside their own tests).
+  3. `src/comms/CommsService.js` + `TemplateEngine.js` — also fully
+     built and unit-tested, also never called from anywhere live.
+  
+  **The blocker to wiring 2 into 3 isn't missing glue code — the two
+  layers expect genuinely different candidate shapes.** `arbitrate()`
+  returns candidates from `NotificationOrchestrator`/`ReEngagementEngine`/
+  `ContinuationEngine` as pre-composed `{ type, tier, title, body,
+  action }` — a finished sentence. `TemplateEngine.render()` expects
+  `{ category, data: { observation, reason, benefit, action } }` — raw
+  fact *slots* that IT composes into text (§5.2's "Layer 1 data payload
+  ... Layer 2 template ... Layer 3 rendering", with its own voice
+  calibration and compliance auto-correction). Passing an
+  Orchestrator-shaped candidate into `CommsService.resolve()` today
+  would silently return `null` on every single call, since `data` is
+  undefined and `_buildSlots()` requires `data.observation`.
+  
+  Reconciling this means either rewriting every candidate-generating
+  module's already-composed prose (`_composeInvitation()` and
+  equivalents) into structured observation/reason/benefit fact payloads
+  — genuinely touching what Kai says to students — or building a
+  translation layer that can't mechanically reconstruct facts from
+  already-composed sentences. Both are product-facing copy decisions,
+  not a wiring task, so this is flagged with the real shape of the
+  problem rather than fixed blind.
 - **`kairo.students` RLS/security posture is clean** — every advisory
   finding on this project is on the legacy `public.*` RoboMed tables
   and functions, unrelated to the `kairo` schema.
