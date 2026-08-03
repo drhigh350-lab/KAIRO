@@ -54,6 +54,37 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
   return kairo;
 }
 
+/**
+ * Restores a signed-in session on app boot (e.g. after a page reload), so a
+ * returning student isn't dropped back to onboarding just because there's no
+ * in-memory engine yet. Returns false (not an error) whenever there's simply
+ * nothing to restore — no configured Supabase env vars, no existing session,
+ * or the session no longer being valid.
+ */
+export async function restoreSession(): Promise<boolean> {
+  let supabase;
+  try {
+    supabase = getSupabase();
+  } catch {
+    return false;
+  }
+
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) return false;
+
+  const kairo = createEngine('');
+  await kairo.init();
+  try {
+    // No email/password — connectSupabase() reuses the session getSession() already restored.
+    await kairo.connectSupabase(supabase, {});
+    await kairo.sync.sync();
+    return true;
+  } catch {
+    engine = null;
+    return false;
+  }
+}
+
 // Only these four subjects have a seeded live question bank today (verified
 // directly against kairo.questions) — a student can pick from 14 subjects at
 // onboarding, but most have zero content yet. This is a content gap, not

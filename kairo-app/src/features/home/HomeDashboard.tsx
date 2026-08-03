@@ -3,6 +3,7 @@ import { MissionCard, Card } from '../../components';
 import { KaiMark } from '../onboarding/shared';
 import type { Course } from '../onboarding/data';
 import { liveChallenge } from '../challenges/data';
+import { getEngine } from '../../lib/kairoEngine';
 
 interface HomeDashboardState {
   name?: string;
@@ -14,7 +15,16 @@ interface HomeDashboardState {
 export function HomeDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
-  const data = (location.state as HomeDashboardState) ?? { name: 'there', subjects: [] };
+  const routerState = location.state as HomeDashboardState | null;
+  // A page reload restores the signed-in engine (see Splash.tsx) but loses
+  // router state, so fall back to the real profile rather than "there".
+  const profile = getEngine()?.profile;
+  const data: HomeDashboardState = {
+    name: routerState?.name || profile?.name || 'there',
+    course: routerState?.course ?? (profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : null),
+    examYear: routerState?.examYear ?? null,
+    subjects: routerState?.subjects?.length ? routerState.subjects : (profile?.targetSubjects ?? []),
+  };
   const firstName = (data.name || '').split(' ')[0] || 'there';
   const subjects = data.subjects ?? [];
 

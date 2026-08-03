@@ -1,13 +1,21 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KairoMark, KairoWordmark } from '../../components';
+import { restoreSession } from '../../lib/kairoEngine';
 
 export function Splash() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timer = setTimeout(() => navigate('/onboarding', { replace: true }), 1400);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    const minDelay = new Promise((resolve) => setTimeout(resolve, 1400));
+    Promise.all([minDelay, restoreSession().catch(() => false)]).then(([, restored]) => {
+      if (cancelled) return;
+      navigate(restored ? '/home' : '/onboarding', { replace: true });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   return (
