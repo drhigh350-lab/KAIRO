@@ -986,12 +986,18 @@ await test('fullSync pushes queued sessions through pushSession (kairo.sessions)
     conceptNodes: [],
     pendingAttempts: [],
     pendingSessions: [{ id: 'sess1', mode: 'standard', plan: [], questionsAnswered: 5, correctCount: 4, eliteScore: { total: 80 }, startedAt: Date.now(), completedAt: Date.now() }],
+    pendingCbtResults: [{ id: 'cbt_1', subjects: ['Biology'], questionResults: [{ questionId: 'q1', correct: true }], bySubject: [], totalQuestions: 1, score: 1, maxScore: 1, percentage: 100, startedAt: Date.now(), completedAt: Date.now() }],
     since: null
   });
 
   const sessionPush = calls.find(c => c.table === 'sessions' && c.op === 'upsert');
   assert(sessionPush, 'fullSync should push queued sessions through pushSession (kairo.sessions upsert) — this was previously dead code, never invoked');
   assertEqual(sessionPush.rows.id, 'sess1', 'Pushed session row should carry the session id');
+
+  const cbtResultPush = calls.find(c => c.table === 'cbt_results' && c.op === 'insert');
+  assert(cbtResultPush, 'fullSync should push queued CBT results through pushCbtResult (kairo.cbt_results insert)');
+  assertEqual(cbtResultPush.rows.id, 'cbt_1', 'Pushed cbt_result row should carry the result id');
+  assertEqual(cbtResultPush.rows.question_results.length, 1, 'Pushed cbt_result row should carry the full per-question detail');
 });
 
 await test('Notifications: pull and mark-read only, matching the real RLS shape (no INSERT policy exists)', async () => {
@@ -1093,6 +1099,12 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
 
   const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'cbt_exam');
   assert(sessionPush, 'CBT finish() should queue a kairo.sessions row tagged mode: cbt_exam — previously nothing did, and the crash meant it never got this far anyway');
+
+  const cbtResultPush = queued.find(q => q.type === 'cbt_result');
+  assert(cbtResultPush, 'CBT finish() should also queue the full per-question detail as a cbt_result — kairo.sessions only ever carried the summary, so a completed mock\'s question-level results were lost once the local session ended');
+  assertEqual(cbtResultPush.data.id, sessionPush.data.id, 'the cbt_result should share its id with the paired kairo.sessions row so they can be joined');
+  assert(Array.isArray(cbtResultPush.data.questionResults) && cbtResultPush.data.questionResults.length === 40, 'the cbt_result should carry a per-question entry for the full paper (Biology defaults to 40 questions), not just a summary');
+  assertEqual(cbtResultPush.data.questionResults[0].isCorrect, true, 'the answered question\'s real correctness detail should be present');
 });
 
 await test('Custom Practice and Topic Practice sessions are tagged with their real mode, not silently recorded as standard', async () => {
@@ -1482,6 +1494,46 @@ await test('NotificationPipeline: the post-exam immediate window suppresses all 
 
   const deliverable = postExamEngine.checkAndResolveNotifications();
   assert(deliverable.every(d => d.candidate.type === 'post_exam_acknowledgment'), 'inside the immediate post-exam window, only the acknowledgment should ever surface — the fading-concept daily_recap candidate must not leak through even though its own condition is met');
+});
+
+test('Supabase adapter: kairo.cbt_results row maps correctly', () => {
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+  const row = {
+    id: 'cbt_123', subjects: ['Biology', 'Chemistry'],
+    question_results: [{ questionId: 'q1', correct: true }],
+    by_subject: [{ subject: 'Biology', correct: 1, total: 1 }],
+    time_analysis: { totalTimeMin: 30 },
+    total_questions: 1, score: 1, max_score: 1, percentage: 100,
+    started_at: '2026-08-01T00:00:00Z', completed_at: '2026-08-01T00:30:00Z'
+  };
+  const mapped = adapter._rowToCbtResult(row);
+  assertEqual(mapped.subjects.length, 2, 'subjects should round-trip');
+  assertEqual(mapped.questionResults[0].questionId, 'q1', 'question_results should map to questionResults');
+  assertEqual(mapped.bySubject[0].subject, 'Biology', 'by_subject should map to bySubject');
+  assertEqual(mapped.percentage, 100, 'percentage should round-trip');
+});
+
+await test('CBTExamMode: getResult()/getResultHistory() require connectSupabase() first, and pass through to the adapter once connected', async () => {
+  const cbtHistoryEngine = new KairoEngine({ studentId: 'cbt_hist_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await cbtHistoryEngine.init();
+
+  let threw = false;
+  try {
+    await cbtHistoryEngine.cbt.getResultHistory();
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'getResultHistory() should throw a clear error without connectSupabase()');
+
+  cbtHistoryEngine.sync.adapter = {
+    fetchCbtResultHistory: async (studentId, limit) => [{ id: 'cbt_1', percentage: 80 }],
+    fetchCbtResult: async (id) => ({ id, percentage: 80 })
+  };
+  const history = await cbtHistoryEngine.cbt.getResultHistory();
+  assertEqual(history.length, 1, 'should return the real result history the adapter provides');
+
+  const single = await cbtHistoryEngine.cbt.getResult('cbt_1');
+  assertEqual(single.id, 'cbt_1', 'getResult() should return the specific result requested');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

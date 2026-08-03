@@ -277,6 +277,28 @@ export class CBTExamMode {
       }
     });
 
+    // kairo.sessions above only ever carried the summary — the full
+    // per-question detail (paper composition, per-subject breakdown,
+    // timing) a real Results review screen needs was lost once the
+    // local session ended. Queued under its own type since it's a
+    // distinct table (kairo.cbt_results), not a kairo.sessions field.
+    this.engine.sync.queue({
+      type: 'cbt_result',
+      data: {
+        id: `cbt_${this.examData.startTime}`,
+        subjects: this.config.subjects,
+        questionResults: results.questionResults,
+        bySubject: results.bySubject,
+        timeAnalysis: results.timeAnalysis,
+        totalQuestions: results.totalQuestions,
+        score: results.score,
+        maxScore: results.maxScore,
+        percentage: results.percentage,
+        startedAt: this.examData.startTime,
+        completedAt: this.examData.endTime
+      }
+    });
+
     return results;
   }
 
@@ -359,5 +381,25 @@ export class CBTExamMode {
     } else {
       return `No shame in this score — it tells me exactly where to begin. We'll rebuild systematically.`;
     }
+  }
+
+  /**
+   * §7.2-style result review: fetch a past mock's full per-question
+   * detail (paper composition, per-subject breakdown, timing) back from
+   * kairo.cbt_results — finish()'s summary alone (kairo.sessions) can't
+   * reconstruct this. Requires connectSupabase().
+   */
+  async getResult(resultId) {
+    if (!this.engine.sync.adapter) {
+      throw new Error('getResult() requires connectSupabase() first — CBT results are pushed via the Supabase adapter.');
+    }
+    return this.engine.sync.adapter.fetchCbtResult(resultId);
+  }
+
+  async getResultHistory(limit = 20) {
+    if (!this.engine.sync.adapter) {
+      throw new Error('getResultHistory() requires connectSupabase() first — CBT results are pushed via the Supabase adapter.');
+    }
+    return this.engine.sync.adapter.fetchCbtResultHistory(this.engine.profile.studentId, limit);
   }
 }

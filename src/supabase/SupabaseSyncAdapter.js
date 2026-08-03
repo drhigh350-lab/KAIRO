@@ -371,6 +371,68 @@ export class SupabaseSyncAdapter {
   }
 
   // ─────────────────────────────────────────────
+  // CBT Exam Mode full results (kairo.cbt_results) — the session summary
+  // above (questionsAnswered/correctCount/eliteScore) already reaches
+  // kairo.sessions; this carries the full per-question detail (paper
+  // composition, per-question correctness/timing, subject breakdown)
+  // that a real Results review screen (Challenges Module Spec-style
+  // §7.2 "review each question") needs and kairo.attempts alone can't
+  // reconstruct (attempts don't carry the exam's specific paper
+  // ordering or subject-level breakdown).
+  // ─────────────────────────────────────────────
+
+  async pushCbtResult(result, studentId) {
+    const { error } = await this._table('cbt_results').insert({
+      id: result.id,
+      student_id: studentId,
+      subjects: result.subjects || [],
+      question_results: result.questionResults || [],
+      by_subject: result.bySubject || [],
+      time_analysis: result.timeAnalysis || null,
+      total_questions: result.totalQuestions || 0,
+      score: result.score || 0,
+      max_score: result.maxScore || 0,
+      percentage: result.percentage || 0,
+      started_at: result.startedAt ? new Date(result.startedAt).toISOString() : null,
+      completed_at: result.completedAt ? new Date(result.completedAt).toISOString() : null
+    });
+    if (error) throw error;
+    return true;
+  }
+
+  _rowToCbtResult(row) {
+    return {
+      id: row.id,
+      subjects: row.subjects || [],
+      questionResults: row.question_results || [],
+      bySubject: row.by_subject || [],
+      timeAnalysis: row.time_analysis,
+      totalQuestions: row.total_questions,
+      score: row.score,
+      maxScore: row.max_score,
+      percentage: row.percentage,
+      startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
+      completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null
+    };
+  }
+
+  async fetchCbtResult(resultId) {
+    const { data, error } = await this._table('cbt_results').select('*').eq('id', resultId).maybeSingle();
+    if (error) throw error;
+    return data ? this._rowToCbtResult(data) : null;
+  }
+
+  async fetchCbtResultHistory(studentId, limit = 20) {
+    const { data, error } = await this._table('cbt_results')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('completed_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data || []).map(row => this._rowToCbtResult(row));
+  }
+
+  // ─────────────────────────────────────────────
   // Notifications (kairo.notifications) — read + mark-read only.
   // RLS on this table grants SELECT and UPDATE to the owning student but
   // deliberately no INSERT policy — rows are meant to be created
@@ -678,7 +740,7 @@ export class SupabaseSyncAdapter {
   // all attempts retained" conflict rule.
   // ─────────────────────────────────────────────
 
-  async fullSync({ authUserId, studentId, profile, conceptNodes, pendingAttempts, pendingSessions = [], since }) {
+  async fullSync({ authUserId, studentId, profile, conceptNodes, pendingAttempts, pendingSessions = [], pendingCbtResults = [], since }) {
     this.syncStatus.status = 'syncing';
     try {
       await this.pushProfile(profile, authUserId, studentId);
@@ -686,6 +748,9 @@ export class SupabaseSyncAdapter {
       await this.pushAttempts(pendingAttempts, studentId);
       for (const session of pendingSessions) {
         await this.pushSession(session, studentId);
+      }
+      for (const result of pendingCbtResults) {
+        await this.pushCbtResult(result, studentId);
       }
 
       const remoteProfile = await this.pullProfile(studentId);

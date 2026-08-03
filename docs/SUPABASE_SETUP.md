@@ -566,10 +566,19 @@ regardless of caller identity. Test fixtures cleaned up after.
   `concept_states`/`kairo.students`). This was the one part of the
   original "no Supabase table" list that turns out to be correctly
   ephemeral, not a gap.
-- **CBT Exam Mode's full paper/results detail (beyond the session
-  summary already in `kairo.sessions`) still has no Supabase table** —
-  a completed mock's full per-question results are lost once the local
-  session ends. Not addressed in this pass.
+- ~~CBT Exam Mode's full paper/results detail has no Supabase table~~ —
+  **closed.** New `kairo.cbt_results` table (migration
+  `add_cbt_results_table`) carries the full per-question detail
+  (question-level correctness/timing, subject breakdown, time analysis)
+  `finish()` already computed but only ever summarized into
+  `kairo.sessions`. `CBTExamMode.finish()` now queues a second item
+  (`type: 'cbt_result'`, sharing its id with the paired session row);
+  `SyncManager`/`SupabaseSyncAdapter.fullSync()` route it through a new
+  `pushCbtResult()`, same pattern as sessions/attempts. Added
+  `CBTExamMode.getResult(id)`/`getResultHistory(limit)` for the read
+  side (§7.2-style result review — "review each question, the correct
+  answer, and a brief explanation" needs the full detail, not the
+  summary). Append-only, same RLS/grant shape as `kairo.attempts`.
 - **`ChallengesModule.js`'s backend (§5e) is now real, admin-curated,
   event-based challenges** — but the module's UI-facing half is
   deliberately not built (see §5e for exactly what is/isn't done).
