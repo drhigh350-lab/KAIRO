@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'kairo-app/**'
+      - 'kairo-learning-engine/**'
       - '.github/workflows/deploy-kairo-app.yml'
   workflow_dispatch: {}
 
@@ -18,15 +19,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: kairo-app/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: kairo-app
         run: npm ci
 
       - name: Build
-        working-directory: kairo-app
-        run: npm run build
+        run: npm run build --workspace kairo-app
 
       - name: Deploy to Cloudflare Workers
         working-directory: kairo-app

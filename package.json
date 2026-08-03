@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "workspaces": [
+    "kairo-app",
+    "kairo-learning-engine"
+  ]
+}
