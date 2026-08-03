@@ -411,6 +411,36 @@ roles/permissions beyond the single `is_admin` flag (§10.5), and
 challenge-related push notifications (blocked on the same notification
 pipeline gap as §6 below).
 
+## 5f. Seventh pass — real OneSignal transport code (not yet wired to a working pipeline)
+
+A OneSignal app for TECHMED already exists in production (`Techmed app`,
+with live subscriber segments) — connected as an MCP tool for this
+session, which lets *me* inspect/manage it from chat but gives the
+deployed Kairo app nothing; the codebase needs its own
+`ONESIGNAL_APP_ID`/`ONESIGNAL_API_KEY` env vars (from the OneSignal
+dashboard) wherever it actually runs, never hardcoded or committed.
+
+`src/comms/transport/OneSignalTransport.js` is the literal "transport
+layer, outside this module, actually delivers it" `CommsService.js`'s
+own docstring already anticipated. It takes a `CommsService.resolve()`
+result and a student's OneSignal `external_id` and calls the real
+`POST /notifications` API for push/email/sms; `in_app_badge` (renders
+client-side) and `whatsapp` (OneSignal has no WhatsApp channel — would
+need Twilio) are handled as non-error "not sent" outcomes, not thrown.
+4 tests, all against an injected `fetchImpl` — no live network calls in
+the suite, and no real send was made against the live app during this
+work (OneSignal's own `send_message` tool is explicitly gated
+"HIGH IMPACT: confirmation required," and this session never had a
+safe, explicitly-user-approved single test target to send to).
+
+**This transport has no valid input to send yet.** It's built and
+tested standalone, but nothing produces a real `CommsService.resolve()`
+output today — that's exactly the §6 gap below (the Orchestrator's
+candidate shape and `TemplateEngine`'s expected fact-slot shape don't
+match). Connecting a transport doesn't change that; the sequencing is
+still: reconcile the candidate-shape mismatch (a copy/content decision)
+first, then this transport is ready to actually carry something.
+
 ## 6. What is still NOT done
 
 - **The onboarding subject picker offers 8 subjects

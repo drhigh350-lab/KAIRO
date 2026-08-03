@@ -5,7 +5,8 @@
 
 import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
-import { RetentionState, ErrorTag } from "../src/utils/constants.js";
+import { RetentionState, ErrorTag, Channel } from "../src/utils/constants.js";
+import { OneSignalTransport } from "../src/comms/transport/OneSignalTransport.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -1259,6 +1260,70 @@ test('StudentProfile: challengeStreak round-trips through toJSON (structural che
   const json = p.toJSON();
   assert('challengeStreak' in json, 'challengeStreak must be present in toJSON() output or it silently drops on every save, exactly like completedChallenges/totalXP/badges/preferences did before they were declared');
   assertEqual(json.challengeStreak.current, 3, 'challengeStreak value should round-trip exactly');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ONESIGNAL TRANSPORT TESTS
+// No live network calls — fetchImpl is always injected and stubbed.
+// ═══════════════════════════════════════════════════════════════
+
+await test('OneSignalTransport: throws when appId/apiKey are missing', async () => {
+  const transport = new OneSignalTransport({ appId: null, apiKey: null, fetchImpl: async () => { throw new Error('should not be called'); } });
+  let threw = false;
+  try {
+    await transport.send({ channel: Channel.PUSH, rendered: { text: 'hi' } }, 'ext1');
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'send() should throw when ONESIGNAL_APP_ID/ONESIGNAL_API_KEY are not configured, not silently no-op');
+});
+
+await test('OneSignalTransport: in_app_badge and whatsapp are handled as non-error "not sent" outcomes, not thrown', async () => {
+  const transport = new OneSignalTransport({ appId: 'app1', apiKey: 'key1', fetchImpl: async () => { throw new Error('should not be called for unsupported channels'); } });
+
+  const inApp = await transport.send({ channel: Channel.IN_APP, rendered: { text: 'hi' } }, 'ext1');
+  assertEqual(inApp.sent, false, 'in_app_badge should report sent: false, not throw');
+
+  const whatsapp = await transport.send({ channel: Channel.WHATSAPP, rendered: { text: 'hi' } }, 'ext1');
+  assertEqual(whatsapp.sent, false, 'whatsapp should report sent: false — OneSignal has no WhatsApp channel');
+});
+
+await test('OneSignalTransport: builds the correct payload shape per channel and targets by external_id', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push({ url, body: JSON.parse(opts.body) });
+    return { ok: true, json: async () => ({ id: 'onesignal_msg_1' }) };
+  };
+  const transport = new OneSignalTransport({ appId: 'app1', apiKey: 'key1', fetchImpl });
+
+  await transport.send({ channel: Channel.PUSH, rendered: { text: 'Your recap is ready.' } }, 'student_ext_1');
+  assertEqual(calls[0].body.target_channel, 'push', 'push should target_channel: push');
+  assertEqual(calls[0].body.contents.en, 'Your recap is ready.', 'push should carry rendered text in contents.en');
+  assertEqual(calls[0].body.include_aliases.external_id[0], 'student_ext_1', 'should target by external_id, never a hardcoded/invented id');
+
+  await transport.send({ channel: Channel.EMAIL, rendered: { text: 'Your weekly summary.', subject: 'Your Week' } }, 'student_ext_1');
+  assertEqual(calls[1].body.target_channel, 'email', 'email should target_channel: email');
+  assertEqual(calls[1].body.email_subject, 'Your Week', 'email should carry the rendered subject');
+
+  await transport.send({ channel: Channel.SMS, rendered: { text: 'Exam in 1 week.' } }, 'student_ext_1');
+  assertEqual(calls[2].body.target_channel, 'sms', 'sms should target_channel: sms');
+
+  const result = await transport.send({ channel: Channel.PUSH, rendered: { text: 'hi' } }, 'student_ext_1');
+  assertEqual(result.oneSignalId, 'onesignal_msg_1', 'a successful send should surface OneSignal\'s own message id');
+});
+
+await test('OneSignalTransport: surfaces a descriptive error on a non-OK API response instead of swallowing it', async () => {
+  const transport = new OneSignalTransport({
+    appId: 'app1', apiKey: 'key1',
+    fetchImpl: async () => ({ ok: false, status: 400, text: async () => '{"errors":["Invalid app_id"]}' })
+  });
+  let errorMessage = null;
+  try {
+    await transport.send({ channel: Channel.PUSH, rendered: { text: 'hi' } }, 'ext1');
+  } catch (e) {
+    errorMessage = e.message;
+  }
+  assert(errorMessage && errorMessage.includes('400'), 'a failed OneSignal call should throw with the status code and body, not fail silently');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
