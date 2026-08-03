@@ -10,6 +10,7 @@ import type { PracticeQuestion as PracticeQuestionData } from './data';
 export interface PracticeQuestionResult {
   correct: boolean;
   confidence: ConfidenceLevel | null;
+  selectedIndex: number | null;
 }
 
 export interface PracticeQuestionProps {
@@ -125,7 +126,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
         {!submitted ? (
           <Button variant="primary" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit Answer</Button>
         ) : (
-          <Button variant="primary" size="lg" fullWidth onClick={() => onNext({ correct: isCorrect, confidence })}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
+          <Button variant="primary" size="lg" fullWidth onClick={() => onNext({ correct: isCorrect, confidence, selectedIndex: selected })}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
         )}
       </div>
     </div>

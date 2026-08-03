@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SubjectSelect } from './SubjectSelect';
 import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub } from './PracticeHub';
-import { PracticeQuestion } from './PracticeQuestion';
-import { PracticeSummary, type PracticeResult, type PracticeSummaryAction } from './PracticeSummary';
+import { PracticeQuestion, type PracticeQuestionResult } from './PracticeQuestion';
+import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { subjects, practiceQuestions, type Subject, type Topic } from './data';
-import type { ConfidenceLevel } from '../learning/shared';
+import { getEngine, startSuggestedSession } from '../../lib/kairoEngine';
+import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 
 type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary';
 type SubjectLike = Subject | { key: string; label: string };
@@ -65,6 +66,25 @@ export function PracticeFlow() {
   const [hasHistory, setHasHistory] = useState(false);
   const [qIndex, setQIndex] = useState(init.qIndex);
   const [results, setResults] = useState<PracticeResult[]>(init.results);
+  const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
+  const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
+  const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
+  const startedSuggested = useRef(false);
+
+  useEffect(() => {
+    if (entryFlow !== 'suggested' || startedSuggested.current) return;
+    startedSuggested.current = true;
+    startSuggestedSession(5)
+      .then(({ questions }) => {
+        if (questions.length === 0) {
+          setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
+        } else {
+          setEngineQuestions(questions);
+        }
+      })
+      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function go(next: Screen) {
     setHistory((h) => [...h, screen]);
@@ -83,9 +103,36 @@ export function PracticeFlow() {
     navigate('/home');
   }
 
-  function handleNextQuestion({ correct, confidence }: { correct: boolean; confidence: ConfidenceLevel | null }) {
+  function handleNextQuestion({ correct, confidence, selectedIndex }: PracticeQuestionResult) {
     const newResults = [...results, { correct, confidence, time: 40 + Math.floor(Math.random() * 30) }];
     setResults(newResults);
+
+    if (entryFlow === 'suggested' && engineQuestions) {
+      const kairo = getEngine();
+      const eq = engineQuestions[qIndex];
+      if (kairo && eq) {
+        kairo.submitAnswer({
+          conceptId: eq.conceptId ?? null,
+          correct,
+          responseTimeMs: 15000,
+          selectedOption: selectedOptionLabel(eq, selectedIndex),
+          correctOption: eq.correctOption,
+          questionId: eq.id,
+          questionDifficulty: eq.difficulty,
+        });
+      }
+      if (qIndex + 1 >= engineQuestions.length) {
+        setHasHistory(true);
+        if (kairo) {
+          kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
+        }
+        go('practiceSummary');
+      } else {
+        setQIndex(qIndex + 1);
+      }
+      return;
+    }
+
     if (qIndex + 1 >= practiceQuestions.length) {
       setHasHistory(true);
       go('practiceSummary');
@@ -192,6 +239,33 @@ export function PracticeFlow() {
       />
     );
   }
+  if (screen === 'practiceQuestion' && entryFlow === 'suggested') {
+    if (engineLoadError) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>{engineLoadError}</div>
+          <button type="button" onClick={toHome} style={{ background: 'none', border: 'none', color: 'var(--text-link)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Home</button>
+        </div>
+      );
+    }
+    if (!engineQuestions) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>Preparing your session…</div>
+        </div>
+      );
+    }
+    return (
+      <PracticeQuestion
+        key={engineQuestions[qIndex].id}
+        question={toUiQuestion(engineQuestions[qIndex])}
+        index={qIndex}
+        total={engineQuestions.length}
+        onNext={handleNextQuestion}
+        onExit={toHome}
+      />
+    );
+  }
   if (screen === 'practiceQuestion') {
     return (
       <PracticeQuestion
@@ -205,7 +279,7 @@ export function PracticeFlow() {
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} />;
+    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} engineSummary={sessionSummary} />;
   }
 
   return null;

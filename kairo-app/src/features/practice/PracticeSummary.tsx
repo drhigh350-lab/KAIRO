@@ -9,13 +9,20 @@ export interface PracticeResult {
 
 export type PracticeSummaryAction = 'weak' | 'retry' | 'challenge' | 'cbt' | 'review';
 
+export interface EngineSessionSummary {
+  eliteScore?: { total: number };
+  streak?: { momentum: number };
+}
+
 export interface PracticeSummaryProps {
   results: PracticeResult[];
   onHome: () => void;
   onAction?: (action: PracticeSummaryAction) => void;
+  /** Real KairoEngine.endSession() result, when this session ran against the real engine. */
+  engineSummary?: EngineSessionSummary | null;
 }
 
-export function PracticeSummary({ results, onHome, onAction }: PracticeSummaryProps) {
+export function PracticeSummary({ results, onHome, onAction, engineSummary }: PracticeSummaryProps) {
   const total = results.length;
   const correctCount = results.filter((r) => r.correct).length;
   const incorrectCount = total - correctCount;
@@ -50,21 +57,27 @@ export function PracticeSummary({ results, onHome, onAction }: PracticeSummaryPr
           </div>
         </Card>
 
-        <Card>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', marginBottom: 12 }}>PERFORMANCE INSIGHTS</div>
-          <InsightRow label="Strongest subject" value="Mathematics" tone="success" />
-          <InsightRow label="Weakest subject" value="Physics" tone="danger" />
-          <InsightRow label="Topic needing attention" value="Newton's Laws" tone="caution" />
-        </Card>
+        {!engineSummary && (
+          <Card>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', marginBottom: 12 }}>PERFORMANCE INSIGHTS</div>
+            <InsightRow label="Strongest subject" value="Mathematics" tone="success" />
+            <InsightRow label="Weakest subject" value="Physics" tone="danger" />
+            <InsightRow label="Topic needing attention" value="Newton's Laws" tone="caution" />
+          </Card>
+        )}
 
         <Card style={{ background: 'var(--kairo-navy-900)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--kairo-blue-300)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>+{Math.max(4, correctCount * 3)}</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
+              {engineSummary?.eliteScore ? engineSummary.eliteScore.total : `+${Math.max(4, correctCount * 3)}`}
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 11, color: 'var(--kairo-blue-300)', fontWeight: 700, letterSpacing: '.04em' }}>STREAK</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>4 days</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
+              {engineSummary?.streak ? `${engineSummary.streak.momentum} days` : '4 days'}
+            </div>
           </div>
         </Card>
 
