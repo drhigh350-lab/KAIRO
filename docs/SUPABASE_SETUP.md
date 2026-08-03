@@ -457,13 +457,15 @@ first, then this transport is ready to actually carry something.
   picker to what's seeded, rename the label, or seed the other 4
   subjects) — flagged, not changed, since the picker's copy and options
   are product-owned.
-- **The onboarding diagnostic quiz (`'diagnostic'` step, 5 questions)
-  still has no code path that selects real questions to ask** — it only
-  accepts already-answered `{conceptId, correct, responseTimeMs}` input
-  via `submitStep()`. Whatever drives that step client-side needs a way
-  to pick 5 real live questions before `loadContentCatalog()` has
-  necessarily run for the student's chosen subjects; not addressed in
-  this pass.
+- ~~The onboarding diagnostic quiz has no code path that selects real
+  questions to ask~~ — **closed.** `OnboardingEngine.getDiagnosticQuestions(count)`
+  (call once the `'subjects'` step is submitted) loads the real catalog
+  and picks live questions spread across the student's chosen subjects,
+  biased toward the easiest available per subject — a diagnostic, not a
+  challenge. Returns the same flat consumer shape (`.text`/`.options`)
+  as `getQuestionForConcept()`/CBTExamMode. `submitStep()`'s handling of
+  the answered results is unchanged — the caller still drives rendering
+  and answer capture, this only supplies which real questions to ask.
 - **Review, CBT Exam Mode content (paper/results detail beyond the
   session summary), Challenges (see below), Insights, Leaderboard,
   and Onboarding module state have no Supabase table at all** —

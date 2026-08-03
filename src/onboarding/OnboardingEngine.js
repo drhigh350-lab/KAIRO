@@ -180,6 +180,60 @@ export class OnboardingEngine {
     };
   }
 
+  /**
+   * The 'diagnostic' step (type: 'diagnostic_quiz') previously had no
+   * code path that selected real questions to ask — submitStep() only
+   * ever accepted already-answered {conceptId, correct, responseTimeMs}
+   * input. A caller now calls this once subjects are known (the
+   * 'subjects' step must already be submitted) to get real, currently-
+   * live questions to actually render for the quiz.
+   *
+   * Spread as evenly as possible across the student's chosen subjects,
+   * biased toward the easier end of the seeded difficulty range —
+   * this is a first read before any attempt history exists, not a
+   * challenge, so the hardest content in the bank isn't the right
+   * sample. Requires connectSupabase() (loadContentCatalog() needs a
+   * real adapter) — same requirement buildInitialPlan() already has.
+   */
+  async getDiagnosticQuestions(count = 5) {
+    const subjects = this.data.subjects || [];
+    if (subjects.length === 0) {
+      throw new Error('getDiagnosticQuestions() requires the "subjects" step to already be submitted.');
+    }
+
+    await this.engine.loadContentCatalog({ subjects });
+
+    const bySubject = (subject) => Array.from(this.engine.questionGraph.questions.values())
+      .filter(q => q.subject === subject && q.lifecycleState === 'live')
+      .sort((a, b) => a.difficultyRating - b.difficultyRating); // easiest first — a diagnostic, not a challenge
+
+    const perSubject = Math.max(1, Math.floor(count / subjects.length));
+    const picked = [];
+    const pickedIds = new Set();
+    for (const subject of subjects) {
+      for (const q of bySubject(subject).slice(0, perSubject)) {
+        picked.push(q);
+        pickedIds.add(q.id);
+      }
+    }
+
+    // Rounding (count not evenly divisible by subjects.length) can leave
+    // a shortfall — top up from any chosen subject's easiest remaining
+    // questions rather than under-filling the quiz.
+    if (picked.length < count) {
+      const remaining = subjects
+        .flatMap(subject => bySubject(subject))
+        .filter(q => !pickedIds.has(q.id));
+      for (const q of remaining) {
+        if (picked.length >= count) break;
+        picked.push(q);
+        pickedIds.add(q.id);
+      }
+    }
+
+    return picked.slice(0, count).map(q => this.engine._flattenQuestion(q));
+  }
+
   _summarizeDiagnostic() {
     const results = this.data.diagnosticResults || [];
     const correct = results.filter(r => r.correct).length;

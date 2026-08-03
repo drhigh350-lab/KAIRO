@@ -1326,6 +1326,46 @@ await test('OneSignalTransport: surfaces a descriptive error on a non-OK API res
   assert(errorMessage && errorMessage.includes('400'), 'a failed OneSignal call should throw with the status code and body, not fail silently');
 });
 
+await test('OnboardingEngine.getDiagnosticQuestions() selects real, live questions spread across chosen subjects, easiest first', async () => {
+  const rows = {
+    concepts: [
+      { id: 'bio_c1', name: 'Cells', subject: 'Biology', topic: 'Cells', subtopic: null, difficulty_weight: 1.0, dependency_ids: [], question_pool_ids: [] },
+      { id: 'chem_c1', name: 'Acids', subject: 'Chemistry', topic: 'Acids', subtopic: null, difficulty_weight: 1.0, dependency_ids: [], question_pool_ids: [] }
+    ],
+    questions: [
+      { id: 'bio_hard', subject: 'Biology', topic: 'Cells', subtopic: null, learning_objective: 'Understand Cells well enough to apply it, not just recall it.', concepts_tested: [{ conceptId: 'bio_c1', weight: 1.0 }], prerequisite_concepts: [], difficulty_rating: 5, cognitive_level: 'recall', estimated_solving_time_sec: 30, reading_load: 'low', calculation_load: 'none', distractors: [], skills_assessed: [], source: 'x', year: null, exam_body: 'JAMB', related_question_ids: [], stem: 'Hard bio Q', options: [{ label: 'A', text: 'x', isCorrect: true }], correct_option: 'A', explanation: 'x'.repeat(30), lifecycle_state: 'live', empirical_stats: null, distractor_rationale: null },
+      { id: 'bio_easy', subject: 'Biology', topic: 'Cells', subtopic: null, learning_objective: 'Understand Cells well enough to apply it, not just recall it.', concepts_tested: [{ conceptId: 'bio_c1', weight: 1.0 }], prerequisite_concepts: [], difficulty_rating: 1, cognitive_level: 'recall', estimated_solving_time_sec: 30, reading_load: 'low', calculation_load: 'none', distractors: [], skills_assessed: [], source: 'x', year: null, exam_body: 'JAMB', related_question_ids: [], stem: 'Easy bio Q', options: [{ label: 'A', text: 'x', isCorrect: true }], correct_option: 'A', explanation: 'x'.repeat(30), lifecycle_state: 'live', empirical_stats: null, distractor_rationale: null },
+      { id: 'chem_easy', subject: 'Chemistry', topic: 'Acids', subtopic: null, learning_objective: 'Understand Acids well enough to apply it, not just recall it.', concepts_tested: [{ conceptId: 'chem_c1', weight: 1.0 }], prerequisite_concepts: [], difficulty_rating: 2, cognitive_level: 'recall', estimated_solving_time_sec: 30, reading_load: 'low', calculation_load: 'none', distractors: [], skills_assessed: [], source: 'x', year: null, exam_body: 'JAMB', related_question_ids: [], stem: 'Easy chem Q', options: [{ label: 'A', text: 'x', isCorrect: true }], correct_option: 'A', explanation: 'x'.repeat(30), lifecycle_state: 'live', empirical_stats: null, distractor_rationale: null }
+    ]
+  };
+  const mockClient = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; },
+            then(resolve) { return resolve({ data: rows[table] || [], error: null }); }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const obEngine = new KairoEngine({ studentId: 'ob_diag_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
+  await obEngine.init();
+  obEngine.sync.attachRemote(new SupabaseSyncAdapter(mockClient, obEngine.store), obEngine);
+  obEngine.onboarding.data.subjects = ['Biology', 'Chemistry'];
+
+  const questions = await obEngine.onboarding.getDiagnosticQuestions(3);
+  assertEqual(questions.length, 3, 'should return the requested count when enough live questions exist');
+  const bioQuestions = questions.filter(q => q.subject === 'Biology');
+  const chemQuestions = questions.filter(q => q.subject === 'Chemistry');
+  assert(bioQuestions.length >= 1 && chemQuestions.length >= 1, 'should spread across both chosen subjects, not pull all 3 from one');
+  assert(bioQuestions.some(q => q.id === 'bio_easy'), 'should prefer the easier Biology question over the harder one for a diagnostic, not a challenge');
+  assert(questions.every(q => 'text' in q && 'options' in q), 'should return the flat consumer shape (.text/.options), same as CBTExamMode/getQuestionForConcept');
+});
+
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) {
   console.log(`\n⚠️  ${failCount} test(s) need attention.`);
