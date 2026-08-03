@@ -56,4 +56,20 @@
 --state-caution-bg:var(--kairo-caution-100);
 
 --focus-ring:0 0 0 3px rgba(9,71,110,0.28);
+
+/* Dark-theme tokens — used only on Splash, the onboarding flow, and Home
+   Dashboard, matching the approved dark mockups. Every other screen keeps
+   the light tokens above. */
+--dark-bg-canvas:var(--kairo-navy-900);
+--dark-bg-surface:var(--kairo-navy-800);
+--dark-bg-elevated:#0F2A52;
+--dark-border:rgba(255,255,255,0.12);
+--dark-text-heading:#FFFFFF;
+--dark-text-body:#D3DDF0;
+--dark-text-muted:#93A6C9;
+--dark-text-faint:#5D7096;
+--dark-accent-blue:#2E7CF6;
+--dark-accent-blue-deep:#1652D6;
+--dark-accent-blue-glow:rgba(46,124,246,0.45);
+--dark-success:#2ECC8F;
 }

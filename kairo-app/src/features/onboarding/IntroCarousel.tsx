@@ -26,32 +26,32 @@ export function IntroCarousel({ onDone }: IntroCarouselProps) {
   const [i, setI] = useState(0);
   const s = slides[i];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', padding: '20px 24px 28px', fontFamily: 'var(--font-body)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', padding: '20px 24px 28px', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <div style={{ textAlign: 'right', minHeight: 18 }}>
         {!s.final && (
           <button type="button" onClick={onDone} style={{
-            fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+            fontSize: 13, color: 'var(--dark-text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
           }}>Skip</button>
         )}
       </div>
       <div style={{ marginTop: 20 }}>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 28, color: 'var(--text-heading)', lineHeight: 1.15 }}>{s.title}</div>
-        <div style={{ width: 40, height: 3, background: 'var(--kairo-gold-500)', margin: '10px 0 14px' }} />
-        <div style={{ fontSize: 16, color: 'var(--text-muted)', lineHeight: 1.55 }}>{s.body}</div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 28, color: 'var(--dark-text-heading)', lineHeight: 1.15 }}>{s.title}</div>
+        <div style={{ width: 40, height: 3, background: 'var(--dark-accent-blue)', margin: '10px 0 14px' }} />
+        <div style={{ fontSize: 16, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{s.body}</div>
       </div>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
         {s.img && <img src={s.img} style={{ maxHeight: 260, borderRadius: 16 }} />}
-        {s.mark && <KaiMark size={160} />}
+        {s.mark && <KaiMark size={160} tone="white" />}
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 18 }}>
         {slides.map((_, idx) => (
-          <span key={idx} style={{ width: idx === i ? 18 : 6, height: 6, borderRadius: 3, background: idx === i ? 'var(--kairo-navy-900)' : 'var(--kairo-ink-100)', transition: 'all var(--dur-base)' }} />
+          <span key={idx} style={{ width: idx === i ? 18 : 6, height: 6, borderRadius: 3, background: idx === i ? 'var(--dark-accent-blue)' : 'var(--dark-border)', transition: 'all var(--dur-base)' }} />
         ))}
       </div>
       {s.final ? (
-        <Button variant="primary" size="lg" fullWidth onClick={onDone}>Continue</Button>
+        <Button variant="darkAccent" size="lg" fullWidth onClick={onDone}>Continue</Button>
       ) : (
-        <Button variant="primary" size="lg" fullWidth onClick={() => setI(i + 1)}>Continue</Button>
+        <Button variant="darkAccent" size="lg" fullWidth onClick={() => setI(i + 1)}>Continue</Button>
       )}
     </div>
   );

@@ -10,20 +10,24 @@ export interface BottomNavProps {
   items: BottomNavItem[];
   active: string;
   onChange?: (key: string) => void;
+  dark?: boolean;
 }
 
-export function BottomNav({ items, active, onChange }: BottomNavProps) {
+export function BottomNav({ items, active, onChange, dark = false }: BottomNavProps) {
   return (
     <div className="app-bottomnav" style={{
       display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-      borderTop: '1px solid var(--color-border-subtle)', padding: '10px 4px 10px', fontFamily: 'var(--font-body)',
+      borderTop: `1px solid ${dark ? 'var(--dark-border)' : 'var(--color-border-subtle)'}`, padding: '10px 4px 10px', fontFamily: 'var(--font-body)',
+      background: dark ? 'var(--dark-bg-canvas)' : 'var(--kairo-white)',
     }}>
       {items.map((item) => {
         const isActive = item.key === active;
+        const activeColor = dark ? 'var(--dark-accent-blue)' : 'var(--kairo-navy-900)';
+        const inactiveColor = dark ? 'var(--dark-text-faint)' : 'var(--text-faint)';
         return (
           <button key={item.key} onClick={() => onChange && onChange(item.key)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none',
-            color: isActive ? 'var(--kairo-navy-900)' : 'var(--text-faint)', cursor: 'pointer', minWidth: 48, minHeight: 48,
+            color: isActive ? activeColor : inactiveColor, cursor: 'pointer', minWidth: 48, minHeight: 48,
             fontWeight: isActive ? 700 : 500,
           }}>
             <span style={{ display: 'flex' }}>{item.icon}</span>

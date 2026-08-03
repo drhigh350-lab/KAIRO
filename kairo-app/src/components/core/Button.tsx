@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 export interface ButtonProps {
   children: ReactNode;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'gold';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'gold' | 'darkAccent';
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   icon?: ReactNode;
@@ -28,6 +28,11 @@ function variantStyle(variant: string, disabled: boolean): CSSProperties {
       return { background: 'transparent', color: 'var(--kairo-blue-700)', border: 'none' };
     case 'gold':
       return { background: 'var(--kairo-gold-500)', color: 'var(--kairo-navy-900)', border: 'none' };
+    case 'darkAccent':
+      return {
+        background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))',
+        color: '#fff', border: 'none', boxShadow: '0 4px 20px var(--dark-accent-blue-glow)',
+      };
     default:
       return { background: 'var(--kairo-navy-900)', color: '#fff', border: 'none' };
   }

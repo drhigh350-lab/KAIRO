@@ -24,15 +24,19 @@ export function KaiMark({ size = 64, tone = 'navy', check = false }: KaiMarkProp
 export interface StepIndicatorProps {
   step: number;
   total: number;
+  tone?: 'light' | 'dark';
 }
 
-export function StepIndicator({ step, total }: StepIndicatorProps) {
+export function StepIndicator({ step, total, tone = 'light' }: StepIndicatorProps) {
+  const dark = tone === 'dark';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {Array.from({ length: total }).map((_, i) => {
         const active = i <= step - 1;
         const current = i === step - 1;
-        return <div key={i} style={{ width: current ? 22 : 8, height: 8, borderRadius: 4, background: active ? 'var(--kairo-navy-900)' : 'var(--kairo-ink-100)', transition: 'all var(--dur-base)' }} />;
+        const activeColor = dark ? 'var(--dark-accent-blue)' : 'var(--kairo-navy-900)';
+        const inactiveColor = dark ? 'var(--dark-border)' : 'var(--kairo-ink-100)';
+        return <div key={i} style={{ width: current ? 22 : 8, height: 8, borderRadius: 4, background: active ? activeColor : inactiveColor, transition: 'all var(--dur-base)' }} />;
       })}
     </div>
   );
@@ -42,19 +46,21 @@ export interface FlowHeaderProps {
   onBack: () => void;
   step?: number | null;
   total: number;
+  tone?: 'light' | 'dark';
 }
 
-export function FlowHeader({ onBack, step, total }: FlowHeaderProps) {
+export function FlowHeader({ onBack, step, total, tone = 'light' }: FlowHeaderProps) {
+  const dark = tone === 'dark';
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px 8px' }}>
       <button type="button" onClick={onBack} aria-label="Back" style={{
         width: 32, height: 32, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-8px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-heading)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: dark ? 'var(--dark-text-heading)' : 'var(--text-heading)',
         background: 'none', border: 'none', padding: 0, borderRadius: '50%',
       }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
       </button>
-      {step != null && <StepIndicator step={step} total={total} />}
+      {step != null && <StepIndicator step={step} total={total} tone={tone} />}
       <div style={{ width: 32 }} />
     </div>
   );
@@ -63,21 +69,27 @@ export function FlowHeader({ onBack, step, total }: FlowHeaderProps) {
 export interface SkipLinkProps {
   children: ReactNode;
   onClick: () => void;
+  tone?: 'light' | 'dark';
 }
 
-export function SkipLink({ children, onClick }: SkipLinkProps) {
+export function SkipLink({ children, onClick, tone = 'light' }: SkipLinkProps) {
   return (
     <button type="button" onClick={onClick} style={{
-      display: 'block', width: '100%', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer',
+      display: 'block', width: '100%', textAlign: 'center', fontSize: 13, color: tone === 'dark' ? 'var(--dark-text-muted)' : 'var(--text-muted)', cursor: 'pointer',
       textDecoration: 'underline', textUnderlineOffset: '3px', background: 'none', border: 'none', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
     }}>{children}</button>
   );
 }
 
-export function OrDivider() {
+export interface OrDividerProps {
+  tone?: 'light' | 'dark';
+}
+
+export function OrDivider({ tone = 'light' }: OrDividerProps) {
+  const dark = tone === 'dark';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-faint)', fontSize: 12 }}>
-      <div style={{ flex: 1, height: 1, background: 'var(--color-border-subtle)' }} /> OR <div style={{ flex: 1, height: 1, background: 'var(--color-border-subtle)' }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: dark ? 'var(--dark-text-faint)' : 'var(--text-faint)', fontSize: 12 }}>
+      <div style={{ flex: 1, height: 1, background: dark ? 'var(--dark-border)' : 'var(--color-border-subtle)' }} /> OR <div style={{ flex: 1, height: 1, background: dark ? 'var(--dark-border)' : 'var(--color-border-subtle)' }} />
     </div>
   );
 }
