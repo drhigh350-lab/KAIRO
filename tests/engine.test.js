@@ -7,6 +7,7 @@ import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode } 
 import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag, Channel } from "../src/utils/constants.js";
 import { OneSignalTransport } from "../src/comms/transport/OneSignalTransport.js";
+import { OnboardingEngine } from "../src/onboarding/OnboardingEngine.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -327,25 +328,54 @@ test('Onboarding progresses through steps', () => {
 // LEADERBOARD
 // ═══════════════════════════════════════════════════════════════
 
-test('Segmented leaderboard assigns student', () => {
-  const result = engine.segmentedLeaderboard.addStudent(engine.profile);
-  assert(result.segmentKey, 'Should return segment key');
-  assert(typeof result.rank === 'number', 'Should have rank');
+test('Segmented leaderboard: getSegmentKey() still computes course+tier locally (no adapter needed)', () => {
+  const key = engine.segmentedLeaderboard.getSegmentKey(engine.profile);
+  assert(typeof key === 'string' && key.includes('::tier_'), 'segment key should be a course::tier_N string, computed purely from profile data');
 });
 
-test('Segmented leaderboard returns rankings', () => {
-  const board = engine.getMyLeaderboard();
-  assert(Array.isArray(board), 'Should return array');
-  assert(board.length > 0, 'Should have at least current user');
-  const me = board.find(b => b.isCurrentUser);
-  assert(me, 'Should find current user in leaderboard');
+await test('Leaderboard: getMyLeaderboard() throws without a connected adapter, and returns real ranked/mapped rows once connected', async () => {
+  const leaderboardEngine = new KairoEngine({ studentId: 'lb_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await leaderboardEngine.init();
+
+  let threw = false;
+  try {
+    await leaderboardEngine.getMyLeaderboard();
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'getMyLeaderboard() should throw a clear error without connectSupabase() — previously this was an in-memory Map that silently "worked" while only ever showing the current student alone');
+
+  leaderboardEngine.sync.adapter = {
+    fetchSegmentedLeaderboard: async (studentId, limit) => [
+      { rank: 1, studentId: 'other_student', name: 'Someone Else', eliteScore: 90, streak: 4, lastActive: Date.now(), isCurrentUser: false },
+      { rank: 2, studentId, name: leaderboardEngine.profile.name, eliteScore: 80, streak: 2, lastActive: Date.now(), isCurrentUser: true }
+    ]
+  };
+  const board = await leaderboardEngine.getMyLeaderboard();
+  assert(Array.isArray(board) && board.length === 2, 'should return the real cross-student rows the adapter provides, not just the current user');
+  assert(board.some(b => b.isCurrentUser), 'should be able to identify the current user within the real ranking');
 });
 
-test('University leaderboard records practice', () => {
-  engine.universityLeaderboard.recordPractice(engine.profile, 75);
-  const rankings = engine.getUniversityRankings();
-  assert(Array.isArray(rankings), 'Should return rankings array');
-  assert(rankings.length > 0, 'Should have university entries');
+await test('Leaderboard: getUniversityRankings() throws without a connected adapter, and returns real aggregated rankings once connected', async () => {
+  const uniEngine = new KairoEngine({ studentId: 'uni_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await uniEngine.init();
+
+  let threw = false;
+  try {
+    await uniEngine.getUniversityRankings();
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'getUniversityRankings() should throw a clear error without connectSupabase()');
+
+  uniEngine.sync.adapter = {
+    fetchUniversityRankings: async (limit) => [
+      { rank: 1, university: 'UNILAG', totalScore: 240, studentCount: 3, avgScore: 80 }
+    ]
+  };
+  const rankings = await uniEngine.getUniversityRankings();
+  assert(Array.isArray(rankings) && rankings.length === 1, 'should return the real aggregated university rankings the adapter provides');
+  assertEqual(rankings[0].university, 'UNILAG', 'ranking rows should carry through unmodified');
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -832,6 +862,7 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   p.totalXP = 420;
   p.badges = ['first_reinforced', 'three_day_streak'];
   p.preferences = { notifications: { dailyRecap: false } };
+  p.onboarding = { step: 4, state: 'in_progress', data: { name: 'Ada', subjects: ['Biology'] } };
 
   const original = p.toJSON();
   const row = adapter._profileToRow(original, original.authUserId);
@@ -863,6 +894,7 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   assertEqual(restored.totalXP, 420, 'totalXP should round-trip exactly — without this a returning student\'s level would incorrectly reset to 1 on every fresh load until their next completed session recalculated it');
   assertEqual(restored.badges.length, 2, 'badges should round-trip exactly — without this, every earned badge would be silently lost on reload and immediately re-awarded (and re-notified) the next time its condition was checked');
   assertEqual(restored.preferences.notifications.dailyRecap, false, 'preferences should round-trip exactly — without this, a student\'s notification/practice/accessibility/privacy/offline settings would silently reset to defaults on every fresh load');
+  assertEqual(restored.onboarding.step, 4, 'onboarding should round-trip exactly — previously never snapshotted at all (unlike reEngagement/crossModuleMilestones/continuation/comms/learn, which all follow this pattern), so a student closing the app mid-onboarding always restarted from step 0');
 });
 
 test('SyncManager applies a genuinely newer remote concept state onto the live graph', () => {
@@ -987,11 +1019,11 @@ await test('Notifications: pull and mark-read only, matching the real RLS shape 
   assert(markCall && markCall.row.read_at, 'markNotificationRead should UPDATE read_at — the only write kairo.notifications RLS actually permits');
 });
 
-test('CBT: setup uses JAMB-accurate per-subject question counts (English 60, others 40)', () => {
+test('CBT: setup uses JAMB-accurate per-subject question counts (Use of English 60, others 40)', () => {
   const fakeEngine = { contentPacks: {}, submitAnswer: () => {} };
   const cbt = new CBTExamMode(fakeEngine);
-  const result = cbt.setup({ subjects: ['English', 'Mathematics', 'Physics', 'Chemistry'] });
-  assertEqual(result.totalQuestions, 180, 'English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160');
+  const result = cbt.setup({ subjects: ['Use of English', 'Mathematics', 'Physics', 'Chemistry'] });
+  assertEqual(result.totalQuestions, 180, 'Use of English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160. Also regression-covers the "English" vs "Use of English" naming bug: the key must match the seeded subject string exactly or this silently falls back to the default 40.');
 });
 
 await test('CBT: submitAnswer withholds correctness feedback during a live attempt (CBT Exam Mode Spec §2.3/§5.2/§5.4)', async () => {
@@ -1364,6 +1396,24 @@ await test('OnboardingEngine.getDiagnosticQuestions() selects real, live questio
   assert(bioQuestions.length >= 1 && chemQuestions.length >= 1, 'should spread across both chosen subjects, not pull all 3 from one');
   assert(bioQuestions.some(q => q.id === 'bio_easy'), 'should prefer the easier Biology question over the harder one for a diagnostic, not a challenge');
   assert(questions.every(q => 'text' in q && 'options' in q), 'should return the flat consumer shape (.text/.options), same as CBTExamMode/getQuestionForConcept');
+});
+
+await test('OnboardingEngine state survives a save/reload cycle instead of always restarting at step 0', async () => {
+  const engine9 = new KairoEngine({ studentId: 'ob_persist_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
+  await engine9.init();
+
+  // Progress partway through onboarding (welcome -> name -> goal) without completing it.
+  engine9.onboarding.submitStep(null); // 'welcome' step has no field, just advances
+  engine9.onboarding.submitStep('Ada'); // 'name' step
+  engine9.onboarding.submitStep('Medicine and Surgery'); // 'goal' step
+  assertEqual(engine9.onboarding.step, 3, 'sanity check: three steps submitted should advance to step 3');
+
+  engine9._snapshotSjeeState();
+  const resumed = OnboardingEngine.fromJSON(engine9.profile.onboarding, engine9);
+
+  assertEqual(resumed.step, 3, 'onboarding step should survive the exact save/restore path init() uses (profile.onboarding -> OnboardingEngine.fromJSON) — previously nothing snapshotted onboarding state at all, so this always came back as a fresh step-0 engine');
+  assertEqual(resumed.data.name, 'Ada', 'in-progress onboarding answers (name) should also survive, not just the step counter');
+  assertEqual(resumed.data.targetCourse, 'Medicine and Surgery', 'in-progress onboarding answers (targetCourse) should also survive');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

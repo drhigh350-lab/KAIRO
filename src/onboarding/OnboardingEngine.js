@@ -74,7 +74,20 @@ export class OnboardingEngine {
         type: 'multi_choice',
         field: 'subjects',
         title: 'Which subjects are you taking?',
-        options: ['English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Government', 'Economics', 'Literature'],
+        // 'Use of English' — JAMB's actual subject name, matching the exact
+        // string seeded in kairo.questions/kairo.concepts. A bare 'English'
+        // here matched nothing: loadContentCatalog() filters by exact
+        // subject-string equality, so a student picking "English" got 0
+        // concepts even though Use of English content exists. All 8 options
+        // stay selectable (not trimmed to the 4 currently-seeded subjects) —
+        // UTME subject combinations genuinely vary by course (e.g. Law needs
+        // Government/Literature), so removing options would break course
+        // paths the onboarding 'goal' step already offers. Mathematics/
+        // Government/Economics/Literature still seed 0 concepts today
+        // (no content yet) — a real content gap, not something this fix
+        // papers over; loadContentCatalog() already degrades to that
+        // cleanly rather than crashing.
+        options: ['Use of English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Government', 'Economics', 'Literature'],
         action: 'save_and_continue'
       },
       {
@@ -261,9 +274,11 @@ export class OnboardingEngine {
 
   static fromJSON(data, engine) {
     const ob = new OnboardingEngine(engine);
-    ob.step = data.step || 0;
-    ob.state = data.state || 'not_started';
-    ob.data = data.data || ob.data;
+    if (data) {
+      ob.step = data.step || 0;
+      ob.state = data.state || 'not_started';
+      ob.data = data.data || ob.data;
+    }
     return ob;
   }
 }

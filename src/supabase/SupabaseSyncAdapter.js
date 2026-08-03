@@ -154,6 +154,9 @@ export class SupabaseSyncAdapter {
       // Learn Module
       learn: profileData.learn || null,
 
+      // Onboarding
+      onboarding: profileData.onboarding || null,
+
       updated_at: new Date().toISOString()
     };
   }
@@ -215,6 +218,7 @@ export class SupabaseSyncAdapter {
 
       comms: row.comms,
       learn: row.learn,
+      onboarding: row.onboarding,
 
       createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
       updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null
@@ -623,6 +627,48 @@ export class SupabaseSyncAdapter {
       accuracy: row.accuracy,
       timeTakenMs: row.time_taken_ms,
       rank: Number(row.rank)
+    }));
+  }
+
+  // ─────────────────────────────────────────────
+  // Leaderboard (read-only) — SegmentedLeaderboard/UniversityLeaderboard
+  // were pure in-memory Maps scoped to a single engine instance, so
+  // getLeaderboard()/getRankings() could never show real ranking against
+  // other students in any real (multi-instance) deployment. These read
+  // kairo.students directly — everything needed (elite_score_history,
+  // streak, target_course/university) already syncs there via
+  // pushProfile(), so no new write path was needed, only these two
+  // read functions.
+  // ─────────────────────────────────────────────
+
+  async fetchSegmentedLeaderboard(studentId, limit = 20) {
+    const { data, error } = await this.supabase.schema('kairo').rpc('get_segmented_leaderboard', {
+      p_student_id: studentId,
+      p_limit: limit
+    });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      rank: Number(row.rank),
+      studentId: row.student_id,
+      name: row.name,
+      eliteScore: Number(row.elite_score),
+      streak: row.streak,
+      lastActive: row.last_active ? new Date(row.last_active).getTime() : null,
+      isCurrentUser: row.is_current_user
+    }));
+  }
+
+  async fetchUniversityRankings(limit = 20) {
+    const { data, error } = await this.supabase.schema('kairo').rpc('get_university_rankings', {
+      p_limit: limit
+    });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      rank: Number(row.rank),
+      university: row.university,
+      totalScore: Number(row.total_score),
+      studentCount: Number(row.student_count),
+      avgScore: Number(row.avg_score)
     }));
   }
 

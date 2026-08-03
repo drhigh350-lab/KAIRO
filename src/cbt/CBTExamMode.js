@@ -4,12 +4,16 @@
  */
 
 export class CBTExamMode {
-  // JAMB standard: English is compulsory and carries 60 questions;
-  // every other subject in the combination carries 40 (CBT Exam Mode
-  // Spec §4.5 — treated as ground truth, not configurable, for a real
-  // UTME Mock). A uniform per-subject count would misrepresent the
-  // actual exam format the module exists to rehearse.
-  static JAMB_QUESTION_COUNT = { English: 60, default: 40 };
+  // JAMB standard: Use of English is compulsory and carries 60
+  // questions; every other subject in the combination carries 40 (CBT
+  // Exam Mode Spec §4.5 — treated as ground truth, not configurable,
+  // for a real UTME Mock). A uniform per-subject count would
+  // misrepresent the actual exam format the module exists to rehearse.
+  // Key is 'Use of English' — the exact subject string seeded in
+  // kairo.questions/kairo.concepts (JAMB's actual subject name) — not
+  // the shorthand 'English', which matches nothing in loadContentCatalog()'s
+  // exact-string subject filtering.
+  static JAMB_QUESTION_COUNT = { 'Use of English': 60, default: 40 };
   static JAMB_TOTAL_TIME_MIN = 120;
 
   constructor(kairoEngine) {
@@ -31,7 +35,7 @@ export class CBTExamMode {
   /**
    * Configure a mock exam.
    */
-  setup({ subjects = ['English', 'Mathematics', 'Physics', 'Chemistry'],
+  setup({ subjects = ['Use of English', 'Mathematics', 'Physics', 'Chemistry'],
           timePerSubjectMin = 26,
           difficultyMix = 'mixed' }) {
     this.config = { subjects, timePerSubjectMin, difficultyMix };

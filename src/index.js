@@ -93,8 +93,8 @@ export class KairoEngine {
     this.rapidFire = new RapidFireEngine(this);
     this.customPractice = new CustomPracticeEngine(this);
     this.topicPractice = new TopicPracticeEngine(this);
-    this.segmentedLeaderboard = new SegmentedLeaderboard();
-    this.universityLeaderboard = new UniversityLeaderboard();
+    this.segmentedLeaderboard = new SegmentedLeaderboard(this);
+    this.universityLeaderboard = new UniversityLeaderboard(this);
     this.levelSystem = new LevelSystem(this.profile);
     this.badgeSystem = new BadgeSystem(this.profile);
     this.onboarding = new OnboardingEngine(this);
@@ -116,8 +116,8 @@ export class KairoEngine {
   }
 
   /**
-   * Snapshot ReEngagementEngine, CrossModuleMilestones, and LearnModule
-   * state onto the profile so it round-trips through
+   * Snapshot ReEngagementEngine, CrossModuleMilestones, LearnModule, and
+   * OnboardingEngine state onto the profile so it round-trips through
    * StudentProfile.toJSON() — these hold structured records that don't
    * fit the simple current-value mirroring pattern macroState/
    * learningState/journeyStage use, so they're snapshotted explicitly
@@ -129,6 +129,7 @@ export class KairoEngine {
     this.profile.continuation = this.continuation.toJSON();
     this.profile.comms = this.comms.toJSON();
     this.profile.learn = this.learn.toJSON();
+    this.profile.onboarding = this.onboarding.toJSON();
   }
 
   async init() {
@@ -152,6 +153,7 @@ export class KairoEngine {
       this.continuation = ContinuationEngine.fromJSON(this.profile, savedProfile.continuation);
       this.comms = CommsService.fromJSON(this.profile, savedProfile.comms);
       this.learn = LearnModule.fromJSON(this, savedProfile.learn);
+      this.onboarding = OnboardingEngine.fromJSON(savedProfile.onboarding, this);
       this.levelSystem = new LevelSystem(this.profile);
       this.badgeSystem = new BadgeSystem(this.profile);
     }
@@ -477,9 +479,10 @@ export class KairoEngine {
     const badgeContext = this._buildBadgeContext();
     const newBadges = this.badgeSystem.checkAndAward(badgeContext);
 
-    // Update leaderboards
-    this.segmentedLeaderboard.addStudent(this.profile);
-    this.universityLeaderboard.recordPractice(this.profile, score.total);
+    // Leaderboards read directly from kairo.students (elite_score_history,
+    // pushed via the profile sync below) — nothing to separately record
+    // here now that ranking is a real cross-student query, not an
+    // in-memory registry this engine instance owned.
 
     const touched = [...new Set(this.currentSession.completed.map(a => a.conceptId))];
     this.scheduler.scheduleNextReviews(this.graph, touched);

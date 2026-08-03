@@ -65,6 +65,7 @@ export class StudentProfile {
     this.continuation = null;      // ContinuationEngine.toJSON() snapshot
     this.comms = null;             // CommsService.toJSON() snapshot
     this.learn = null;             // LearnModule.toJSON() snapshot
+    this.onboarding = null;        // OnboardingEngine.toJSON() snapshot (kairo.students.onboarding) — previously never snapshotted at all, so closing/reopening mid-onboarding always restarted from step 0
     this.notificationHistory = []; // NotificationEngine's local candidate history (kairo.students.notification_history)
     this.completedChallenges = []; // ChallengesModule.finishChallenge()'s completed real-Challenge-id list (kairo.students.completed_challenges)
     this.challengeStreak = null;   // ChallengesModule._recordCompletion()'s { current, lastCompletedDate, type } (kairo.students.challenge_streak)
@@ -263,6 +264,7 @@ export class StudentProfile {
       continuation: this.continuation,
       comms: this.comms,
       learn: this.learn,
+      onboarding: this.onboarding,
       notificationHistory: this.notificationHistory,
       completedChallenges: this.completedChallenges,
       challengeStreak: this.challengeStreak,

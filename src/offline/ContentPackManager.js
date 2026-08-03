@@ -28,14 +28,14 @@ export class ContentPackManager {
       { id: 'phy_electric', subject: 'Physics',    topic: 'Electricity',       questions: 450, sizeMB: 1.1, type: 'topic_pack' },
       { id: 'math_algebra', subject: 'Mathematics',topic: 'Algebra',           questions: 500, sizeMB: 1.0, type: 'topic_pack' },
       { id: 'math_calc',    subject: 'Mathematics',topic: 'Calculus',          questions: 400, sizeMB: 0.9, type: 'topic_pack' },
-      { id: 'eng_comp',     subject: 'English',    topic: 'Comprehension',     questions: 300, sizeMB: 0.8, type: 'topic_pack' },
-      { id: 'eng_lexis',    subject: 'English',    topic: 'Lexis',             questions: 400, sizeMB: 0.9, type: 'topic_pack' },
+      { id: 'eng_comp',     subject: 'Use of English',    topic: 'Comprehension',     questions: 300, sizeMB: 0.8, type: 'topic_pack' },
+      { id: 'eng_lexis',    subject: 'Use of English',    topic: 'Lexis',             questions: 400, sizeMB: 0.9, type: 'topic_pack' },
       // Full subject packs
       { id: 'biology_full',    subject: 'Biology',    questions: 2000, sizeMB: 4.2, type: 'subject_pack' },
       { id: 'chemistry_full',  subject: 'Chemistry',  questions: 2000, sizeMB: 4.0, type: 'subject_pack' },
       { id: 'physics_full',    subject: 'Physics',    questions: 2000, sizeMB: 4.1, type: 'subject_pack' },
       { id: 'mathematics_full',subject: 'Mathematics',questions: 2000, sizeMB: 3.8, type: 'subject_pack' },
-      { id: 'english_full',    subject: 'English',    questions: 1500, sizeMB: 3.0, type: 'subject_pack' }
+      { id: 'english_full',    subject: 'Use of English',    questions: 1500, sizeMB: 3.0, type: 'subject_pack' }
     ];
   }
 

@@ -497,20 +497,23 @@ regardless of caller identity. Test fixtures cleaned up after.
 
 ## 6. What is still NOT done
 
-- **The onboarding subject picker offers 8 subjects
-  (`OnboardingEngine.getNextStep()`'s `'subjects'` step: English,
-  Mathematics, Physics, Chemistry, Biology, Government, Economics,
-  Literature) but only 4 have seeded content, and one of those doesn't
-  match by name** — the picker says `'English'`, the seeded subject
-  string is `'Use of English'`, and `loadContentCatalog()` filters by
-  exact string equality, so a student who selects "English" gets 0
-  concepts even though Use of English content exists. Picking
-  Mathematics/Government/Economics/Literature currently seeds 0
-  concepts for that subject regardless, since none of those have any
-  seeded content at all. This is a product/content decision (trim the
-  picker to what's seeded, rename the label, or seed the other 4
-  subjects) — flagged, not changed, since the picker's copy and options
-  are product-owned.
+- ~~The onboarding subject picker offers 8 subjects but only 4 have
+  seeded content, and one doesn't match by name~~ — **naming bug
+  closed, scope kept.** The picker said `'English'`; the seeded/canonical
+  subject string is `'Use of English'` (JAMB's actual subject name),
+  so `loadContentCatalog()`'s exact-string filtering silently returned 0
+  concepts for a student who picked "English." Fixed the string
+  consistently everywhere it appeared as bare `'English'`:
+  `OnboardingEngine`'s picker, `CBTExamMode.JAMB_QUESTION_COUNT` (this
+  one was a second live bug — the 60-question JAMB rule for English
+  silently fell back to the 40-question default for the same reason),
+  and `ContentPackManager`'s mock catalog. All 8 subject options stay
+  selectable — UTME combinations genuinely vary by course (Law needs
+  Government/Literature, etc.), so trimming would break course paths the
+  onboarding `'goal'` step already offers. Mathematics/Government/
+  Economics/Literature still seed 0 concepts today since no content
+  exists for them yet — a real content gap, not something this fix
+  papers over, and already handled cleanly (no crash).
 - ~~The onboarding diagnostic quiz has no code path that selects real
   questions to ask~~ — **closed.** `OnboardingEngine.getDiagnosticQuestions(count)`
   (call once the `'subjects'` step is submitted) loads the real catalog
@@ -520,16 +523,52 @@ regardless of caller identity. Test fixtures cleaned up after.
   as `getQuestionForConcept()`/CBTExamMode. `submitStep()`'s handling of
   the answered results is unchanged — the caller still drives rendering
   and answer capture, this only supplies which real questions to ask.
-- **Review, CBT Exam Mode content (paper/results detail beyond the
-  session summary), Challenges (see below), Insights, Leaderboard,
-  and Onboarding module state have no Supabase table at all** —
-  they're entirely local/in-memory today (some of that may be fine to
-  stay ephemeral or purely derived from `attempts`/`concept_states`;
-  some of it may not). Progression's levels/badges/XP now round-trip
-  through `kairo.students` (§5), so that one's resolved. This needs a
-  product/engineering decision on which of the rest genuinely need
-  server-side persistence before any schema work happens — not
-  something to guess at silently.
+- ~~Onboarding module state has no Supabase table at all~~ — **closed.**
+  `OnboardingEngine.toJSON()`/`fromJSON()` existed but were never
+  actually snapshotted onto the profile (unlike reEngagement/
+  crossModuleMilestones/continuation/comms/learn, which all follow this
+  exact pattern) — a student closing the app mid-onboarding always
+  restarted at step 0, silently losing name/goal/exam date/subjects
+  already entered. Fixed in `index.js`'s `_snapshotSjeeState()`/`init()`
+  + `kairo.students.onboarding` (migration
+  `add_onboarding_state_to_students`). Also fixed a latent bug this
+  exposed: `OnboardingEngine.fromJSON()` didn't guard against `data`
+  being `undefined` (it never needed to before, since nothing called it
+  from a live path) — would have thrown on every profile saved before
+  this fix.
+- ~~Leaderboard has no Supabase table at all~~ — **closed, and it was
+  worse than "no persistence": `SegmentedLeaderboard`/
+  `UniversityLeaderboard` were pure in-memory `Map`s scoped to a single
+  engine instance.** `addStudent()`/`recordPractice()` only ever added
+  the CURRENT student to their own empty, ephemeral registry — in any
+  real deployment (a fresh engine per session), every student would see
+  themselves ranked alone, always. No new table needed: `kairo.students`
+  already carries everything ranking needs (`elite_score_history`,
+  `streak_current_momentum`, `target_course`/`target_university`) via
+  the existing profile sync, so this was purely a read-side fix — two
+  new `SECURITY DEFINER` functions (`get_segmented_leaderboard`,
+  `get_university_rankings`, migration `add_real_leaderboard_functions`,
+  correctly `SECURITY DEFINER` from the start this time, learning from
+  the `get_challenge_leaderboard` mistake in §5g). `getMyLeaderboard()`/
+  `getUniversityRankings()` are now async and require
+  `connectSupabase()`, matching `ChallengesModule`'s pattern.
+  `addStudent()`/`recordPractice()` were removed from `endSession()` —
+  they added no persisted value beyond what profile sync already does.
+  Verified end-to-end with the same simulated-real-request discipline as
+  §5g: 4 throwaway students, confirmed a real authenticated caller sees
+  correctly ranked *other* students (not just themselves), and
+  university aggregation is correct (3 students → avg score of the sum).
+- **Review and Insights genuinely need no Supabase table** — both are
+  pure derived-view layers with zero instance state (verified by reading
+  both files fully: every method computes fresh from
+  `engine.graph`/`engine.profile`, which already persist via
+  `concept_states`/`kairo.students`). This was the one part of the
+  original "no Supabase table" list that turns out to be correctly
+  ephemeral, not a gap.
+- **CBT Exam Mode's full paper/results detail (beyond the session
+  summary already in `kairo.sessions`) still has no Supabase table** —
+  a completed mock's full per-question results are lost once the local
+  session ends. Not addressed in this pass.
 - **`ChallengesModule.js`'s backend (§5e) is now real, admin-curated,
   event-based challenges** — but the module's UI-facing half is
   deliberately not built (see §5e for exactly what is/isn't done).
