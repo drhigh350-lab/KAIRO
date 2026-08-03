@@ -3,7 +3,7 @@
  * Run with: node tests/engine.test.js
  */
 
-import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter } from "../src/index.js";
+import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag } from "../src/utils/constants.js";
 
@@ -972,6 +972,36 @@ await test('Notifications: pull and mark-read only, matching the real RLS shape 
   await adapter2.markNotificationRead('n1');
   const markCall = calls2.find(c => c.table === 'notifications' && c.op === 'update');
   assert(markCall && markCall.row.read_at, 'markNotificationRead should UPDATE read_at — the only write kairo.notifications RLS actually permits');
+});
+
+test('CBT: setup uses JAMB-accurate per-subject question counts (English 60, others 40)', () => {
+  const fakeEngine = { contentPacks: {}, submitAnswer: () => {} };
+  const cbt = new CBTExamMode(fakeEngine);
+  const result = cbt.setup({ subjects: ['English', 'Mathematics', 'Physics', 'Chemistry'] });
+  assertEqual(result.totalQuestions, 180, 'English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160');
+});
+
+await test('CBT: submitAnswer withholds correctness feedback during a live attempt (CBT Exam Mode Spec §2.3/§5.2/§5.4)', async () => {
+  const fakeQuestions = (subject, count) => Array.from({ length: count }, (_, i) => ({
+    id: `${subject}_${i}`, questionId: `${subject}_${i}`, subject,
+    text: `Q${i}`, options: ['A', 'B', 'C', 'D'], correctOption: 'A', explanation: 'Because A.', conceptId: null
+  }));
+  const fakeEngine = {
+    contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
+    submitAnswer: () => {}
+  };
+  const cbt = new CBTExamMode(fakeEngine);
+  cbt.setup({ subjects: ['Mathematics'] });
+  await cbt.buildPaper();
+  cbt.start();
+
+  const result = cbt.submitAnswer(0, 'B', 5000);
+  assert(!('isCorrect' in result), 'submitAnswer must not leak isCorrect during a live attempt — the spec calls withholding it "the single hardest constraint in the entire specification"');
+  assert(!('correctOption' in result), 'submitAnswer must not leak the correct option during a live attempt');
+  assert(!('explanation' in result), 'submitAnswer must not leak an explanation during a live attempt');
+
+  const final = cbt.finish();
+  assertEqual(final.correct, 0, 'The wrong answer is still scored correctly once the exam is actually submitted — withholding is temporal/procedural only, never informational (Spec §2.6)');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

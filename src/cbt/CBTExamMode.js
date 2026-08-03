@@ -4,11 +4,18 @@
  */
 
 export class CBTExamMode {
+  // JAMB standard: English is compulsory and carries 60 questions;
+  // every other subject in the combination carries 40 (CBT Exam Mode
+  // Spec §4.5 — treated as ground truth, not configurable, for a real
+  // UTME Mock). A uniform per-subject count would misrepresent the
+  // actual exam format the module exists to rehearse.
+  static JAMB_QUESTION_COUNT = { English: 60, default: 40 };
+  static JAMB_TOTAL_TIME_MIN = 120;
+
   constructor(kairoEngine) {
     this.engine = kairoEngine;
     this.config = {
       subjects: [],
-      questionsPerSubject: 40,
       timePerSubjectMin: 26,
       totalQuestions: 180, // UTME standard
       totalTimeMin: 120
@@ -17,20 +24,25 @@ export class CBTExamMode {
     this.examData = null;
   }
 
+  _questionCountFor(subject) {
+    return CBTExamMode.JAMB_QUESTION_COUNT[subject] ?? CBTExamMode.JAMB_QUESTION_COUNT.default;
+  }
+
   /**
    * Configure a mock exam.
    */
-  setup({ subjects = ['English', 'Mathematics', 'Physics', 'Chemistry'], 
-          questionsPerSubject = 40, 
+  setup({ subjects = ['English', 'Mathematics', 'Physics', 'Chemistry'],
           timePerSubjectMin = 26,
           difficultyMix = 'mixed' }) {
-    this.config = { subjects, questionsPerSubject, timePerSubjectMin, difficultyMix };
+    this.config = { subjects, timePerSubjectMin, difficultyMix };
     this.state = 'setup';
+
+    const totalQuestions = subjects.reduce((sum, s) => sum + this._questionCountFor(s), 0);
 
     return {
       mode: 'cbt_mock',
       subjects,
-      totalQuestions: subjects.length * questionsPerSubject,
+      totalQuestions,
       totalTimeMin: subjects.length * timePerSubjectMin,
       timePerSubjectMin
     };
@@ -46,7 +58,7 @@ export class CBTExamMode {
     for (const subject of this.config.subjects) {
       const questions = await this.engine.contentPacks.getOfflineQuestions({
         subject,
-        count: this.config.questionsPerSubject
+        count: this._questionCountFor(subject)
       });
 
       for (let i = 0; i < questions.length; i++) {
@@ -133,6 +145,11 @@ export class CBTExamMode {
 
   /**
    * Submit an answer for the current question.
+   *
+   * CBT Exam Mode Spec §2.3 / §5.2 / §5.4: no correctness signal of any
+   * kind — not isCorrect, not the correct option, not an explanation —
+   * may reach the student during a live attempt. Feedback is withheld
+   * entirely until finish()/_calculateResults() runs after submission.
    */
   submitAnswer(globalIndex, selectedOption, timeSpentMs) {
     if (this.state !== 'running') return { error: 'Exam not running' };
@@ -143,13 +160,9 @@ export class CBTExamMode {
     q.timeSpentMs = timeSpentMs;
     this.examData.subjectTimes[q.subject] += timeSpentMs;
 
-    const isCorrect = selectedOption === q.correctOption;
-
     return {
       globalIndex,
-      isCorrect,
-      correctOption: q.correctOption,
-      explanation: q.explanation,
+      recorded: true,
       nextIndex: globalIndex + 1 < this.examData.paper.length ? globalIndex + 1 : null
     };
   }
