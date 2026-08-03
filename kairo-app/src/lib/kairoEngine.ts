@@ -133,3 +133,36 @@ export async function startSuggestedSession(limit = 5): Promise<SuggestedSession
   }
   return { questions, kaiMessage };
 }
+
+export interface CustomSessionArgs {
+  /** Real subject names (e.g. "Physics"), or [] for no subject filter ("All Subjects"). */
+  subjects?: string[];
+  includeFading?: boolean;
+  limit?: number;
+}
+
+/**
+ * Mixed Practice / Weak Areas, via the same real session lifecycle as
+ * startSuggestedSession(). Only subjects with a real seeded question bank
+ * are ever passed as a filter — an unseeded subject (e.g. "Mathematics",
+ * "English Language") would otherwise silently return zero questions.
+ */
+export async function startCustomSession({ subjects = [], includeFading = true, limit = 10 }: CustomSessionArgs): Promise<SuggestedSessionResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(subjects.length ? subjects : kairo.profile.targetSubjects || []);
+
+  const seededSubjects = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
+  const { queue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  const questions: Engine[] = [];
+  const seenIds: string[] = [];
+  for (const conceptId of queue) {
+    if (questions.length >= limit) break;
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    if (q) {
+      questions.push(q);
+      seenIds.push(q.id);
+    }
+  }
+  return { questions };
+}

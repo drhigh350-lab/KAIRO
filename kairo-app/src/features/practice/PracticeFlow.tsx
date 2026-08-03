@@ -7,7 +7,7 @@ import { PracticeHub } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { subjects, practiceQuestions, type Subject, type Topic } from './data';
-import { getEngine, startSuggestedSession } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 
 type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary';
@@ -69,6 +69,7 @@ export function PracticeFlow() {
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
   const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
+  const [usingEngine, setUsingEngine] = useState(entryFlow === 'suggested');
   const startedSuggested = useRef(false);
 
   useEffect(() => {
@@ -85,6 +86,22 @@ export function PracticeFlow() {
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Mixed Practice / Weak Areas from PracticeHub — same real session lifecycle as "suggested". */
+  function startEngineCustomSession(subjectFilter: string[], includeFading: boolean, limit: number) {
+    setEngineQuestions(null);
+    setEngineLoadError(null);
+    setUsingEngine(true);
+    startCustomSession({ subjects: subjectFilter, includeFading, limit: limit || 10 })
+      .then(({ questions }) => {
+        if (questions.length === 0) {
+          setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
+        } else {
+          setEngineQuestions(questions);
+        }
+      })
+      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+  }
 
   function go(next: Screen) {
     setHistory((h) => [...h, screen]);
@@ -107,7 +124,7 @@ export function PracticeFlow() {
     const newResults = [...results, { correct, confidence, time: 40 + Math.floor(Math.random() * 30) }];
     setResults(newResults);
 
-    if (entryFlow === 'suggested' && engineQuestions) {
+    if (usingEngine && engineQuestions) {
       const kairo = getEngine();
       const eq = engineQuestions[qIndex];
       if (kairo && eq) {
@@ -196,6 +213,9 @@ export function PracticeFlow() {
             setSubtopic(null);
             setQIndex(0);
             setResults([]);
+            const isGenericSubject = activeSubject.key === 'mixed' || activeSubject.key === 'weak';
+            const subjectFilter = isGenericSubject ? [] : [activeSubject.label];
+            startEngineCustomSession(subjectFilter, type === 'weak', len);
             go('practiceQuestion');
           }
         }}
@@ -239,7 +259,7 @@ export function PracticeFlow() {
       />
     );
   }
-  if (screen === 'practiceQuestion' && entryFlow === 'suggested') {
+  if (screen === 'practiceQuestion' && usingEngine) {
     if (engineLoadError) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)' }}>
