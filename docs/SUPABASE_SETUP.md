@@ -441,6 +441,60 @@ match). Connecting a transport doesn't change that; the sequencing is
 still: reconcile the candidate-shape mismatch (a copy/content decision)
 first, then this transport is ready to actually carry something.
 
+## 5g. Eighth pass — CRITICAL: `authenticated` had zero grants on the entire `kairo` schema
+
+Discovered as a side effect of investigating whether Leaderboard needed
+a real backend (§6, below): **no role other than the table owner
+(`postgres`) had ever been granted access to `kairo` — not the schema
+itself, not a single table.** Every RLS policy across every kairo table
+was correctly written, but RLS only *restricts* rows for a role that
+already has a `GRANT`; without one, `authenticated` has zero access
+regardless of how permissive the policies are. Concretely: `SELECT
+has_schema_privilege('authenticated', 'kairo', 'USAGE')` returned
+`false`, and `information_schema.role_table_grants` had zero rows for
+any `kairo.*` table for any role except `postgres`.
+
+**This means no real signed-in app user could ever have reached
+`kairo.*` through the actual Supabase client/PostgREST API — this
+entire session (and however long before it).** Every verification done
+throughout this document was via `execute_sql`, which runs as an
+elevated role that bypasses RLS *and* grants entirely — so a working
+migration + a passing test-transaction here never actually proved a
+real user could do the same thing. Confirmed directly by simulating a
+real request (`SET ROLE authenticated` + a JWT claim) before the fix:
+a plain `SELECT` against any kairo table returned `permission denied
+for schema kairo`, not an RLS-filtered empty result — a categorically
+different failure, at a layer beneath RLS.
+
+Fixed via `grant_authenticated_access_to_kairo_schema`: `GRANT USAGE ON
+SCHEMA kairo TO authenticated`, then `SELECT`/`INSERT`/`UPDATE` (never
+`DELETE` — no table has a delete policy) on every table, matched
+exactly to what each table's existing RLS policies already permit
+(e.g. `attempts` gets `SELECT, INSERT` only — append-only, no update
+policy exists; `questions`/`concepts` get `SELECT` only). Also set
+`ALTER DEFAULT PRIVILEGES IN SCHEMA kairo` so a *future* table doesn't
+silently repeat this exact gap. Grants go to `authenticated` only,
+never `anon` — matches the documented "no anonymous path" design.
+
+This also exposed a related bug in `kairo.get_challenge_leaderboard()`
+(§5e): it was `SECURITY INVOKER` (the default), so even with grants
+fixed, a real authenticated caller would only ever see their *own* row
+through it — the "own row only" RLS on `challenge_attempts`/`students`
+applies inside a SECURITY INVOKER function exactly as it would to a
+bare SELECT. Fixed in `fix_challenge_leaderboard_security_definer`:
+marked `SECURITY DEFINER` with a pinned `search_path` (avoiding the
+same `function_search_path_mutable` advisory already flagged on the
+legacy `public.*` functions), `EXECUTE` revoked from `public` and
+granted only to `authenticated`.
+
+**Verified end-to-end**, not just re-read: created two throwaway
+students + a challenge + attempts, simulated a real authenticated
+request with a JWT `sub` matching neither student, and confirmed (a) a
+direct `SELECT` on `challenge_attempts` now succeeds with 0 rows (RLS
+correctly restricting instead of a permission error), and (b)
+`get_challenge_leaderboard()` still returns both rows correctly ranked
+regardless of caller identity. Test fixtures cleaned up after.
+
 ## 6. What is still NOT done
 
 - **The onboarding subject picker offers 8 subjects
