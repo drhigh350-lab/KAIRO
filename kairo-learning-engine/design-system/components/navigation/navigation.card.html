@@ -1,0 +1,28 @@
+<!-- @dsCard group="Components" viewport="700x260" name="Navigation — BottomNav, TopBar" -->
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<div id="root" style="background:var(--color-bg-canvas)"></div>
+<script type="text/babel">
+const { BottomNav, TopBar, IconButton } = window.KairoDesignSystem_1c2e7f;
+const icon = (d) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d}/></svg>;
+function Demo(){
+  const [active, setActive] = React.useState('home');
+  return (
+    <div>
+      <TopBar title="Question 4 of 12" left={<IconButton><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg></IconButton>} right={<IconButton><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></IconButton>} />
+      <div style={{height:1, background:'var(--color-border-subtle)'}} />
+      <BottomNav active={active} onChange={setActive} items={[
+        {key:'home', label:'Home', icon: icon('M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z')},
+        {key:'practice', label:'Practice', icon: icon('M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z')},
+        {key:'cbt', label:'CBT', icon: icon('M3 4h18v14H3zM8 21h8M12 18v3')},
+        {key:'review', label:'Review', icon: icon('M1 4v6h6M3.5 15a9 9 0 1 0 2-9.4L1 10')},
+        {key:'insights', label:'Insights', icon: icon('M4 20V10M12 20V4M20 20v-7')},
+      ]} />
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
