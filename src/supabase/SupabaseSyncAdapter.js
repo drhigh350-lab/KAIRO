@@ -119,6 +119,7 @@ export class SupabaseSyncAdapter {
       recovery_session_count: profileData.recoverySessionCount || 0,
       notification_history: profileData.notificationHistory || [],
       completed_challenges: profileData.completedChallenges || [],
+      challenge_streak: profileData.challengeStreak || null,
       total_xp: profileData.totalXP || 0,
       badges: profileData.badges || [],
       preferences: profileData.preferences || null,
@@ -186,6 +187,7 @@ export class SupabaseSyncAdapter {
       recoverySessionCount: row.recovery_session_count,
       notificationHistory: row.notification_history || [],
       completedChallenges: row.completed_challenges || [],
+      challengeStreak: row.challenge_streak || null,
       totalXP: row.total_xp || 0,
       badges: row.badges || [],
       preferences: row.preferences || null,
@@ -468,6 +470,160 @@ export class SupabaseSyncAdapter {
       lifecycleState: row.lifecycle_state,
       empiricalStats: row.empirical_stats || { totalAttempts: 0, correctCount: 0, avgResponseTimeMs: 0, distractorSelectionCounts: {} }
     };
+  }
+
+  // ─────────────────────────────────────────────
+  // Challenges (kairo.challenges, kairo.challenge_attempts) — Challenges
+  // Module Spec. Creation/update is admin-only at the RLS layer (§2.3);
+  // this adapter doesn't duplicate that check client-side, it just
+  // surfaces whatever Postgres decides.
+  // ─────────────────────────────────────────────
+
+  _rowToChallenge(row) {
+    return {
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      theme: row.theme,
+      questionIds: row.question_ids || [],
+      scoringFormula: row.scoring_formula,
+      startsAt: row.starts_at ? new Date(row.starts_at).getTime() : null,
+      endsAt: row.ends_at ? new Date(row.ends_at).getTime() : null,
+      lateJoinAllowed: row.late_join_allowed,
+      leaderboardVisible: row.leaderboard_visible,
+      status: row.status,
+      createdBy: row.created_by,
+      createdAt: row.created_at ? new Date(row.created_at).getTime() : null
+    };
+  }
+
+  async fetchChallenges(filter = {}) {
+    let query = this._table('challenges').select('*');
+    if (filter.status) query = query.eq('status', filter.status);
+    if (filter.type) query = query.eq('type', filter.type);
+    const { data, error } = await query.order('starts_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(row => this._rowToChallenge(row));
+  }
+
+  /**
+   * §10.2 Challenge Creation Workflow. RLS enforces admin-only (kairo.
+   * students.is_admin) — this throws whatever Postgres throws for a
+   * non-admin caller rather than pre-checking client-side.
+   */
+  async createChallenge(challenge, createdByStudentId) {
+    const { data, error } = await this._table('challenges').insert({
+      id: challenge.id,
+      type: challenge.type,
+      title: challenge.title,
+      theme: challenge.theme || null,
+      question_ids: challenge.questionIds || [],
+      scoring_formula: challenge.scoringFormula || 'accuracy',
+      starts_at: new Date(challenge.startsAt).toISOString(),
+      ends_at: new Date(challenge.endsAt).toISOString(),
+      late_join_allowed: challenge.lateJoinAllowed !== false,
+      leaderboard_visible: challenge.leaderboardVisible !== false,
+      status: challenge.status || 'scheduled',
+      created_by: createdByStudentId
+    }).select().single();
+    if (error) throw error;
+    return this._rowToChallenge(data);
+  }
+
+  /**
+   * §10.3 Ongoing Management — status transitions (scheduled -> live ->
+   * concluded -> archived) and mid-challenge intervention (pulling a
+   * question via question_ids). Admin-only per RLS, same as create.
+   */
+  async updateChallenge(challengeId, patch) {
+    const row = {};
+    if (patch.status) row.status = patch.status;
+    if (patch.questionIds) row.question_ids = patch.questionIds;
+    if (patch.leaderboardVisible !== undefined) row.leaderboard_visible = patch.leaderboardVisible;
+    row.updated_at = new Date().toISOString();
+
+    const { data, error } = await this._table('challenges').update(row).eq('id', challengeId).select().single();
+    if (error) throw error;
+    return this._rowToChallenge(data);
+  }
+
+  _rowToChallengeAttempt(row) {
+    return {
+      id: row.id,
+      challengeId: row.challenge_id,
+      studentId: row.student_id,
+      joinedAt: row.joined_at ? new Date(row.joined_at).getTime() : null,
+      completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
+      countsTowardLeaderboard: row.counts_toward_leaderboard,
+      score: row.score,
+      accuracy: row.accuracy,
+      timeTakenMs: row.time_taken_ms,
+      questionResults: row.question_results || []
+    };
+  }
+
+  /**
+   * §5.2/§5.3 Joining Flow. Idempotent — re-joining an already-joined
+   * challenge returns the existing attempt rather than erroring, since a
+   * student re-opening the join screen is not a distinct action.
+   */
+  async joinChallenge(challengeId, studentId, { countsTowardLeaderboard = true } = {}) {
+    const { data: existing, error: fetchErr } = await this._table('challenge_attempts')
+      .select('*').eq('challenge_id', challengeId).eq('student_id', studentId).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (existing) return this._rowToChallengeAttempt(existing);
+
+    const { data, error } = await this._table('challenge_attempts').insert({
+      id: `${challengeId}_${studentId}`,
+      challenge_id: challengeId,
+      student_id: studentId,
+      counts_toward_leaderboard: countsTowardLeaderboard
+    }).select().single();
+    if (error) throw error;
+    return this._rowToChallengeAttempt(data);
+  }
+
+  async pushChallengeAttempt(attempt) {
+    const { data, error } = await this._table('challenge_attempts').update({
+      completed_at: attempt.completedAt ? new Date(attempt.completedAt).toISOString() : null,
+      score: attempt.score,
+      accuracy: attempt.accuracy,
+      time_taken_ms: attempt.timeTakenMs,
+      question_results: attempt.questionResults || []
+    }).eq('id', attempt.id).select().single();
+    if (error) throw error;
+    return this._rowToChallengeAttempt(data);
+  }
+
+  async fetchChallengeAttempt(challengeId, studentId) {
+    const { data, error } = await this._table('challenge_attempts')
+      .select('*').eq('challenge_id', challengeId).eq('student_id', studentId).maybeSingle();
+    if (error) throw error;
+    return data ? this._rowToChallengeAttempt(data) : null;
+  }
+
+  /**
+   * §7.2 — leaderboard windowed around the student's own rank by
+   * default, not just a top-N list. Backed by kairo.
+   * get_challenge_leaderboard(), which reads other students' scores —
+   * something ordinary RLS row policies can't safely expose a raw
+   * SELECT to, hence the dedicated function.
+   */
+  async fetchLeaderboard(challengeId, { aroundStudentId = null, window = 10 } = {}) {
+    const { data, error } = await this.supabase.schema('kairo').rpc('get_challenge_leaderboard', {
+      p_challenge_id: challengeId,
+      p_around_student_id: aroundStudentId,
+      p_window: window
+    });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      studentId: row.student_id,
+      studentName: row.student_name,
+      score: row.score,
+      accuracy: row.accuracy,
+      timeTakenMs: row.time_taken_ms,
+      rank: Number(row.rank)
+    }));
   }
 
   // ─────────────────────────────────────────────

@@ -265,6 +265,51 @@ export const CommsConstants = Object.freeze({
   MIN_EDITORIAL_SPACING_HOURS: 24
 });
 
+// ─── Challenges Module (Challenges Module Spec §3, §5.3, §10.3) ───
+// Only the types with type-specific mechanics the spec actually defines
+// (scoring formula, late-join policy, timer behavior) get distinct
+// engine handling; the rest share the same underlying engine per §3's
+// own framing ("all types share the same underlying engine ... differ
+// in cadence, framing, and intent" — cadence/framing/theme is Admin's
+// per-challenge configuration, not per-type code).
+export const ChallengeType = Object.freeze({
+  DAILY:            'daily',
+  WEEKLY:           'weekly',
+  WEEKEND_SPRINT:   'weekend_sprint',
+  SUBJECT:          'subject',
+  TOPIC:            'topic',
+  SPEED:            'speed',
+  ACCURACY:         'accuracy',
+  MARATHON:         'marathon',
+  MOCK_UTME:        'mock_utme',
+  SPECIAL_CAMPAIGN: 'special_campaign'
+  // Sponsored/Partner Challenges (§3, §11.2) explicitly deferred to
+  // future expansion — not modeled here.
+});
+
+export const ChallengeStatus = Object.freeze({
+  SCHEDULED: 'scheduled',
+  LIVE:      'live',
+  CONCLUDED: 'concluded',
+  ARCHIVED:  'archived'
+});
+
+// §10.2 "scoring formula (accuracy-weighted, speed-weighted, or hybrid
+// depending on challenge type)" — configured per challenge, not fixed
+// per type, since Admins configure format per §10.2.
+export const ScoringFormula = Object.freeze({
+  ACCURACY: 'accuracy', // percent correct; time is not a factor
+  SPEED:    'speed',    // correctness first, then total time as tiebreak/bonus
+  HYBRID:   'hybrid'    // composite of both
+});
+
+// §5.3 "Late joiners ... may be excluded or clearly flagged ... for
+// tightly time-boxed formats like Mock UTME Events, where synchronized
+// start times matter." Only Mock UTME is named explicitly; every other
+// type defaults to allowing late entry unless an admin overrides it
+// per-challenge (Challenge.lateJoinAllowed).
+export const CHALLENGE_TYPES_DEFAULT_NO_LATE_JOIN = Object.freeze([ChallengeType.MOCK_UTME]);
+
 export const Brand = Object.freeze({
   NAME: 'Kairo',
   TAGLINE: 'Think Smart. Perform Elite.',

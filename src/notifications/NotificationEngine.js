@@ -87,20 +87,15 @@ export class NotificationEngine {
       }
     }
 
-    // 4. Challenge completion
-    const newChallenges = this.engine.challenges?.checkAndAward() || [];
-    for (const c of newChallenges) {
-      notifications.push({
-        id: `challenge_${c.id}_${now}`,
-        type: 'challenge_complete',
-        priority: 'low',
-        title: 'Challenge Complete',
-        body: `${c.title}: ${c.description}`,
-        action: 'view_challenges',
-        dismissible: true,
-        timestamp: now
-      });
-    }
+    // 4. Challenge completion — event-driven now (ChallengesModule
+    // rewrite per the Challenges Module Spec: challenges are real
+    // admin-curated events a student explicitly joins/finishes, not a
+    // locally-polled personal-achievement catalog), so there is nothing
+    // to poll for here anymore. A completion notification belongs at
+    // the point ChallengesModule.finishChallenge() actually runs, not
+    // this periodic check — not wired yet, since notification delivery
+    // for real challenges depends on the still-unresolved notification
+    // pipeline gap (see docs/SUPABASE_SETUP.md §6).
 
     // 5. Weekly reflection ready
     const dayOfWeek = new Date().getDay();

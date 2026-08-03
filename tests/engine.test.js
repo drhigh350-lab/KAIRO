@@ -1155,6 +1155,112 @@ await test('loadContentCatalog() populates engine.graph and engine.questionGraph
   assertEqual(q.correctOption, 'A', 'getQuestionForConcept should carry correctOption through untranslated');
 });
 
+test('Supabase adapter: kairo.challenges/kairo.challenge_attempts rows map correctly', () => {
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+  const challengeRow = {
+    id: 'chal_daily_1', type: 'daily', title: 'Test Daily', theme: 'Cell Biology',
+    question_ids: ['q1', 'q2'], scoring_formula: 'speed',
+    starts_at: '2026-08-01T00:00:00Z', ends_at: '2026-08-02T00:00:00Z',
+    late_join_allowed: true, leaderboard_visible: true, status: 'live',
+    created_by: 'admin-1', created_at: '2026-07-31T00:00:00Z'
+  };
+  const mappedChallenge = adapter._rowToChallenge(challengeRow);
+  assertEqual(mappedChallenge.scoringFormula, 'speed', 'scoring_formula should map to scoringFormula');
+  assertEqual(mappedChallenge.questionIds.length, 2, 'question_ids should map to questionIds');
+  assertEqual(mappedChallenge.lateJoinAllowed, true, 'late_join_allowed should map to lateJoinAllowed');
+
+  const attemptRow = {
+    id: 'chal_daily_1_stu1', challenge_id: 'chal_daily_1', student_id: 'stu1',
+    joined_at: '2026-08-01T01:00:00Z', completed_at: '2026-08-01T01:05:00Z',
+    counts_toward_leaderboard: true, score: 80, accuracy: 80, time_taken_ms: 30000,
+    question_results: [{ questionId: 'q1', correct: true }]
+  };
+  const mappedAttempt = adapter._rowToChallengeAttempt(attemptRow);
+  assertEqual(mappedAttempt.score, 80, 'score should round-trip');
+  assertEqual(mappedAttempt.questionResults.length, 1, 'question_results should map to questionResults');
+});
+
+await test('ChallengesModule: createChallenge defaults late-join to false only for mock_utme', async () => {
+  const engine5 = new KairoEngine({ studentId: 'chal_test_1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine5.init();
+  const calls = [];
+  engine5.sync.adapter = {
+    createChallenge: async (challenge) => { calls.push(challenge); return { ...challenge }; }
+  };
+
+  await engine5.challenges.createChallenge({ type: 'mock_utme', title: 'Mock UTME', questionIds: ['q1'], startsAt: Date.now(), endsAt: Date.now() + 1000 }, 'admin1');
+  await engine5.challenges.createChallenge({ type: 'daily', title: 'Daily', questionIds: ['q1'], startsAt: Date.now(), endsAt: Date.now() + 1000 }, 'admin1');
+
+  assertEqual(calls[0].lateJoinAllowed, false, 'mock_utme should default lateJoinAllowed to false per Challenges Module Spec §5.3');
+  assertEqual(calls[1].lateJoinAllowed, true, 'daily should default lateJoinAllowed to true');
+});
+
+await test('ChallengesModule: joinChallenge flags a late join on a no-late-join challenge as not counting toward the leaderboard', async () => {
+  const engine6 = new KairoEngine({ studentId: 'chal_test_2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine6.init();
+  const joinCalls = [];
+  engine6.sync.adapter = {
+    fetchChallenges: async () => [{ id: 'mock_1', type: 'mock_utme', startsAt: Date.now() - 60000, endsAt: Date.now() + 60000, lateJoinAllowed: false }],
+    joinChallenge: async (challengeId, studentId, opts) => { joinCalls.push(opts); return { id: `${challengeId}_${studentId}`, ...opts }; }
+  };
+
+  const result = await engine6.challenges.joinChallenge('mock_1');
+  assertEqual(result.lateJoin, true, 'joining after startsAt should be flagged as a late join');
+  assertEqual(result.countsTowardLeaderboard, false, 'a late join on a no-late-join-allowed challenge should not count toward the leaderboard');
+  assertEqual(joinCalls[0].countsTowardLeaderboard, false, 'the adapter should be told the same thing');
+});
+
+await test('ChallengesModule: finishChallenge computes accuracy/speed/hybrid scores and records completion + daily streak', async () => {
+  const engine7 = new KairoEngine({ studentId: 'chal_test_3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine7.init();
+  let pushedAttempt = null;
+  engine7.sync.adapter = {
+    fetchChallenges: async () => [{ id: 'chal_acc', type: 'daily', scoringFormula: 'accuracy' }],
+    pushChallengeAttempt: async (attempt) => { pushedAttempt = attempt; return attempt; }
+  };
+
+  const results = [
+    { questionId: 'q1', correct: true, responseTimeMs: 5000 },
+    { questionId: 'q2', correct: true, responseTimeMs: 5000 },
+    { questionId: 'q3', correct: false, responseTimeMs: 5000 },
+    { questionId: 'q4', correct: true, responseTimeMs: 5000 }
+  ];
+  const finished = await engine7.challenges.finishChallenge('chal_acc', results);
+
+  assertEqual(finished.accuracy, 75, 'accuracy should be correctCount/total * 100');
+  assertEqual(finished.score, 75, 'accuracy-formula score should equal accuracy exactly — time is not a factor');
+  assert(pushedAttempt && pushedAttempt.score === 75, 'the pushed attempt should carry the same computed score');
+  assert(engine7.profile.completedChallenges.includes('chal_acc'), 'finishChallenge should record the challenge id in completedChallenges');
+  assertEqual(engine7.profile.challengeStreak.current, 1, 'first daily challenge completion should start a streak of 1');
+
+  // A faster/speed-scored challenge should score at least as high as pure accuracy for the same correctness.
+  engine7.sync.adapter.fetchChallenges = async () => [{ id: 'chal_speed', type: 'speed', scoringFormula: 'speed' }];
+  const fastResults = results.map(r => ({ ...r, responseTimeMs: 2000 }));
+  const finishedSpeed = await engine7.challenges.finishChallenge('chal_speed', fastResults);
+  assert(finishedSpeed.score >= finishedSpeed.accuracy, 'speed formula should never score below plain accuracy for the same correctness, since it only adds a bonus');
+});
+
+await test('ChallengesModule: getLeaderboard passes the caller\'s own studentId for the windowed-around-self default (§7.2)', async () => {
+  const engine8 = new KairoEngine({ studentId: 'chal_test_4', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine8.init();
+  let seenArgs = null;
+  engine8.sync.adapter = {
+    fetchLeaderboard: async (challengeId, opts) => { seenArgs = { challengeId, opts }; return [{ studentId: engine8.profile.studentId, rank: 1 }]; }
+  };
+
+  const board = await engine8.challenges.getLeaderboard('chal_x');
+  assertEqual(seenArgs.opts.aroundStudentId, engine8.profile.studentId, 'getLeaderboard should default to windowing around the calling student, not a bare top-N list');
+  assertEqual(board.length, 1, 'should return whatever the adapter provides');
+});
+
+test('StudentProfile: challengeStreak round-trips through toJSON (structural check extended for the Challenges Module rewrite)', () => {
+  const p = new StudentProfile({ studentId: 'sp2', name: 'Streak Student' });
+  p.challengeStreak = { current: 3, lastCompletedDate: new Date().toDateString(), type: 'daily' };
+  const json = p.toJSON();
+  assert('challengeStreak' in json, 'challengeStreak must be present in toJSON() output or it silently drops on every save, exactly like completedChallenges/totalXP/badges/preferences did before they were declared');
+  assertEqual(json.challengeStreak.current, 3, 'challengeStreak value should round-trip exactly');
+});
+
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) {
   console.log(`\n⚠️  ${failCount} test(s) need attention.`);

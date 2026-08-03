@@ -347,6 +347,70 @@ content still had `learningObjective: null` and `lifecycleState:
 applying the identical backfill to the local files; `git diff` against
 this pass is now just that sync fix, nothing else changed.
 
+## 5e. Sixth pass — ChallengesModule rebuilt around the real spec
+
+`ChallengesModule.js` previously implemented a different feature than
+`docs/specs/KAIRO_CHALLENGES_MODULE.md` describes: the spec is
+admin-curated, event-based challenges (§2.3 "Only TECHMED administrators
+can create Challenges") with discovery/leaderboards/sharing; the code
+was a personal achievement/badge system — a duplicate of what
+`BadgeSystem`/`LevelSystem` (`src/progression/ProgressionSystem.js`)
+already do independently. Rebuilt around the actual spec:
+
+- **New tables**: `kairo.challenges` (type, title, theme, question_ids,
+  scoring_formula, starts_at/ends_at, late_join_allowed,
+  leaderboard_visible, status) and `kairo.challenge_attempts` (one row
+  per student per challenge — score, accuracy, time_taken_ms,
+  question_results, counts_toward_leaderboard for the §5.3 late-joiner
+  case). Migrations `add_kairo_challenges_module`,
+  `add_challenge_streak_to_students`.
+- **Minimal admin gating**: `kairo.students.is_admin boolean default
+  false` — there was no admin/role concept anywhere in `kairo.*` before
+  this. RLS restricts `kairo.challenges` INSERT/UPDATE to
+  `is_admin = true`; `§10.5`'s full Content/Growth/senior-admin role
+  split is real future work, not built.
+- **§7.2 leaderboard, windowed around the student's own rank by
+  default** (not just top-N) via `kairo.get_challenge_leaderboard()`, a
+  SQL function rather than a raw table policy — a plain RLS SELECT
+  policy can't safely let a student read *other* students' rows only
+  for ranking while keeping `question_results` (their actual answers)
+  private, so the function returns only the ranking columns. Verified
+  live: 3 test attempts placed correctly by score, then by
+  time_taken_ms as tiebreak; a `p_window: 0` query around one student
+  returned exactly that student's own row.
+- **`ChallengesModule.js`**: `createChallenge()`/`updateChallengeStatus()`
+  (admin-only per RLS — §10.2/§10.3, the *operations* an admin tool
+  would call, not the dashboard itself), `joinChallenge()` (§5.3
+  late-join handling — flags `counts_toward_leaderboard: false` rather
+  than silently rejecting, per §6.2's "no silent failures"),
+  `finishChallenge()` (computes score per the challenge's configured
+  `scoringFormula` — accuracy/speed/hybrid, §10.2 — and also feeds
+  `engine.submitAnswer()` per §9.3 "feeding data in": a challenge
+  question is still a real attempt against the real knowledge graph),
+  `getLeaderboard()`, `getPersonalBenchmark()` (§7.2 "your best Speed
+  Challenge score yet").
+- `completedChallenges` now means what its name says — completed real
+  Challenge ids, not a locally-polled achievement catalog.
+  `NotificationEngine`'s old "challenge completion" rule polled a
+  `checkAndAward()` method that no longer exists; removed rather than
+  left dangling, since completion is event-driven now
+  (`finishChallenge()`), not something to poll for.
+- Added `StudentProfile.challengeStreak` (§9.2 streaks) —
+  `kairo.students.challenge_streak` — mapped in
+  `SupabaseSyncAdapter` both directions and covered by the same
+  structural round-trip discipline as the earlier profile-field bugs.
+
+**Deliberately not built** (flagged, not silently skipped — these are
+UI/product surfaces or larger systems, not backend engine work):
+Discovery surfaces (§4 — home zone, dedicated tab, push copy),
+in-challenge UI chrome (§6), shareable result-card rendering (§8 —
+WhatsApp/Telegram branded images), the actual admin dashboard UI (§10 —
+live monitoring, mid-challenge intervention UI, reporting views —
+though the engine-level operations they'd call now exist), full
+roles/permissions beyond the single `is_admin` flag (§10.5), and
+challenge-related push notifications (blocked on the same notification
+pipeline gap as §6 below).
+
 ## 6. What is still NOT done
 
 - **The onboarding subject picker offers 8 subjects
@@ -380,17 +444,9 @@ this pass is now just that sync fix, nothing else changed.
   product/engineering decision on which of the rest genuinely need
   server-side persistence before any schema work happens — not
   something to guess at silently.
-- **`ChallengesModule.js` implements a different feature than the
-  Challenges Module spec** (`docs/specs/KAIRO_CHALLENGES_MODULE.md`)
-  describes — the spec is admin-curated, event-based challenges with
-  discovery/leaderboards/sharing; the code is a personal
-  achievement/badge system with no admin curation or shared-event
-  model. `completedChallenges` now syncs correctly for what the code
-  actually does today, but that's a different question from whether
-  the code does what the spec asks for — flagged in the same audit
-  that closed the sync gaps, not something to build without a product
-  conversation first given the scope (admin roles, leaderboards,
-  sharing infra).
+- **`ChallengesModule.js`'s backend (§5e) is now real, admin-curated,
+  event-based challenges** — but the module's UI-facing half is
+  deliberately not built (see §5e for exactly what is/isn't done).
 - **The notification stack is not "two parallel systems" — it's three
   non-interoperating layers, and the deeper two don't fit each other.**
   Investigated properly this pass rather than just re-flagging the

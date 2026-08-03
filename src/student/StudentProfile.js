@@ -66,7 +66,8 @@ export class StudentProfile {
     this.comms = null;             // CommsService.toJSON() snapshot
     this.learn = null;             // LearnModule.toJSON() snapshot
     this.notificationHistory = []; // NotificationEngine's local candidate history (kairo.students.notification_history)
-    this.completedChallenges = []; // ChallengesModule.checkAndAward()'s earned-challenge-id list (kairo.students.completed_challenges)
+    this.completedChallenges = []; // ChallengesModule.finishChallenge()'s completed real-Challenge-id list (kairo.students.completed_challenges)
+    this.challengeStreak = null;   // ChallengesModule._recordCompletion()'s { current, lastCompletedDate, type } (kairo.students.challenge_streak)
     this.totalXP = 0;              // LevelSystem.update()'s recalculated XP (kairo.students.total_xp)
     this.badges = [];              // BadgeSystem.checkAndAward()'s earned-badge-id list (kairo.students.badges)
     this.preferences = null;       // ProfileSettings.updatePreferences()'s snapshot (kairo.students.preferences)
@@ -264,6 +265,7 @@ export class StudentProfile {
       learn: this.learn,
       notificationHistory: this.notificationHistory,
       completedChallenges: this.completedChallenges,
+      challengeStreak: this.challengeStreak,
       totalXP: this.totalXP,
       badges: this.badges,
       preferences: this.preferences,
