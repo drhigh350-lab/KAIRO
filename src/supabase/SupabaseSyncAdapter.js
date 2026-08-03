@@ -403,7 +403,7 @@ export class SupabaseSyncAdapter {
     if (filter.topic) query = query.eq('topic', filter.topic);
     const { data, error } = await query;
     if (error) throw error;
-    return data || [];
+    return (data || []).map(row => this._rowToConcept(row));
   }
 
   async fetchQuestions(filter = {}) {
@@ -413,7 +413,61 @@ export class SupabaseSyncAdapter {
     if (filter.conceptId) query = query.contains('concepts_tested', [{ conceptId: filter.conceptId }]);
     const { data, error } = await query;
     if (error) throw error;
-    return data || [];
+    return (data || []).map(row => this._rowToQuestion(row));
+  }
+
+  /**
+   * kairo.concepts row -> ConceptNode constructor shape. IDs come straight
+   * from the row — they're already the canonical conceptId() hash computed
+   * at seed time, so this never recomputes or re-derives them.
+   */
+  _rowToConcept(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      subject: row.subject,
+      topic: row.topic,
+      subtopic: row.subtopic,
+      difficultyWeight: row.difficulty_weight,
+      dependencyIds: row.dependency_ids || [],
+      questionPoolIds: row.question_pool_ids || []
+    };
+  }
+
+  /**
+   * kairo.questions row -> Question constructor shape (qim/Question.js).
+   * Keep this in lockstep with Question.toJSON()/the live schema, same as
+   * _profileToRow/_rowToProfile — a field missing from either silently
+   * drops it for every question fetched from Supabase.
+   */
+  _rowToQuestion(row) {
+    return {
+      id: row.id,
+      subject: row.subject,
+      topic: row.topic,
+      subtopic: row.subtopic,
+      learningObjective: row.learning_objective,
+      conceptsTested: row.concepts_tested || [],
+      prerequisiteConcepts: row.prerequisite_concepts || [],
+      difficultyRating: row.difficulty_rating,
+      cognitiveLevel: row.cognitive_level,
+      estimatedSolvingTimeSec: row.estimated_solving_time_sec,
+      readingLoad: row.reading_load,
+      calculationLoad: row.calculation_load,
+      distractors: row.distractors || [],
+      skillsAssessed: row.skills_assessed || [],
+      source: row.source,
+      year: row.year,
+      examBody: row.exam_body,
+      relatedQuestionIds: row.related_question_ids || [],
+      stem: row.stem,
+      options: row.options || [],
+      correctOption: row.correct_option,
+      explanation: row.explanation,
+      distractorRationale: row.distractor_rationale,
+      lifecycleState: row.lifecycle_state,
+      empiricalStats: row.empirical_stats || { totalAttempts: 0, correctCount: 0, avgResponseTimeMs: 0, distractorSelectionCounts: {} }
+    };
   }
 
   // ─────────────────────────────────────────────

@@ -133,27 +133,19 @@ export class OnboardingEngine {
 
   /**
    * After diagnostic, generate the student's initial knowledge map.
+   * Concepts come from the real kairo.concepts/kairo.questions catalog
+   * (loadContentCatalog(), requires connectSupabase() to have already run —
+   * Kairo requires an account from first visit) — previously this seeded a
+   * fictional 5-topic-per-subject stub ("Cell Biology Fundamentals" etc.)
+   * with a fake questionPoolIds placeholder that matched nothing real, so
+   * a student's very first knowledge map could never surface an actual
+   * seeded question. A subject with no seeded content yet simply seeds 0
+   * concepts here rather than fabricating placeholder ones.
    */
-  buildInitialPlan() {
+  async buildInitialPlan() {
     const { subjects, targetCourse, examDate, diagnosticResults } = this.data;
 
-    // Seed concepts for each subject
-    const seeded = [];
-    for (const subject of subjects || []) {
-      // In real implementation, these come from curriculum API
-      const topics = this._getSubjectTopics(subject);
-      for (const topic of topics) {
-        const id = this.engine.addConcept({
-          name: topic + ' Fundamentals',
-          subject,
-          topic,
-          subtopic: 'Introduction',
-          difficultyWeight: 1.0,
-          questionPoolIds: [subject + '_' + topic + '_q1']
-        });
-        seeded.push(id);
-      }
-    }
+    const { conceptsLoaded } = await this.engine.loadContentCatalog({ subjects });
 
     // Process diagnostic results into the knowledge graph
     for (const result of diagnosticResults || []) {
@@ -181,7 +173,7 @@ export class OnboardingEngine {
     const plan = this.engine.startSession();
 
     return {
-      seededConcepts: seeded.length,
+      seededConcepts: conceptsLoaded,
       diagnosticSummary: this._summarizeDiagnostic(),
       firstSession: plan,
       profile: this.engine.profile.toJSON()
@@ -199,20 +191,6 @@ export class OnboardingEngine {
         ? "You have a solid foundation. We'll build from here."
         : "No worries — we'll start with the basics and move up steadily."
     };
-  }
-
-  _getSubjectTopics(subject) {
-    const map = {
-      'Physics': ['Mechanics', 'Waves', 'Electricity', 'Modern Physics', 'Heat Energy'],
-      'Chemistry': ['Stoichiometry', 'Organic Chemistry', 'Physical Chemistry', 'Inorganic Chemistry', 'Environmental Chemistry'],
-      'Biology': ['Cell Biology', 'Genetics', 'Ecology', 'Physiology', 'Evolution'],
-      'Mathematics': ['Algebra', 'Calculus', 'Geometry', 'Statistics', 'Trigonometry'],
-      'English': ['Comprehension', 'Lexis', 'Structure', 'Oral Forms', 'Essay'],
-      'Government': ['Political Systems', 'Constitution', 'Citizenship', 'Foreign Policy'],
-      'Economics': ['Microeconomics', 'Macroeconomics', 'International Trade', 'Development'],
-      'Literature': ['Prose', 'Poetry', 'Drama', 'Literary Devices']
-    };
-    return map[subject] || ['General'];
   }
 
   isComplete() {

@@ -1075,6 +1075,86 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
 });
 
+test('Supabase adapter: kairo.concepts row maps correctly to ConceptNode shape', () => {
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+  const row = { id: 'c1', name: 'Cell Structure', subject: 'Biology', topic: 'Cell Structure', subtopic: null, difficulty_weight: 1.0, dependency_ids: [], question_pool_ids: [] };
+  const mapped = adapter._rowToConcept(row);
+  assertEqual(mapped.id, 'c1', 'id should round-trip');
+  assertEqual(mapped.name, 'Cell Structure', 'name should round-trip');
+  assertEqual(mapped.difficultyWeight, 1.0, 'difficulty_weight should map to difficultyWeight');
+});
+
+test('Supabase adapter: kairo.questions row maps correctly to the Question constructor shape', () => {
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+  const row = {
+    id: 'q1', subject: 'Biology', topic: 'Cell Structure', subtopic: null,
+    learning_objective: 'Understand cell structure well enough to apply it, not just recall it.',
+    concepts_tested: [{ conceptId: 'c1', weight: 1.0 }], prerequisite_concepts: [],
+    difficulty_rating: 2, cognitive_level: 'recall', estimated_solving_time_sec: 30,
+    reading_load: 'low', calculation_load: 'none', distractors: [], skills_assessed: [],
+    source: 'techmed_authored', year: null, exam_body: 'JAMB', related_question_ids: [],
+    stem: 'What is the powerhouse of the cell?',
+    options: [{ label: 'A', text: 'Mitochondria', isCorrect: true }], correct_option: 'A',
+    explanation: 'Mitochondria produce ATP through cellular respiration.', lifecycle_state: 'live',
+    empirical_stats: null, distractor_rationale: null
+  };
+  const mapped = adapter._rowToQuestion(row);
+  assertEqual(mapped.stem, row.stem, 'stem should round-trip');
+  assertEqual(mapped.conceptsTested[0].conceptId, 'c1', 'concepts_tested should map to conceptsTested');
+  assertEqual(mapped.correctOption, 'A', 'correct_option should map to correctOption');
+  assertEqual(mapped.lifecycleState, 'live', 'lifecycle_state should map to lifecycleState');
+});
+
+await test('loadContentCatalog() populates engine.graph and engine.questionGraph from Supabase, and getQuestionForConcept() bridges the practice loop to real seeded content', async () => {
+  const conceptRow = { id: 'bio_c1', name: 'Photosynthesis', subject: 'Biology', topic: 'Photosynthesis', subtopic: null, difficulty_weight: 1.0, dependency_ids: [], question_pool_ids: [] };
+  const questionRow = {
+    id: 'bio_q1', subject: 'Biology', topic: 'Photosynthesis', subtopic: null,
+    learning_objective: 'Understand Photosynthesis well enough to apply it, not just recall it.',
+    concepts_tested: [{ conceptId: 'bio_c1', weight: 1.0 }], prerequisite_concepts: [],
+    difficulty_rating: 2, cognitive_level: 'recall', estimated_solving_time_sec: 30,
+    reading_load: 'low', calculation_load: 'none', distractors: [], skills_assessed: [],
+    source: 'techmed_authored', year: null, exam_body: 'JAMB', related_question_ids: [],
+    stem: 'Where does photosynthesis occur in a plant cell?',
+    options: [{ label: 'A', text: 'Chloroplast', isCorrect: true }, { label: 'B', text: 'Nucleus', isCorrect: false }],
+    correct_option: 'A', explanation: 'Photosynthesis occurs in the chloroplast, which contains chlorophyll.',
+    lifecycle_state: 'live', empirical_stats: null, distractor_rationale: null
+  };
+
+  const mockClient = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; },
+            then(resolve) {
+              if (table === 'concepts') return resolve({ data: [conceptRow], error: null });
+              if (table === 'questions') return resolve({ data: [questionRow], error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const catalogEngine = new KairoEngine({ studentId: 'catalog_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await catalogEngine.init();
+  const adapter = new SupabaseSyncAdapter(mockClient, catalogEngine.store);
+  catalogEngine.sync.attachRemote(adapter, catalogEngine);
+
+  const { conceptsLoaded, questionsLoaded } = await catalogEngine.loadContentCatalog({ subjects: ['Biology'] });
+  assertEqual(conceptsLoaded, 1, 'loadContentCatalog should add the one fetched concept to engine.graph');
+  assertEqual(questionsLoaded, 1, 'loadContentCatalog should add the one fetched question to engine.questionGraph');
+  assert(catalogEngine.graph.hasConcept('bio_c1'), 'Concept fetched from Supabase should be a real ConceptNode in engine.graph, using the DB id verbatim — this was previously dead: fetchConcepts()/fetchQuestions() existed but nothing ever called them');
+
+  const q = catalogEngine.getQuestionForConcept('bio_c1');
+  assert(q, 'getQuestionForConcept should return a real question for a concept that has one live question linked to it');
+  assertEqual(q.text, questionRow.stem, 'getQuestionForConcept should translate the canonical .stem field to the .text shape CBTExamMode/RapidFire consumers expect');
+  assertEqual(q.conceptId, 'bio_c1', 'getQuestionForConcept should translate conceptsTested[0].conceptId to a flat singular .conceptId');
+  assertEqual(q.correctOption, 'A', 'getQuestionForConcept should carry correctOption through untranslated');
+});
+
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) {
   console.log(`\n⚠️  ${failCount} test(s) need attention.`);

@@ -29,7 +29,7 @@ import { CrossModuleMilestones } from "./sjee/CrossModuleMilestones.js";
 import { ContinuationEngine } from "./sjee/ContinuationEngine.js";
 import { CommsService } from "./comms/CommsService.js";
 import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.js";
-import { LocalStore } from "./data/LocalStore.js";
+import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
 import { conceptId } from "./utils/helpers.js";
 
@@ -203,6 +203,96 @@ export class KairoEngine {
     await this.store.saveProfile(this.profile);
 
     return remoteProfile;
+  }
+
+  /**
+   * Pull the shared content catalog — kairo.concepts and live
+   * kairo.questions — from Supabase into this engine. Until this runs,
+   * this.graph/this.questionGraph only ever contain whatever a caller
+   * added by hand, and every "which question do I show for concept X"
+   * lookup (Practice, RapidFire, CBT) comes back empty even though the
+   * question bank is fully seeded server-side.
+   *
+   * Concept/question IDs are taken verbatim from the row — kairo.concepts
+   * IDs are already the canonical conceptId() hash computed at seed time,
+   * so this never recomputes or collides with addConcept()'s own hashing.
+   *
+   * Also mirrors a flattened copy of every question into
+   * ContentPackManager's local queue (the same store getOfflineQuestions()
+   * reads from), so CBTExamMode.buildPaper() and any other
+   * contentPacks.getOfflineQuestions() caller see real content without
+   * needing a separate "download pack" step.
+   */
+  async loadContentCatalog({ subjects = null } = {}) {
+    if (!this.sync.adapter) {
+      throw new Error('loadContentCatalog requires connectSupabase() first.');
+    }
+
+    const subjectList = subjects && subjects.length > 0 ? subjects : this.profile.targetSubjects;
+    const filters = subjectList && subjectList.length > 0 ? subjectList.map(subject => ({ subject })) : [{}];
+
+    let conceptsLoaded = 0;
+    let questionsLoaded = 0;
+
+    for (const filter of filters) {
+      const concepts = await this.sync.adapter.fetchConcepts(filter);
+      for (const data of concepts) {
+        if (this.graph.hasConcept(data.id)) continue;
+        this.graph.addConcept(new ConceptNode(data));
+        conceptsLoaded++;
+      }
+
+      const questions = await this.sync.adapter.fetchQuestions(filter);
+      for (const data of questions) {
+        if (!this.questionGraph.getQuestion(data.id)) {
+          this.questionGraph.addQuestion(new Question(data));
+          questionsLoaded++;
+        }
+        await this.store.put(STORES.QUEUE, this._flattenQuestion(data));
+      }
+    }
+
+    this.questionGraph.autoBuildRelationships();
+
+    return { conceptsLoaded, questionsLoaded };
+  }
+
+  /**
+   * Canonical Question shape (.stem, .conceptsTested[]) -> the flat
+   * .text/.conceptId consumer shape CBTExamMode and ContentPackManager's
+   * offline queue expect. Keeps the field-name translation in one place
+   * instead of duplicated across every consumer.
+   */
+  _flattenQuestion(q) {
+    return {
+      queueId: q.id,
+      id: q.id,
+      questionId: q.id,
+      subject: q.subject,
+      topic: q.topic,
+      text: q.stem,
+      options: q.options,
+      correctOption: q.correctOption,
+      explanation: q.explanation,
+      conceptId: q.conceptsTested?.[0]?.conceptId || null,
+      difficulty: q.difficultyRating,
+      storedAt: Date.now()
+    };
+  }
+
+  /**
+   * Pick a live question that tests the given concept — the missing link
+   * between a session plan (a list of concept IDs) and something a
+   * consumer can actually render. Returns the flat consumer shape (see
+   * _flattenQuestion) so callers get the same {text, options, conceptId, ...}
+   * shape regardless of which mode requested it.
+   */
+  getQuestionForConcept(cid, { excludeIds = [] } = {}) {
+    const candidates = this.questionGraph.getQuestionsForConcept(cid)
+      .filter(q => !excludeIds.includes(q.id));
+    if (candidates.length === 0) return null;
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    return this._flattenQuestion(chosen);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -538,8 +628,8 @@ export class KairoEngine {
     return this.onboarding.submitStep(input);
   }
 
-  completeOnboarding() {
-    return this.onboarding.buildInitialPlan();
+  async completeOnboarding() {
+    return await this.onboarding.buildInitialPlan();
   }
 
   // ═══════════════════════════════════════════════════════════════
