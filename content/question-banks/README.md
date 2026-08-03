@@ -57,6 +57,20 @@ Each subject folder holds:
   caveat as the other two banks applies.
 - Content accuracy has not been independently re-verified here.
 
+## use-of-english/ — UTME 2026 Use of English Question Bank (200 questions)
+
+- Source: `UTME_2026_Use_of_English_200_Questions.csv`, same column
+  convention as Biology (`Question Number, Subject, Topic, Question,
+  Option A-D, Correct Answer, Explanation (Why Correct), Why Other
+  Options Are Wrong`), plus its own `Subject` column.
+- Structural import: 200/200 rows converted, 0 skipped. 63 topics.
+  Two stems repeat verbatim ("Choose the CORRECT sentence:" x9, "Choose
+  the option with the CORRECT SPELLING:" x2) — checked by hand, these
+  are legitimate distinct grammar-drill items sharing a boilerplate
+  prompt with different options/answers each time, not duplicate rows.
+- Same `lifecycleState: 'imported'` caveat as the other three banks;
+  content accuracy not independently re-verified here.
+
 ## Regenerating the JSON from CSV
 
 ```
@@ -74,6 +88,11 @@ node scripts/import-question-bank.js \
   content/question-banks/physics/UTME_Physics_200_Questions.csv \
   content/question-banks/physics/physics_utme_200.json \
   --examBody JAMB --source "UTME Physics Question Bank"
+
+node scripts/import-question-bank.js \
+  content/question-banks/use-of-english/UTME_2026_Use_of_English_200_Questions.csv \
+  content/question-banks/use-of-english/use_of_english_utme_200.json \
+  --examBody JAMB --source "UTME 2026 Use of English Question Bank"
 ```
 
 The importer accepts either column convention: `Question Number` or
