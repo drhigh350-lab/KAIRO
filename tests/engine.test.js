@@ -8,6 +8,8 @@ import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag, Channel } from "../src/utils/constants.js";
 import { OneSignalTransport } from "../src/comms/transport/OneSignalTransport.js";
 import { OnboardingEngine } from "../src/onboarding/OnboardingEngine.js";
+import { candidateToTemplateInput } from "../src/sjee/NotificationPipeline.js";
+import { TemplateEngine } from "../src/comms/TemplateEngine.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -1414,6 +1416,72 @@ await test('OnboardingEngine state survives a save/reload cycle instead of alway
   assertEqual(resumed.step, 3, 'onboarding step should survive the exact save/restore path init() uses (profile.onboarding -> OnboardingEngine.fromJSON) — previously nothing snapshotted onboarding state at all, so this always came back as a fresh step-0 engine');
   assertEqual(resumed.data.name, 'Ada', 'in-progress onboarding answers (name) should also survive, not just the step counter');
   assertEqual(resumed.data.targetCourse, 'Medicine and Surgery', 'in-progress onboarding answers (targetCourse) should also survive');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// NOTIFICATION PIPELINE TESTS
+// The reconciliation of the candidate-shape mismatch flagged in
+// docs/SUPABASE_SETUP.md §6: NotificationOrchestrator/ReEngagementEngine/
+// ContinuationEngine produce pre-composed { type, tier, title, body,
+// action }, while TemplateEngine expects { category, data: {
+// observation, reason, benefit, action } }. candidateToTemplateInput()
+// bridges them by treating body as observation verbatim — never
+// splitting, rewording, or inventing copy.
+// ═══════════════════════════════════════════════════════════════
+
+test('candidateToTemplateInput() maps type -> category and body -> observation without altering the text', () => {
+  const mapped = candidateToTemplateInput({ type: 'daily_recap', tier: 'standard', title: 'Recap', body: '3 concepts need reinforcement.', action: 'start_recap' });
+  assertEqual(mapped.category, 'academic_nudge', 'daily_recap should map to the academic_nudge category');
+  assertEqual(mapped.data.observation, '3 concepts need reinforcement.', 'body should become the observation fact verbatim — not reworded');
+  assertEqual(mapped.data.action, 'start_recap', 'action should pass through unmodified');
+
+  const milestone = candidateToTemplateInput({ type: 'milestone_journey_stage_transition', tier: 'informational', title: 'Milestone', body: 'You reached Establishment.', action: null });
+  assertEqual(milestone.category, 'milestone_celebration', 'any milestone_* type should map to the milestone_celebration category regardless of the specific sub-type');
+
+  const reengage = candidateToTemplateInput({ type: 'win_back', tier: 'standard', title: 'x', body: 'Ready when you are.', action: 'resume_session' });
+  assertEqual(reengage.category, 'reengagement_winback', 'win_back should map to the reengagement_winback category');
+});
+
+test('TemplateEngine: informational-tier candidates no longer require an action to render', () => {
+  const rendered = new TemplateEngine().render({
+    category: 'milestone_celebration', tier: 'informational', channel: 'in_app_badge',
+    data: { observation: 'You reached Establishment.', action: null }
+  });
+  assert(rendered !== null, 'an informational-tier candidate with no action (milestones, post-exam acknowledgment) should still render — previously _buildSlots() required an action for every category except account_administrative, silently discarding every actionless milestone/acknowledgment');
+  assert(rendered.text.includes('Establishment'), 'rendered text should carry the real observation content');
+});
+
+await test('NotificationPipeline: gathers a real candidate, arbitrates it, and resolves it into deliverable content end-to-end', async () => {
+  const pipelineEngine = new KairoEngine({ studentId: 'pipeline_test_1', name: 'Pipeline Student', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await pipelineEngine.init();
+  pipelineEngine.comms.consent.grantChannelPermission('push');
+  pipelineEngine.comms.consent.setCategoryPreference('push', 'academic_nudge', true);
+
+  const cid = pipelineEngine.addConcept({ name: 'Fading Concept', subject: 'Biology', topic: 'Cells' });
+  pipelineEngine.graph.getConcept(cid).retentionState = 'fading';
+
+  const deliverable = pipelineEngine.checkAndResolveNotifications();
+  assert(deliverable.length > 0, 'a fading concept with consent granted should produce at least one deliverable notification end-to-end (candidate generated -> submitted -> arbitrated -> resolved)');
+
+  const recap = deliverable.find(d => d.candidate.type === 'daily_recap');
+  assert(recap, 'the daily_recap candidate specifically should have survived the full pipeline');
+  assertEqual(recap.resolved.channel, 'push', 'should resolve to the push channel per consent');
+  assert(recap.resolved.rendered.text.includes('concept'), 'rendered text should carry the real, already-composed content through unmodified');
+});
+
+await test('NotificationPipeline: the post-exam immediate window suppresses all ordinary candidates, surfacing only the acknowledgment', async () => {
+  const postExamEngine = new KairoEngine({ studentId: 'pipeline_test_2', name: 'Post Exam Student', examDate: Date.now() - 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await postExamEngine.init();
+  postExamEngine.comms.consent.grantChannelPermission('push');
+  postExamEngine.comms.consent.setCategoryPreference('in_app_badge', 'motivational_consistency', true);
+
+  const cid2 = postExamEngine.addConcept({ name: 'Fading Concept 2', subject: 'Biology', topic: 'Cells' });
+  postExamEngine.graph.getConcept(cid2).retentionState = 'fading';
+
+  assert(postExamEngine.continuation.isInImmediateWindow(), 'sanity check: an exam date 1 day in the past should be inside the immediate post-exam window');
+
+  const deliverable = postExamEngine.checkAndResolveNotifications();
+  assert(deliverable.every(d => d.candidate.type === 'post_exam_acknowledgment'), 'inside the immediate post-exam window, only the acknowledgment should ever surface — the fading-concept daily_recap candidate must not leak through even though its own condition is met');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

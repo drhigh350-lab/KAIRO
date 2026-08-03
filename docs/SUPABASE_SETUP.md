@@ -433,13 +433,14 @@ work (OneSignal's own `send_message` tool is explicitly gated
 "HIGH IMPACT: confirmation required," and this session never had a
 safe, explicitly-user-approved single test target to send to).
 
-**This transport has no valid input to send yet.** It's built and
-tested standalone, but nothing produces a real `CommsService.resolve()`
-output today — that's exactly the §6 gap below (the Orchestrator's
-candidate shape and `TemplateEngine`'s expected fact-slot shape don't
-match). Connecting a transport doesn't change that; the sequencing is
-still: reconcile the candidate-shape mismatch (a copy/content decision)
-first, then this transport is ready to actually carry something.
+**Update (§6, below): the candidate-shape mismatch this depended on is
+now reconciled** — `KairoEngine.checkAndResolveNotifications()`
+produces real `CommsService.resolve()` output end-to-end. This
+transport is ready to carry it; what's still missing is resolving a
+student to their OneSignal `external_id` (see §6) — once that exists,
+the loop is: `checkAndResolveNotifications()` → for each
+`{candidate, resolved}` → `new OneSignalTransport().send(resolved,
+externalId)`.
 
 ## 5g. Eighth pass — CRITICAL: `authenticated` had zero grants on the entire `kairo` schema
 
@@ -572,48 +573,64 @@ regardless of caller identity. Test fixtures cleaned up after.
 - **`ChallengesModule.js`'s backend (§5e) is now real, admin-curated,
   event-based challenges** — but the module's UI-facing half is
   deliberately not built (see §5e for exactly what is/isn't done).
-- **The notification stack is not "two parallel systems" — it's three
-  non-interoperating layers, and the deeper two don't fit each other.**
-  Investigated properly this pass rather than just re-flagging the
-  existing note:
-  1. `src/notifications/NotificationEngine.js` — legacy, live, generates
-     6 candidate types (daily recap, streak, exam proximity, challenge
-     complete, weekly reflection, recovery) and delivers them itself
-     directly into its own queue/history. This is the only one of the
-     three actually wired into the running engine today.
-  2. `src/sjee/NotificationOrchestrator.js` — spec-accurate arbitration
-     (tone gate, journey-stage gate, frequency budget, channel
-     selection). Fully built and unit-tested in isolation, but
-     `new NotificationOrchestrator(this.profile)` in `index.js` is its
-     only reference anywhere — `.submit()`/`.arbitrate()` are never
-     called by anything live. Same for `ReEngagementEngine`,
-     `CrossModuleMilestones`, and `ContinuationEngine`, which are all
-     candidate *sources* meant to feed it (confirmed by grepping for
-     every call site of each — none exist outside their own tests).
-  3. `src/comms/CommsService.js` + `TemplateEngine.js` — also fully
-     built and unit-tested, also never called from anywhere live.
-  
-  **The blocker to wiring 2 into 3 isn't missing glue code — the two
-  layers expect genuinely different candidate shapes.** `arbitrate()`
-  returns candidates from `NotificationOrchestrator`/`ReEngagementEngine`/
-  `ContinuationEngine` as pre-composed `{ type, tier, title, body,
-  action }` — a finished sentence. `TemplateEngine.render()` expects
-  `{ category, data: { observation, reason, benefit, action } }` — raw
-  fact *slots* that IT composes into text (§5.2's "Layer 1 data payload
-  ... Layer 2 template ... Layer 3 rendering", with its own voice
-  calibration and compliance auto-correction). Passing an
-  Orchestrator-shaped candidate into `CommsService.resolve()` today
-  would silently return `null` on every single call, since `data` is
-  undefined and `_buildSlots()` requires `data.observation`.
-  
-  Reconciling this means either rewriting every candidate-generating
-  module's already-composed prose (`_composeInvitation()` and
-  equivalents) into structured observation/reason/benefit fact payloads
-  — genuinely touching what Kai says to students — or building a
-  translation layer that can't mechanically reconstruct facts from
-  already-composed sentences. Both are product-facing copy decisions,
-  not a wiring task, so this is flagged with the real shape of the
-  problem rather than fixed blind.
+- ~~The notification stack is three non-interoperating layers, and the
+  deeper two don't fit each other~~ — **reconciled.** `src/sjee/
+  NotificationPipeline.js` is the missing glue: gathers candidates from
+  `NotificationEngine` (refactored to a pure candidate source — see
+  below), `ReEngagementEngine`, and `CrossModuleMilestones` (translated
+  from its `{category, key, framing}` shape); submits them to
+  `NotificationOrchestrator`; arbitrates; and resolves each approved
+  candidate through `CommsService`/`TemplateEngine`. `KairoEngine.
+  checkAndResolveNotifications()` runs the whole pass and returns
+  `{candidate, resolved}` pairs ready for a transport (e.g.
+  `OneSignalTransport`) — actual sending is still deliberately left to
+  the caller, the same boundary `CommsService.resolve()` itself draws.
+
+  The blocker really was the candidate-shape mismatch, not missing glue
+  code — solved via `candidateToTemplateInput()`, which maps `{type,
+  tier, title, body, action}` to `{category, data: {observation, action}}`
+  by treating the **already-composed `body` as the `observation` fact
+  verbatim** — no copy is split, reworded, or invented; every word a
+  student sees was already written by whichever module generated the
+  candidate. `type -> NotificationCategory` uses an explicit lookup
+  table (e.g. `daily_recap` -> `academic_nudge`, `win_back` -> 
+  `reengagement_winback`, any `milestone_*` -> `milestone_celebration`).
+  `TemplateEngine.render()`'s own compliance/channel/voice-calibration
+  logic still runs on top exactly as designed — this pass didn't bypass
+  it, it made it reachable for the first time.
+
+  One real (small, defensible) rule change was needed along the way:
+  `TemplateEngine._buildSlots()` required an `action` for every category
+  except Account & Administrative — but milestones and the post-exam
+  acknowledgment are informational-tier by design (§7.5: "always
+  Informational-tier... never competes for the frequency budget") and
+  genuinely have no next action. Extended the exemption to any
+  Informational-tier candidate, not just `account_administrative` —
+  a reading already implied by the existing comment's phrasing, not a
+  new rule invented from nothing. Without this, every milestone and the
+  post-exam acknowledgment would have silently rendered to `null` forever.
+
+  `NotificationEngine` is now a pure candidate source (matches §5.2's
+  "NO module sends a notification directly"): `checkNotifications()` no
+  longer self-queues into its own `queue`/delivers via `getUnread()`/
+  `clearAll()` (removed — superseded by the real pipeline); `history`/
+  `_wasNotified()`/`markAsRead()` remain, since one-time-event dedup
+  (never re-firing `exam_6weeks`) is a genuinely different concern from
+  the Orchestrator's time-window frequency budget.
+
+  Verified end-to-end with a real pipeline run (not per-piece unit
+  tests only): a genuinely fading concept produced a `daily_recap`
+  candidate that survived generation → Orchestrator arbitration →
+  `CommsService` resolution → real rendered push text, and separately
+  confirmed the post-exam immediate window correctly suppresses that
+  same candidate down to just the acknowledgment.
+
+  **Still not done**: actually wiring `checkAndResolveNotifications()`'s
+  output into `OneSignalTransport` needs a way to resolve a student to
+  their OneSignal `external_id`, which doesn't exist as a profile
+  concept yet — left for whoever wires the client-side subscription
+  registration, since that's a decision about the actual device/app
+  identity scheme, not something to guess at here.
 - **`kairo.students` RLS/security posture is clean** — every advisory
   finding on this project is on the legacy `public.*` RoboMed tables
   and functions, unrelated to the `kairo` schema.

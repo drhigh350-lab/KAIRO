@@ -2,18 +2,29 @@
  * Kairo — NotificationEngine
  * Smart, contextual notifications. Never noise.
  * Follows Kai's rule: invitation-based, never guilt-based.
+ *
+ * A candidate SOURCE only, per §5.2's platform-wide constraint ("NO
+ * module sends a notification directly"). checkNotifications() used to
+ * self-deliver into its own queue, bypassing NotificationOrchestrator's
+ * tone gate/frequency budget entirely — now it only returns candidates
+ * for NotificationPipeline to submit. `history`/`_wasNotified()`/
+ * `markAsRead()` remain: they're a genuinely different concern from the
+ * Orchestrator's time-window frequency budget — per-type "don't repeat
+ * this exact one-time event again" dedup (exam_6weeks firing once ever,
+ * not once per day).
  */
 
 export class NotificationEngine {
   constructor(kairoEngine) {
     this.engine = kairoEngine;
-    this.queue = []; // pending notifications
     this.history = kairoEngine.profile.notificationHistory || [];
   }
 
   /**
-   * Check what notifications should fire right now.
-   * Call this on app open and periodically.
+   * Compute which candidates are worth submitting right now.
+   * Call this on app open and periodically. Returns Orchestrator-shaped
+   * candidates ({ type, tier, title, body, action, priorityWeight });
+   * does not deliver anything itself.
    */
   checkNotifications() {
     const notifications = [];
@@ -31,12 +42,11 @@ export class NotificationEngine {
       notifications.push({
         id: `recap_${now}`,
         type: 'daily_recap',
-        priority: 'high',
+        tier: 'standard',
+        priorityWeight: 10,
         title: 'Your Daily Recap is Ready',
         body: `${fading.length} concept${fading.length > 1 ? 's' : ''} need${fading.length > 1 ? '' : 's'} reinforcement. About ${Math.ceil(fading.length * 1.5)} minutes.`,
-        action: 'start_recap',
-        dismissible: true,
-        timestamp: now
+        action: 'start_recap'
       });
     }
 
@@ -49,12 +59,11 @@ export class NotificationEngine {
       notifications.push({
         id: `streak_${now}`,
         type: 'streak_gentle',
-        priority: 'medium',
+        tier: 'low',
+        priorityWeight: 4,
         title: 'Your Rhythm is Building',
         body: "One session today keeps the pattern alive. No pressure — just when you're ready.",
-        action: 'start_session',
-        dismissible: true,
-        timestamp: now
+        action: 'start_session'
       });
     }
 
@@ -65,24 +74,22 @@ export class NotificationEngine {
         notifications.push({
           id: `exam_6weeks_${now}`,
           type: 'exam_proximity',
-          priority: 'high',
+          tier: 'standard',
+          priorityWeight: 9,
           title: '6 Weeks to UTME',
           body: 'Kairo is shifting to exam-readiness mode. Your review intervals are now compressed.',
-          action: 'view_plan',
-          dismissible: false,
-          timestamp: now
+          action: 'view_plan'
         });
       }
       if (weeksToExam === 1 && !this._wasNotified('exam_1week')) {
         notifications.push({
           id: `exam_1week_${now}`,
           type: 'exam_proximity',
-          priority: 'high',
+          tier: 'standard',
+          priorityWeight: 9,
           title: 'One Week to Go',
           body: "You've done the work. Now it's about confidence and rest. I've prepared a light review.",
-          action: 'start_peak_session',
-          dismissible: false,
-          timestamp: now
+          action: 'start_peak_session'
         });
       }
     }
@@ -92,10 +99,7 @@ export class NotificationEngine {
     // admin-curated events a student explicitly joins/finishes, not a
     // locally-polled personal-achievement catalog), so there is nothing
     // to poll for here anymore. A completion notification belongs at
-    // the point ChallengesModule.finishChallenge() actually runs, not
-    // this periodic check — not wired yet, since notification delivery
-    // for real challenges depends on the still-unresolved notification
-    // pipeline gap (see docs/SUPABASE_SETUP.md §6).
+    // the point ChallengesModule.finishChallenge() actually runs.
 
     // 5. Weekly reflection ready
     const dayOfWeek = new Date().getDay();
@@ -103,12 +107,11 @@ export class NotificationEngine {
       notifications.push({
         id: `weekly_${now}`,
         type: 'weekly_reflection',
-        priority: 'medium',
+        tier: 'low',
+        priorityWeight: 3,
         title: 'Your Week in Review',
         body: "Kai has prepared your weekly reflection. Take a moment to see how far you've come.",
-        action: 'view_weekly',
-        dismissible: true,
-        timestamp: now
+        action: 'view_weekly'
       });
     }
 
@@ -117,34 +120,29 @@ export class NotificationEngine {
       notifications.push({
         id: `recovery_${now}`,
         type: 'recovery',
-        priority: 'high',
+        tier: 'standard',
+        priorityWeight: 8,
         title: 'Welcome Back',
         body: "I kept your place. We're starting light today — no need to make up for lost time.",
-        action: 'start_recovery_session',
-        dismissible: true,
-        timestamp: now
+        action: 'start_recovery_session'
       });
     }
 
-    // Deduplicate and store
-    const newOnes = notifications.filter(n => !this._wasNotified(n.id));
-    this.queue.push(...newOnes);
-
-    return newOnes;
+    return notifications.filter(n => !this._wasNotified(n.id));
   }
 
   _wasNotified(id) {
     return this.history.some(h => h.id === id || h.id.startsWith(id.split('_').slice(0, -1).join('_')));
   }
 
+  /**
+   * Call once NotificationPipeline has actually resolved+handed a
+   * candidate to transport — records it so a one-time candidate type
+   * (exam_6weeks, weekly_reflection) doesn't fire again.
+   */
   markAsRead(notificationId) {
     this.history.push({ id: notificationId, readAt: Date.now() });
     this.engine.profile.notificationHistory = this.history;
-    this.queue = this.queue.filter(n => n.id !== notificationId);
-  }
-
-  getUnread() {
-    return this.queue.filter(n => !this.history.some(h => h.id === n.id));
   }
 
   getAll(limit = 50) {
@@ -152,9 +150,5 @@ export class NotificationEngine {
       ...h,
       read: true
     }));
-  }
-
-  clearAll() {
-    this.queue = [];
   }
 }

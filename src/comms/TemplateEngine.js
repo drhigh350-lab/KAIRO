@@ -71,8 +71,15 @@ export class TemplateEngine {
     if (data.benefit) slots[TemplateSlot.BENEFIT] = data.benefit;
 
     // Action is mandatory except for Account & Administrative
-    // informational notices (§5.4).
-    if (candidate.category !== NotificationCategory.ACCOUNT_ADMIN && !data.action) {
+    // informational notices (§5.4) — read generally: any Informational-
+    // tier candidate (milestones, the post-exam acknowledgment) is pure
+    // FYI/celebratory content by definition (§7.5's "always
+    // Informational-tier... never competes for the frequency budget"),
+    // not something with a "next step," so requiring an action for
+    // those specifically would misread the intent of the carve-out.
+    if (candidate.category !== NotificationCategory.ACCOUNT_ADMIN &&
+        candidate.tier !== 'informational' &&
+        !data.action) {
       return null;
     }
     if (data.action) slots[TemplateSlot.ACTION] = data.action;

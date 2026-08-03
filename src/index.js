@@ -24,6 +24,7 @@ import { EmotionalProfile } from "./student/EmotionalProfile.js";
 import { LearningStateTracker } from "./student/LearningStateTracker.js";
 import { JourneyStageTracker } from "./sjee/JourneyStageTracker.js";
 import { NotificationOrchestrator } from "./sjee/NotificationOrchestrator.js";
+import { NotificationPipeline } from "./sjee/NotificationPipeline.js";
 import { ReEngagementEngine } from "./sjee/ReEngagementEngine.js";
 import { CrossModuleMilestones } from "./sjee/CrossModuleMilestones.js";
 import { ContinuationEngine } from "./sjee/ContinuationEngine.js";
@@ -104,6 +105,7 @@ export class KairoEngine {
     this.challenges = new ChallengesModule(this);
     this.insights = new InsightsModule(this);
     this.notifications = new NotificationEngine(this);
+    this.notificationPipeline = new NotificationPipeline(this);
     this.settings = new ProfileSettings(this);
     this.questionGraph = new QuestionRelationshipGraph();
     this.misconceptions = MisconceptionLibrary.seedDefaults();
@@ -590,6 +592,22 @@ export class KairoEngine {
     const built = this.topicPractice.buildSubtopicSession(subject, topic, subtopic, count);
     const session = this.startSession({ mode: 'topic_practice', plan: built.queue });
     return { ...session, ...built };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // NOTIFICATIONS
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Runs the full candidate-gathering -> Orchestrator arbitration ->
+   * CommsService resolution pass (NotificationPipeline) and returns
+   * whatever cleared every gate, ready for a transport (e.g.
+   * OneSignalTransport) to actually deliver. Call on app open and
+   * periodically — this itself never sends anything (§1.3's boundary:
+   * transport is a separate, explicit step the caller takes).
+   */
+  checkAndResolveNotifications() {
+    return this.notificationPipeline.run();
   }
 
   // ═══════════════════════════════════════════════════════════════
