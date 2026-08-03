@@ -166,3 +166,38 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
   }
   return { questions };
 }
+
+/** Real profile + stats for the Profile screen. null when nothing is signed in yet. */
+export function getProfileSummary(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.settings.getProfile() : null;
+}
+
+/** Real strengths/weaknesses/score/streak for the Insights screen. Safe with zero data loaded. */
+export function getInsightsSummary(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.insights.getDashboardInsights() : null;
+}
+
+/** Real "sessions this week" + reinforced/fading counts for Insights' weekly card. */
+export function getWeeklyReviewSummary(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.getWeeklyReflection().data : null;
+}
+
+/**
+ * Real "what needs review" summary for the Review screen. Mirrors
+ * ReviewModule.getPreSessionRecap()'s own contract: null both when nothing is
+ * signed in AND when genuinely nothing is due — the caller shouldn't have to
+ * tell those two "show nothing" cases apart.
+ */
+export function getReviewSummary(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.review.getPreSessionRecap() : null;
+}
+
+/** Weakness Review's error-pattern breakdown, for Review's "Weak Topics" card. */
+export function getWeaknessReview(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.review.buildWeaknessReview() : null;
+}

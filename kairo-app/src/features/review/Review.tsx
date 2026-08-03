@@ -1,31 +1,49 @@
 import { Badge, Button, Card } from '../../components';
-
-interface ReviewCategory {
-  label: string;
-  desc: string;
-  count: number;
-}
-
-const categories: ReviewCategory[] = [
-  { label: 'Due for Review', desc: '2 concepts are starting to fade — a quick pass now keeps them from slipping further.', count: 2 },
-  { label: 'Recent Mistakes', desc: 'From your last 3 sessions.', count: 4 },
-  { label: 'Weak Topics', desc: 'Organic Chemistry could use a confidence check.', count: 3 },
-  { label: 'Bookmarks', desc: 'Questions you’ve saved for later.', count: 6 },
-];
+import { getReviewSummary, getWeaknessReview } from '../../lib/kairoEngine';
 
 export function Review() {
+  const recap = getReviewSummary();
+  const weakness = getWeaknessReview();
+
+  const categories: { label: string; desc: string; count: number }[] = [];
+  if (recap?.recap.breakdown.recentlyMissed) {
+    categories.push({ label: 'Recent Mistakes', desc: 'From your last few sessions.', count: recap.recap.breakdown.recentlyMissed });
+  }
+  if (recap?.recap.breakdown.stale) {
+    categories.push({ label: 'Slipping Away', desc: "Held steady for a while but haven't come up recently.", count: recap.recap.breakdown.stale });
+  }
+  if (weakness?.dominantWeakness) {
+    categories.push({
+      label: 'Weak Topics',
+      desc: weakness.kaiMessage,
+      count: weakness.dominantWeakness.conceptCount,
+    });
+  }
+
+  const totalWaiting = (recap?.fadingCount ?? 0) + categories.reduce((s, c) => s + c.count, 0);
+
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-heading)' }}>Review</div>
-      <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>3 things are ready to come back to you.</div>
-      <Card style={{ background: 'var(--kairo-navy-900)', color: '#fff' }}>
-        <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'var(--kairo-blue-300)', fontWeight: 700 }}>SUGGESTED REVIEW</div>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginTop: 8 }}>Quick pass on 2 fading concepts</div>
-        <div style={{ fontSize: 13, color: 'var(--kairo-blue-200)', marginTop: 8 }}>About 10 minutes</div>
-        <div style={{ marginTop: 16 }}>
-          <Button variant="gold" size="md" fullWidth>Start Review</Button>
-        </div>
-      </Card>
+      <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+        {totalWaiting > 0
+          ? `${totalWaiting} thing${totalWaiting === 1 ? ' is' : 's are'} ready to come back to you.`
+          : "Nothing's waiting for review right now — that changes as you practise."}
+      </div>
+
+      {recap?.hasUrgentReview && (
+        <Card style={{ background: 'var(--kairo-navy-900)', color: '#fff' }}>
+          <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'var(--kairo-blue-300)', fontWeight: 700 }}>SUGGESTED REVIEW</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginTop: 8 }}>
+            Quick pass on {recap.fadingCount} fading concept{recap.fadingCount === 1 ? '' : 's'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--kairo-blue-200)', marginTop: 8 }}>About {recap.recap.estimatedTimeMin} minutes</div>
+          <div style={{ marginTop: 16 }}>
+            <Button variant="gold" size="md" fullWidth>Start Review</Button>
+          </div>
+        </Card>
+      )}
+
       {categories.map((c) => (
         <Card key={c.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
