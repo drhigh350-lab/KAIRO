@@ -27,7 +27,7 @@ export function AppTabs() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         <Outlet />
       </div>
       <BottomNav
