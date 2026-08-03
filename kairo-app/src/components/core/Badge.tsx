@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 export interface BadgeProps {
   children: ReactNode;
-  tone?: 'neutral' | 'gold' | 'success' | 'danger' | 'navy';
+  tone?: 'neutral' | 'gold' | 'success' | 'danger' | 'navy' | 'darkNeutral';
 }
 
 const tones: Record<string, CSSProperties> = {
@@ -11,6 +11,7 @@ const tones: Record<string, CSSProperties> = {
   success: { background: 'var(--state-success-bg)', color: 'var(--state-success)' },
   danger: { background: 'var(--state-danger-bg)', color: 'var(--state-danger)' },
   navy: { background: 'var(--kairo-navy-900)', color: '#fff' },
+  darkNeutral: { background: 'var(--dark-bg-elevated)', color: 'var(--dark-accent-blue)' },
 };
 
 export function Badge({ children, tone = 'neutral' }: BadgeProps) {

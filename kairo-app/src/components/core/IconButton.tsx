@@ -7,11 +7,12 @@ export interface IconButtonProps {
   active?: boolean;
   onClick?: () => void;
   ariaLabel?: string;
+  dark?: boolean;
 }
 
-export function IconButton({ children, variant = 'ghost', size = 44, active = false, onClick, ariaLabel }: IconButtonProps) {
-  const bg = active ? 'var(--kairo-blue-100)' : variant === 'filled' ? 'var(--kairo-navy-900)' : 'transparent';
-  const color = variant === 'filled' ? '#fff' : 'var(--kairo-navy-900)';
+export function IconButton({ children, variant = 'ghost', size = 44, active = false, onClick, ariaLabel, dark = false }: IconButtonProps) {
+  const bg = active ? (dark ? 'var(--dark-bg-elevated)' : 'var(--kairo-blue-100)') : variant === 'filled' ? (dark ? 'var(--dark-accent-blue)' : 'var(--kairo-navy-900)') : 'transparent';
+  const color = variant === 'filled' ? '#fff' : dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)';
   return (
     <button
       onClick={onClick}

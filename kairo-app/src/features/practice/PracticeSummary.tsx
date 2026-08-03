@@ -39,60 +39,60 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <div style={{ padding: '36px 20px 20px', textAlign: 'center' }}>
-        <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--kairo-blue-100)', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--kairo-navy-900)" strokeWidth="2"><path d="M4 12l5 5L20 6" /></svg>
+        <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--dark-bg-elevated)', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M4 12l5 5L20 6" /></svg>
         </div>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-heading)', marginTop: 14 }}>Practice Complete</div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>{total} questions · {formatTime(totalTime)}</div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)', marginTop: 14 }}>Practice Complete</div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{total} questions · {formatTime(totalTime)}</div>
       </div>
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Card>
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <div style={{ display: 'flex' }}>
-            <StatTile label="Answered" value={total} />
-            <StatTile label="Accuracy" value={`${accuracy}%`} />
-            <StatTile label="Avg / question" value={`${avgTime}s`} />
+            <StatTile dark label="Answered" value={total} />
+            <StatTile dark label="Accuracy" value={`${accuracy}%`} />
+            <StatTile dark label="Avg / question" value={`${avgTime}s`} />
           </div>
         </Card>
 
         {!engineSummary && (
-          <Card>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', marginBottom: 12 }}>PERFORMANCE INSIGHTS</div>
+          <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 12 }}>PERFORMANCE INSIGHTS</div>
             <InsightRow label="Strongest subject" value="Mathematics" tone="success" />
             <InsightRow label="Weakest subject" value="Physics" tone="danger" />
             <InsightRow label="Topic needing attention" value="Newton's Laws" tone="caution" />
           </Card>
         )}
 
-        <Card style={{ background: 'var(--kairo-navy-900)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--kairo-blue-300)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
               {engineSummary?.eliteScore ? engineSummary.eliteScore.total : `+${Math.max(4, correctCount * 3)}`}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: 'var(--kairo-blue-300)', fontWeight: 700, letterSpacing: '.04em' }}>STREAK</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>STREAK</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
               {engineSummary?.streak ? `${engineSummary.streak.momentum} days` : '4 days'}
             </div>
           </div>
         </Card>
 
-        <Card>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', marginBottom: 6 }}>SUGGESTED NEXT</div>
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 6 }}>SUGGESTED NEXT</div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {recommendations.map((r) => (
               <button key={r.key} type="button" disabled={r.disabled} onClick={() => onAction && onAction(r.key)} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 2px', minHeight: 'var(--touch-min)',
                 cursor: r.disabled ? 'default' : 'pointer', width: '100%', textAlign: 'left', background: 'none', fontFamily: 'inherit',
-                opacity: r.disabled ? 0.45 : 1, border: 'none', borderTop: '1px solid var(--color-border-subtle)',
+                opacity: r.disabled ? 0.45 : 1, border: 'none', borderTop: '1px solid var(--dark-border)', color: 'var(--dark-text-faint)',
               }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-heading)' }}>{r.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{r.detail}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{r.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>{r.detail}</div>
                 </div>
                 {!r.disabled && <ChevronRight />}
               </button>
@@ -102,7 +102,7 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
       </div>
 
       <div style={{ padding: '0 20px 24px' }}>
-        <Button variant="primary" size="lg" fullWidth onClick={onHome}>Back to Home</Button>
+        <Button variant="darkAccent" size="lg" fullWidth onClick={onHome}>Back to Home</Button>
       </div>
     </div>
   );
@@ -115,10 +115,10 @@ export interface InsightRowProps {
 }
 
 export function InsightRow({ label, value, tone }: InsightRowProps) {
-  const color = tone === 'success' ? 'var(--state-success)' : tone === 'danger' ? 'var(--state-danger)' : 'var(--kairo-gold-600)';
+  const color = tone === 'success' ? 'var(--dark-success)' : tone === 'danger' ? 'var(--dark-danger)' : 'var(--dark-caution)';
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
-      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--dark-text-muted)' }}>{label}</span>
       <span style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
     </div>
   );

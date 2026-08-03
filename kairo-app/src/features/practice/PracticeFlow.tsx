@@ -262,16 +262,16 @@ export function PracticeFlow() {
   if (screen === 'practiceQuestion' && usingEngine) {
     if (engineLoadError) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)' }}>
-          <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>{engineLoadError}</div>
-          <button type="button" onClick={toHome} style={{ background: 'none', border: 'none', color: 'var(--text-link)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Home</button>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>{engineLoadError}</div>
+          <button type="button" onClick={toHome} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Home</button>
         </div>
       );
     }
     if (!engineQuestions) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
-          <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>Preparing your session…</div>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Preparing your session…</div>
         </div>
       );
     }

@@ -41,21 +41,21 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
   const canStart = resolvedLength > 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)' }}>
-      <ScreenHeader onBack={onBack} title={subject.label} />
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+      <ScreenHeader onBack={onBack} title={subject.label} tone="dark" />
       <div style={{ padding: '4px 20px 32px', flex: 1, display: 'flex', flexDirection: 'column', gap: 30 }}>
         <div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--text-heading)', lineHeight: 1.25 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--dark-text-heading)', lineHeight: 1.25 }}>
             Ready to practise {subject.label}?
           </div>
-          <div style={{ fontSize: 13.5, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', marginTop: 10, lineHeight: 1.6 }}>
             One question at a time. Understand concepts. Build confidence.
           </div>
         </div>
 
         {!lockedType && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>PRACTICE TYPE</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>PRACTICE TYPE</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {types.map((t) => {
               const active = type === t.key;
@@ -63,18 +63,18 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
                 <button type="button" key={t.key} disabled={t.locked} aria-pressed={active} onClick={() => setType(t.key)} style={{
                   padding: '14px 16px', borderRadius: 'var(--radius-md)', display: 'flex', gap: 12, alignItems: 'flex-start', width: '100%', textAlign: 'left', fontFamily: 'inherit',
                   cursor: t.locked ? 'default' : 'pointer', opacity: t.locked ? 0.55 : 1,
-                  border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-blue-100)' : '#fff',
+                  border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-bg-elevated)' : 'var(--dark-bg-surface)',
                 }}>
                   <div style={{
                     width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-                    border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`,
+                    border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    {active && <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--kairo-navy-900)' }} />}
+                    {active && <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--dark-accent-blue)' }} />}
                   </div>
                   <div>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--text-heading)' }}>{t.label}</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }}>{t.desc}</div>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{t.label}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 2, lineHeight: 1.45 }}>{t.desc}</div>
                   </div>
                 </button>
               );
@@ -84,15 +84,15 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
         )}
 
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>DIFFICULTY</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>DIFFICULTY</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {difficulties.map((d) => {
               const active = difficulty === d.key;
               return (
                 <button type="button" key={d.key} aria-pressed={active} onClick={() => setDifficulty(d.key)} style={{
                   padding: '10px 14px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-                  border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`,
-                  background: active ? 'var(--kairo-navy-900)' : '#fff', color: active ? '#fff' : 'var(--text-body)',
+                  border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`,
+                  background: active ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: active ? '#fff' : 'var(--dark-text-body)',
                 }}>{d.label}</button>
               );
             })}
@@ -100,20 +100,20 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
         </div>
 
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>ESTIMATED SESSION</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>ESTIMATED SESSION</div>
           <div style={{ display: 'flex', gap: 8 }}>
             {lengths.map((n) => {
               const active = !customOpen && length === n;
               return (
                 <button type="button" key={n} aria-pressed={active} onClick={() => { setCustomOpen(false); setLength(n); }} style={{
                   flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-                  border: `1.5px solid ${active ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: active ? 'var(--kairo-navy-900)' : '#fff', color: active ? '#fff' : 'var(--text-body)',
+                  border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: active ? '#fff' : 'var(--dark-text-body)',
                 }}>{n}</button>
               );
             })}
             <button type="button" aria-pressed={customOpen} onClick={() => setCustomOpen(true)} style={{
               flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-              border: `1.5px solid ${customOpen ? 'var(--kairo-navy-900)' : 'var(--color-border-subtle)'}`, background: customOpen ? 'var(--kairo-navy-900)' : '#fff', color: customOpen ? '#fff' : 'var(--text-body)',
+              border: `1.5px solid ${customOpen ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: customOpen ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: customOpen ? '#fff' : 'var(--dark-text-body)',
             }}>Custom</button>
           </div>
           {customOpen && (
@@ -122,14 +122,14 @@ export function PracticeHub({ subject, hasHistory, lockedType, onBack, onStart }
               value={customLength} onChange={(e) => setCustomLength(e.target.value)}
               style={{
                 marginTop: 10, width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 'var(--radius-md)',
-                border: '1.5px solid var(--color-border-subtle)', fontSize: 14, fontFamily: 'var(--font-body)', color: 'var(--text-heading)',
+                border: '1.5px solid var(--dark-border)', fontSize: 14, fontFamily: 'var(--font-body)', color: 'var(--dark-text-heading)', background: 'var(--dark-bg-surface)',
               }}
             />
           )}
         </div>
 
         <div style={{ marginTop: 'auto' }}>
-          <Button variant="primary" size="lg" fullWidth disabled={!canStart} onClick={() => onStart({ type, difficulty, length: resolvedLength })}>
+          <Button variant="darkAccent" size="lg" fullWidth disabled={!canStart} onClick={() => onStart({ type, difficulty, length: resolvedLength })}>
             {'Start Practice →'}
           </Button>
         </div>
