@@ -7,6 +7,7 @@ import { SignUp } from './SignUp';
 import { AboutYou } from './AboutYou';
 import { AccountReady } from './AccountReady';
 import type { OnboardingData } from './data';
+import { getEngine } from '../../lib/kairoEngine';
 
 type Screen = 'intro' | 'welcome' | 'signin' | 'signup' | 'about' | 'ready';
 
@@ -44,7 +45,17 @@ export function OnboardingFlow() {
     body = (
       <SignIn
         onBack={back}
-        onSignedIn={() => navigate('/home', { state: { name: data.name || 'there', subjects: data.subjects } })}
+        onSignedIn={() => {
+          const profile = getEngine()?.profile;
+          navigate('/home', {
+            state: {
+              name: profile?.name || data.name || 'there',
+              course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : data.course,
+              examYear: data.examYear,
+              subjects: profile?.targetSubjects?.length ? profile.targetSubjects : data.subjects,
+            },
+          });
+        }}
         onGoToSignUp={() => go('signup')}
       />
     );
@@ -74,9 +85,15 @@ export function OnboardingFlow() {
         total={total}
         onBack={back}
         data={data}
-        onStart={() =>
-          navigate('/home', { state: { name: data.name, course: data.course, examYear: data.examYear, subjects: data.subjects } })
-        }
+        onStart={async () => {
+          const kairo = getEngine();
+          if (kairo) {
+            kairo.profile.targetCourse = data.course?.name ?? null;
+            kairo.profile.targetSubjects = data.subjects;
+            await kairo.sync.sync();
+          }
+          navigate('/home', { state: { name: data.name, course: data.course, examYear: data.examYear, subjects: data.subjects } });
+        }}
       />
     );
   }
