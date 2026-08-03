@@ -281,16 +281,48 @@ session. This pass closed that end to end:
   content yet simply seeds 0 concepts rather than fabricating
   placeholders. `completeOnboarding()` is now `async` to match.
 
+## 5b. Fourth pass — anti-cheat write validation
+
+RLS on `kairo.attempts`/`kairo.sessions` only ever checked *ownership*
+(`student_id` belongs to the caller) — nothing checked plausibility, so a
+client could edit its own request payload to insert an attempt asserting
+`correct: true` regardless of what was actually answered. Closed via two
+`BEFORE INSERT`/`BEFORE INSERT OR UPDATE` trigger functions
+(`kairo.check_attempt_before_insert`, `kairo.check_session_before_upsert`,
+migration `add_kairo_anti_cheat_validation` + follow-up
+`fix_anti_cheat_audit_log_rollback_bug`):
+
+- **Attempts are checked against the live question, not just trusted.**
+  When `question_id` is present, the trigger looks up the real
+  `kairo.questions` row and rejects the write if `correct_option` doesn't
+  match, or if `correct` is inconsistent with `selected_option` vs the
+  actual `correct_option`. This is stronger than RoboMed's
+  `check_player_before_update` (which can only bound XP/streak deltas,
+  since `public.players` has no ground truth to check against) —
+  `kairo.attempts` carries `question_id`, so correctness is verifiable
+  directly.
+- `response_time_ms < 150` and `question_difficulty` outside 1–5 are
+  rejected on attempts. On sessions: negative `questions_answered`,
+  `correct_count` exceeding `questions_answered`, `completed_at` before
+  `started_at`, and an implausible average time per question
+  (< 150ms/question across the whole session) are rejected.
+- **A first version also inserted a `kairo.cheat_audit_log` row before
+  raising the exception — verified by test to never actually persist.**
+  `RAISE EXCEPTION` unwinds everything done since the start of that
+  (sub)transaction, including an insert made moments earlier in the same
+  trigger invocation, so the audit table would always read empty (RoboMed's
+  `cheat_audit_log` likely has the identical latent bug via the same
+  pattern in `check_player_before_update`). Making it durable needs an
+  autonomous transaction (e.g. `dblink` to a loopback connection, not
+  installed) — real operational fragility for a debugging aid. Simplified
+  to a plain `RAISE EXCEPTION` with a descriptive message instead; that
+  message is captured in Supabase's own Postgres logs (`get_advisors`/
+  `get_logs`), which is a truthful audit trail, unlike a table that always
+  reads empty. Verified end-to-end with a test transaction exercising all
+  6 paths (2 valid inserts, 4 forged/implausible ones correctly rejected).
+
 ## 6. What is still NOT done
 
-- **Anti-cheat / write validation on `kairo.attempts` and
-  `kairo.sessions`.** RLS currently only checks *ownership*
-  (`student_id` belongs to the caller), not plausibility (e.g.
-  someone editing client code to submit a fabricated "correct: true"
-  attempt). RoboMed's `public.*` tables have similar exposure today,
-  mitigated there by triggers like `check_player_before_update`. No
-  equivalent trigger exists yet for `kairo.*` — flagged, not built,
-  pending a product decision on how strict to be.
 - **`kairo.questions` (800 rows, all `lifecycle_state: 'live'`) and
   `kairo.concepts` (201 rows) are seeded and linked** (see §5, Third
   pass) and reachable from the engine via `loadContentCatalog()` /
