@@ -825,6 +825,12 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   p.recoverySessionCount = 2;
   p.eliteScoreHistory = [{ total: 70 }];
   p.responseTimeBaselines = { 'Chemistry:Stoichiometry': 15000 };
+  p.email = 'ada@example.com';
+  p.avatar = 'avatar_3.png';
+  p.completedChallenges = ['daily_5_reinforced'];
+  p.totalXP = 420;
+  p.badges = ['first_reinforced', 'three_day_streak'];
+  p.preferences = { notifications: { dailyRecap: false } };
 
   const original = p.toJSON();
   const row = adapter._profileToRow(original, original.authUserId);
@@ -850,6 +856,12 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   assertEqual(restored.learn.some, 'state', 'learn JSONB blob should round-trip exactly');
   assertEqual(restored.examYear, 2027, 'Identity field examYear should round-trip exactly');
   assertEqual(restored.notificationHistory.length, 1, 'notificationHistory should round-trip exactly');
+  assertEqual(restored.email, 'ada@example.com', 'email should round-trip exactly');
+  assertEqual(restored.avatar, 'avatar_3.png', 'avatar should round-trip exactly');
+  assertEqual(restored.completedChallenges.length, 1, 'completedChallenges should round-trip exactly — ChallengesModule.checkAndAward() wrote directly onto the profile without this field ever being declared, so it was silently dropped on every save');
+  assertEqual(restored.totalXP, 420, 'totalXP should round-trip exactly — without this a returning student\'s level would incorrectly reset to 1 on every fresh load until their next completed session recalculated it');
+  assertEqual(restored.badges.length, 2, 'badges should round-trip exactly — without this, every earned badge would be silently lost on reload and immediately re-awarded (and re-notified) the next time its condition was checked');
+  assertEqual(restored.preferences.notifications.dailyRecap, false, 'preferences should round-trip exactly — without this, a student\'s notification/practice/accessibility/privacy/offline settings would silently reset to defaults on every fresh load');
 });
 
 test('SyncManager applies a genuinely newer remote concept state onto the live graph', () => {
@@ -988,7 +1000,8 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
   }));
   const fakeEngine = {
     contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
-    submitAnswer: () => {}
+    submitAnswer: () => {},
+    sync: { queue: () => {} }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
@@ -1002,6 +1015,64 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
 
   const final = cbt.finish();
   assertEqual(final.correct, 0, 'The wrong answer is still scored correctly once the exam is actually submitted — withholding is temporal/procedural only, never informational (Spec §2.6)');
+});
+
+await test('RapidFire: submitAnswer no longer requires an active adaptive session, and finish() queues a kairo.sessions row', async () => {
+  const engine = new KairoEngine({ studentId: 'sync1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const rfConceptId = engine.addConcept({ name: 'RF Concept', subject: 'Biology', topic: 'T' });
+  engine.graph.getConcept(rfConceptId).retentionState = 'held';
+
+  const queued = [];
+  engine.sync.queue = (item) => queued.push(item);
+
+  engine.startRapidFire({ questionCount: 1, subjects: ['Biology'] });
+  const result = engine.submitRapidFireAnswer({ conceptId: rfConceptId, correct: true, responseTimeMs: 1000, selectedOption: 'A', correctOption: 'A', questionId: 'q1' });
+  assert(!result.error, 'RapidFire submitAnswer must not require startSession() to have been called first — it previously threw "No active session" on every attempt');
+
+  engine.finishRapidFire();
+  const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'rapid_fire');
+  assert(sessionPush, 'RapidFire finish() should queue a kairo.sessions row tagged mode: rapid_fire — previously nothing did, so RapidFire sessions never reached Supabase');
+});
+
+await test('CBT: finish() no longer throws on a conceptId-bearing question, and queues a kairo.sessions row tagged cbt_exam', async () => {
+  const engine = new KairoEngine({ studentId: 'sync2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const cbtConceptId = engine.addConcept({ name: 'CBT Concept', subject: 'Biology', topic: 'T' });
+  engine.contentPacks = {
+    getOfflineQuestions: async ({ subject, count }) => Array.from({ length: count }, (_, i) => ({
+      id: `${subject}_${i}`, questionId: `${subject}_${i}`, subject, text: `Q${i}`,
+      options: ['A', 'B', 'C', 'D'], correctOption: 'A', explanation: 'x', conceptId: cbtConceptId
+    }))
+  };
+
+  const queued = [];
+  engine.sync.queue = (item) => queued.push(item);
+
+  engine.cbt.setup({ subjects: ['Biology'] });
+  await engine.cbt.buildPaper();
+  engine.cbt.start();
+  engine.cbt.submitAnswer(0, 'A', 5000);
+  const results = engine.cbt.finish();
+  assertEqual(results.correct, 1, 'finish() should return real results instead of throwing — it previously crashed on the first conceptId-bearing question, so a completed CBT mock never actually finished');
+
+  const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'cbt_exam');
+  assert(sessionPush, 'CBT finish() should queue a kairo.sessions row tagged mode: cbt_exam — previously nothing did, and the crash meant it never got this far anyway');
+});
+
+await test('Custom Practice and Topic Practice sessions are tagged with their real mode, not silently recorded as standard', async () => {
+  const engine = new KairoEngine({ studentId: 'sync3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const cpConceptId = engine.addConcept({ name: 'Custom Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+
+  const customResult = engine.startCustomPractice({ subjects: ['Biology'], count: 5 });
+  assertEqual(engine.currentSession.mode, 'custom_practice', 'startCustomPractice() should tag the session mode: custom_practice, not the startSession() default of standard');
+  assert(customResult.queue.includes(cpConceptId), 'startCustomPractice() should still return the built plan alongside the session');
+  await engine.endSession();
+
+  const topicResult = engine.startTopicPractice('Biology', 'Cells', 'Organelles', 5);
+  assertEqual(engine.currentSession.mode, 'topic_practice', 'startTopicPractice() should tag the session mode: topic_practice');
+  assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

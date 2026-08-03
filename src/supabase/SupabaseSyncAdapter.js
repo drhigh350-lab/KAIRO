@@ -98,6 +98,8 @@ export class SupabaseSyncAdapter {
     return {
       auth_user_id: authUserId,
       name: profileData.name,
+      email: profileData.email || null,
+      avatar: profileData.avatar || null,
       exam_date: profileData.examDate ? new Date(profileData.examDate).toISOString().slice(0, 10) : null,
       target_subjects: profileData.targetSubjects || [],
       target_course: profileData.targetCourse || null,
@@ -116,6 +118,10 @@ export class SupabaseSyncAdapter {
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
       notification_history: profileData.notificationHistory || [],
+      completed_challenges: profileData.completedChallenges || [],
+      total_xp: profileData.totalXP || 0,
+      badges: profileData.badges || [],
+      preferences: profileData.preferences || null,
 
       // Student Intelligence Model §1 — Identity
       date_of_birth: profileData.dateOfBirth ? new Date(profileData.dateOfBirth).toISOString().slice(0, 10) : null,
@@ -157,6 +163,8 @@ export class SupabaseSyncAdapter {
       studentId: row.id,
       authUserId: row.auth_user_id,
       name: row.name,
+      email: row.email,
+      avatar: row.avatar,
       examDate: row.exam_date ? new Date(row.exam_date).getTime() : null,
       targetSubjects: row.target_subjects || [],
       targetCourse: row.target_course,
@@ -177,6 +185,10 @@ export class SupabaseSyncAdapter {
       atRiskTriggeredAt: row.at_risk_triggered_at ? new Date(row.at_risk_triggered_at).getTime() : null,
       recoverySessionCount: row.recovery_session_count,
       notificationHistory: row.notification_history || [],
+      completedChallenges: row.completed_challenges || [],
+      totalXP: row.total_xp || 0,
+      badges: row.badges || [],
+      preferences: row.preferences || null,
 
       dateOfBirth: row.date_of_birth ? new Date(row.date_of_birth).getTime() : null,
       examType: row.exam_type,

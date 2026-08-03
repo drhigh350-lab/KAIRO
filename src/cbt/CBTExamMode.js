@@ -253,6 +253,26 @@ export class CBTExamMode {
       }
     }
 
+    // CBT manages its own attempt lifecycle outside engine.currentSession
+    // (Section 5.4 forbids the adaptive session machinery from touching a
+    // live attempt at all), so unlike standard Practice's endSession(),
+    // nothing else queues a kairo.sessions row for a completed mock —
+    // do that here, matching the 'cbt_exam' value already reserved in the
+    // mode CHECK constraint.
+    this.engine.sync.queue({
+      type: 'session',
+      data: {
+        id: `cbt_${this.examData.startTime}`,
+        mode: 'cbt_exam',
+        plan: this.config.subjects,
+        questionsAnswered: results.answered,
+        correctCount: results.correct,
+        eliteScore: { percentage: results.percentage, score: results.score, maxScore: results.maxScore },
+        startedAt: this.examData.startTime,
+        completedAt: this.examData.endTime
+      }
+    });
+
     return results;
   }
 

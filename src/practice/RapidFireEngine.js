@@ -114,6 +114,25 @@ export class RapidFireEngine {
       ? this.sessionData.answers.reduce((s, a) => s + a.responseTimeMs, 0) / this.sessionData.answers.length
       : 0;
 
+    // RapidFire runs outside the adaptive engine.currentSession lifecycle
+    // (its own queue/streak logic, per this module's own design), so unlike
+    // standard Practice's endSession(), nothing else queues a kairo.sessions
+    // row for it — do that here, matching the 'rapid_fire' value already
+    // reserved in the mode CHECK constraint.
+    this.engine.sync.queue({
+      type: 'session',
+      data: {
+        id: `rapidfire_${this.sessionData.startTime}`,
+        mode: 'rapid_fire',
+        plan: this.queue || [],
+        questionsAnswered: this.sessionData.answers.length,
+        correctCount: correct,
+        eliteScore: null,
+        startedAt: this.sessionData.startTime,
+        completedAt: this.sessionData.endTime
+      }
+    });
+
     return {
       mode: 'rapid_fire',
       totalQuestions: this.sessionData.answers.length,

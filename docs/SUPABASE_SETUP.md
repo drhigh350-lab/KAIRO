@@ -139,6 +139,80 @@ Verified directly against the live `TechMed-Daily` project
   .markAsRead()`'s existing write to it was silently discarded on
   every serialize.
 
+### Second pass — root-cause fix for Rapid Fire, CBT, Custom/Topic Practice
+
+The previous pass fixed the *plumbing* (columns, `pushSession()`,
+`_applyRemote()`); this pass found and fixed a *functional* bug that
+was the actual reason four of the six session modes never reached
+Supabase at all:
+
+- **`engine.submitAnswer()` unconditionally threw `"No active
+  session. Call startSession() first."`** unless `this.recommendation`
+  (only ever set by `startSession()`/`startRecoverySession()`) was
+  present. RapidFire and CBT Exam Mode both call `submitAnswer()`
+  directly from their own independent lifecycles and never call
+  `startSession()` — so **every RapidFire attempt crashed on
+  `submitRapidFireAnswer()`, and every completed CBT mock crashed
+  inside `finish()`** the moment it tried to record a concept-tested
+  question. Neither mode could ever complete, so neither had anything
+  to sync. Verified directly (see `tests/engine.test.js`, "RapidFire:
+  submitAnswer no longer requires an active adaptive session" and
+  "CBT: finish() no longer throws..."). Fixed by making
+  `this.recommendation` and `this.currentSession` optional inside
+  `submitAnswer()` — the concept-state/attempt-recording work (the
+  part every module's spec calls "the shared Learning Engine
+  primitive") no longer depends on the Practice-specific adaptive
+  session object.
+- **RapidFire and CBT now each queue their own `kairo.sessions` row**
+  on `finish()`, tagged `mode: 'rapid_fire'` / `mode: 'cbt_exam'` —
+  neither is threaded through `engine.currentSession`, so unlike
+  standard Practice/Recovery, nothing else was ever going to queue a
+  session row for them.
+- **Custom Practice and Topic Practice could never produce a session
+  with the right `mode` at all.** `buildCustomPractice()` /
+  `buildTopicSession()` only ever returned a plan/queue preview —
+  there was no method that actually ran that plan through a session,
+  and `startSession()` always built its own adaptive plan and always
+  hardcoded `mode: 'standard'`, so even a caller that manually drove
+  the returned queue through `submitAnswer()`/`endSession()` would
+  have synced it mislabeled as a standard session. `startSession()`
+  now accepts `{ mode, plan }`; new `startCustomPractice()` /
+  `startTopicPractice()` wrappers on `KairoEngine` build the plan and
+  start a correctly-tagged session in one call.
+- **CBT Exam Mode's default question count didn't match JAMB's real
+  format** — a uniform 40-per-subject default gave 160 questions for
+  a 4-subject combination instead of the real 180 (English carries 60,
+  every other subject carries 40). Fixed in `CBTExamMode.setup()`.
+- **CBT Exam Mode leaked correctness feedback (`isCorrect`,
+  `correctOption`, `explanation`) on every `submitAnswer()` call
+  during a live attempt** — a direct violation of the CBT Exam Mode
+  spec's governing constraint (§2.3, §5.2, §5.4: no correctness signal
+  of any kind until full submission). Unrelated to sync directly, but
+  found and fixed in the same pass since it's in the same code path.
+- **Five more profile fields were written directly onto
+  `this.engine.profile.*` without ever being declared on
+  `StudentProfile`**, so — exactly like `notification_history` before
+  it — every one of them was silently dropped on every serialize:
+  `completedChallenges` (`ChallengesModule.checkAndAward()`),
+  `totalXP` (`LevelSystem.update()` — meant a returning student's
+  level would incorrectly show Level 1 on every fresh load until their
+  next completed session recalculated it), `badges`
+  (`BadgeSystem.checkAndAward()` — meant every earned badge was lost
+  on reload and silently re-awarded, and re-notified, the next time
+  its condition was re-checked), `preferences`
+  (`ProfileSettings.updatePreferences()` — meant a student's
+  notification/practice/accessibility/privacy/offline settings reset
+  to defaults on every fresh load), and `email`/`avatar`
+  (`ProfileSettings.updateProfile()`). Migration
+  `add_progression_settings_and_contact_columns_to_students` adds the
+  five matching columns (`total_xp`, `badges`, `preferences`, `email`,
+  `avatar`); `StudentProfile.js` now declares all five and
+  `SupabaseSyncAdapter.js` maps them in both directions. The
+  structural round-trip test (`tests/engine.test.js`) now asserts
+  every `StudentProfile.toJSON()` key automatically, so a sixth
+  instance of this same bug would fail the suite immediately rather
+  than going unnoticed again.
+
 ## 6. What is still NOT done
 
 - **Anti-cheat / write validation on `kairo.attempts` and
@@ -149,23 +223,41 @@ Verified directly against the live `TechMed-Daily` project
   mitigated there by triggers like `check_player_before_update`. No
   equivalent trigger exists yet for `kairo.*` — flagged, not built,
   pending a product decision on how strict to be.
-- **`kairo.questions` and `kairo.concepts` are empty.** Nothing has
-  seeded real UTME questions or concept nodes into this schema yet;
-  the tables and their QIM-shaped columns exist, but the actual
-  curriculum content is a separate content-population task.
+- **`kairo.questions` and `kairo.concepts` are still empty in
+  Supabase**, though content now exists ready to seed them:
+  `content/question-banks/` has 800 QIM-shaped questions (Biology,
+  Chemistry, Physics, Use of English — 200 each, `lifecycleState:
+  'imported'`) generated by `scripts/import-question-bank.js`. Getting
+  them from that local JSON into the live `kairo.questions` table is
+  still a separate, not-yet-done step (needs the QA-gate pass in
+  `content/question-banks/README.md` first, then a service-role
+  seeding script).
 - **No admin/service-role tooling** for writing to `kairo.questions`
   / `kairo.concepts` (both are read-only to authenticated clients by
   design — see the RLS policies). You'll need either the Supabase
   dashboard's SQL editor, or a small script run with the service role
   key, to populate them.
-- **Review, CBT Exam Mode, Challenges, Insights, Leaderboard,
-  Progression (levels/badges), and Onboarding module state have no
-  Supabase table at all** — they're entirely local/in-memory today
-  (some of that may be fine to stay ephemeral or purely derived from
-  `attempts`/`concept_states`; some of it may not). This needs a
-  product/engineering decision on which of those genuinely need
+- **Review, CBT Exam Mode content (paper/results detail beyond the
+  session summary), Challenges (see below), Insights, Leaderboard,
+  and Onboarding module state have no Supabase table at all** —
+  they're entirely local/in-memory today (some of that may be fine to
+  stay ephemeral or purely derived from `attempts`/`concept_states`;
+  some of it may not). Progression's levels/badges/XP now round-trip
+  through `kairo.students` (§5), so that one's resolved. This needs a
+  product/engineering decision on which of the rest genuinely need
   server-side persistence before any schema work happens — not
   something to guess at silently.
+- **`ChallengesModule.js` implements a different feature than the
+  Challenges Module spec** (`docs/specs/KAIRO_CHALLENGES_MODULE.md`)
+  describes — the spec is admin-curated, event-based challenges with
+  discovery/leaderboards/sharing; the code is a personal
+  achievement/badge system with no admin curation or shared-event
+  model. `completedChallenges` now syncs correctly for what the code
+  actually does today, but that's a different question from whether
+  the code does what the spec asks for — flagged in the same audit
+  that closed the sync gaps, not something to build without a product
+  conversation first given the scope (admin roles, leaderboards,
+  sharing infra).
 - **Two parallel notification systems exist**: the legacy
   `src/notifications/NotificationEngine.js` (in-memory candidate
   generation, now correctly persisting to
@@ -174,11 +266,6 @@ Verified directly against the live `TechMed-Daily` project
   built later per the SJEE and Notifications & Communication Systems
   specs. They were never reconciled — worth a deliberate decision on
   consolidating rather than leaving both live.
-- **Rapid Fire / Custom Practice / Topic Practice / CBT sessions don't
-  queue a `kairo.sessions` row** — only the core `startSession()` /
-  `submitAnswer()` / `endSession()` loop does. Each of those engines
-  would need its own `sync.queue({ type: 'session', ... })` call at
-  its own completion point.
 - **`kairo.students` RLS/security posture is clean** — every advisory
   finding on this project is on the legacy `public.*` RoboMed tables
   and functions, unrelated to the `kairo` schema.

@@ -27,10 +27,14 @@ export class StudentProfile {
     device = null,                     // { os, connectivityQuality, appVersion } — diagnostics only, never personalizes content
     referralSource = null,             // marketing-layer only — must never leak into Kai's tone or recommendations
     parentGuardianContact = null,      // optional, dormant — reserved for future Parent Dashboard
-    languageRegion = null              // lets Kai choose relatable analogies — never a proxy for ability
+    languageRegion = null,             // lets Kai choose relatable analogies — never a proxy for ability
+    email = null,
+    avatar = null
   }) {
     this.studentId = studentId;
     this.name = name;
+    this.email = email;
+    this.avatar = avatar;
     this.examDate = examDate;
     this.targetSubjects = targetSubjects;
     this.targetCourse = targetCourse;
@@ -62,6 +66,10 @@ export class StudentProfile {
     this.comms = null;             // CommsService.toJSON() snapshot
     this.learn = null;             // LearnModule.toJSON() snapshot
     this.notificationHistory = []; // NotificationEngine's local candidate history (kairo.students.notification_history)
+    this.completedChallenges = []; // ChallengesModule.checkAndAward()'s earned-challenge-id list (kairo.students.completed_challenges)
+    this.totalXP = 0;              // LevelSystem.update()'s recalculated XP (kairo.students.total_xp)
+    this.badges = [];              // BadgeSystem.checkAndAward()'s earned-badge-id list (kairo.students.badges)
+    this.preferences = null;       // ProfileSettings.updatePreferences()'s snapshot (kairo.students.preferences)
     this.sessions = [];          // completed session metadata
     this.responseTimeBaselines = {};
     this.eliteScoreHistory = [];
@@ -226,6 +234,8 @@ export class StudentProfile {
       studentId: this.studentId,
       authUserId: this.authUserId,
       name: this.name,
+      email: this.email,
+      avatar: this.avatar,
       examDate: this.examDate,
       targetSubjects: this.targetSubjects,
       targetCourse: this.targetCourse,
@@ -253,6 +263,10 @@ export class StudentProfile {
       comms: this.comms,
       learn: this.learn,
       notificationHistory: this.notificationHistory,
+      completedChallenges: this.completedChallenges,
+      totalXP: this.totalXP,
+      badges: this.badges,
+      preferences: this.preferences,
       sessions: this.sessions,
       responseTimeBaselines: this.responseTimeBaselines,
       eliteScoreHistory: this.eliteScoreHistory,

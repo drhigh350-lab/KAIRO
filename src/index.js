@@ -231,7 +231,14 @@ export class KairoEngine {
   // SESSION LIFECYCLE (Adaptive Engine)
   // ═══════════════════════════════════════════════════════════════
 
-  startSession() {
+  /**
+   * mode/plan let Custom Practice and Topic Practice drive a real, correctly-
+   * tagged session through the same adaptive engine and the same sync path
+   * as standard Practice — their own build*() methods only ever produced a
+   * queue with nowhere to run it, so a session in either mode could never
+   * actually be recorded or synced (mode always defaulted to 'standard').
+   */
+  startSession({ mode = 'standard', plan: externalPlan = null } = {}) {
     this.profile.computeMacroState(this.graph);
     this.emotionalProfile.compute(this.graph);
     this.learningState.compute(this.graph);
@@ -243,11 +250,11 @@ export class KairoEngine {
       examDate: this.profile.examDate
     });
 
-    const plan = this.recommendation.buildSessionPlan();
+    const plan = externalPlan || this.recommendation.buildSessionPlan();
     this.sessionStartTime = Date.now();
     this.currentSession = {
       sessionId: `sess_${Date.now()}`,
-      mode: 'standard', // overridden to 'recovery' by startRecoverySession(); matches kairo.sessions' mode CHECK constraint
+      mode, // overridden to 'recovery' by startRecoverySession(); matches kairo.sessions' mode CHECK constraint
       startedAt: this.sessionStartTime,
       plan,
       completed: [],
@@ -264,11 +271,17 @@ export class KairoEngine {
     };
   }
 
+  /**
+   * The shared "record an attempt against the Learning Engine" primitive —
+   * every module's spec (Practice, CBT, Learn, Review) says the same thing:
+   * "does not run a separate intelligence layer, every write flows through
+   * the Learning Engine." this.recommendation/this.currentSession are only
+   * present for an adaptive Practice-style session (started via
+   * startSession()); RapidFire and CBT Exam Mode manage their own queue and
+   * call this directly with neither set, so both are optional here — only
+   * the concept-state/attempt-recording work below is universal.
+   */
   submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single' }) {
-    if (!this.recommendation) {
-      throw new Error('No active session. Call startSession() first.');
-    }
-
     const concept = this.graph.getConcept(cid);
     if (!concept) {
       throw new Error(`Concept ${cid} not found.`);
@@ -308,18 +321,22 @@ export class KairoEngine {
     this.store.logAttempt(attempt);
     this.sync.queue({ type: 'attempt', data: attempt });
 
-    const decision = this.recommendation.processAnswer({
-      conceptId: cid,
-      correct,
-      responseTimeMs,
-      errorTag,
-      questionId,
-      difficulty: questionDifficulty
-    });
+    const decision = this.recommendation
+      ? this.recommendation.processAnswer({
+          conceptId: cid,
+          correct,
+          responseTimeMs,
+          errorTag,
+          questionId,
+          difficulty: questionDifficulty
+        })
+      : null;
 
-    this.currentSession.questionsAnswered++;
-    if (correct) this.currentSession.correctCount++;
-    this.currentSession.completed.push(attempt);
+    if (this.currentSession) {
+      this.currentSession.questionsAnswered++;
+      if (correct) this.currentSession.correctCount++;
+      this.currentSession.completed.push(attempt);
+    }
 
     const isMilestone = concept.retentionState === 'reinforced' &&
       concept.attemptHistory.filter(a => a.correct).length >= 2;
@@ -331,14 +348,16 @@ export class KairoEngine {
       isMilestone
     });
 
-    const nextDifficulty = decision.nextConceptId
+    const nextDifficulty = decision?.nextConceptId
       ? this.difficulty.selectDifficulty(
           this.graph.getConcept(decision.nextConceptId),
           this.profile.macroState
         )
       : null;
 
-    const endCheck = this.recommendation.shouldEndSession();
+    const endCheck = this.recommendation
+      ? this.recommendation.shouldEndSession()
+      : { end: false, reason: null };
 
     return {
       decision,
@@ -452,12 +471,32 @@ export class KairoEngine {
     return this.customPractice.buildSession(options);
   }
 
+  /**
+   * buildCustomPractice() only ever produced a plan preview with nowhere to
+   * run it — startSession() always built its own adaptive plan and always
+   * tagged mode: 'standard', so a Custom Practice session could never
+   * actually be recorded or synced with the mode the schema reserves for it.
+   * This runs the plan through the real adaptive session lifecycle instead.
+   */
+  startCustomPractice(options) {
+    const built = this.customPractice.buildSession(options);
+    const session = this.startSession({ mode: 'custom_practice', plan: built.queue });
+    return { ...session, ...built };
+  }
+
   getTopicJourney(subject, topic) {
     return this.topicPractice.getTopicJourney(subject, topic);
   }
 
   buildTopicSession(subject, topic, subtopic, count) {
     return this.topicPractice.buildSubtopicSession(subject, topic, subtopic, count);
+  }
+
+  /** Same fix as startCustomPractice(), for Topic Practice's subtopic sessions. */
+  startTopicPractice(subject, topic, subtopic, count) {
+    const built = this.topicPractice.buildSubtopicSession(subject, topic, subtopic, count);
+    const session = this.startSession({ mode: 'topic_practice', plan: built.queue });
+    return { ...session, ...built };
   }
 
   // ═══════════════════════════════════════════════════════════════
