@@ -6,8 +6,8 @@ import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
-import { subjects, practiceQuestions, type Subject, type Topic } from './data';
-import { getEngine, startSuggestedSession, startCustomSession } from '../../lib/kairoEngine';
+import { subjects, type Subject } from './data';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 
 type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary';
@@ -57,7 +57,7 @@ export function PracticeFlow() {
   const [screen, setScreen] = useState<Screen>(init.screen);
   const [history, setHistory] = useState<Screen[]>([]);
   const [subject, setSubject] = useState<SubjectLike | null>(init.subject);
-  const [topic, setTopic] = useState<Topic | null>(null);
+  const [topic, setTopic] = useState<string | null>(null);
   const [subtopic, setSubtopic] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<string | null>(init.difficulty);
   const [length, setLength] = useState(init.length);
@@ -69,7 +69,6 @@ export function PracticeFlow() {
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
   const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
-  const [usingEngine, setUsingEngine] = useState(entryFlow === 'suggested');
   const startedSuggested = useRef(false);
 
   useEffect(() => {
@@ -91,11 +90,25 @@ export function PracticeFlow() {
   function startEngineCustomSession(subjectFilter: string[], includeFading: boolean, limit: number) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    setUsingEngine(true);
     startCustomSession({ subjects: subjectFilter, includeFading, limit: limit || 10 })
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
+        } else {
+          setEngineQuestions(questions);
+        }
+      })
+      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+  }
+
+  /** Topic Practice's final pick (or "practise all of this topic" skip) — same real session lifecycle, scoped to a subject/topic/subtopic. */
+  function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string) {
+    setEngineQuestions(null);
+    setEngineLoadError(null);
+    startTopicPracticeSession(subjectLabel, topicName, subtopicName, length || 10)
+      .then(({ questions }) => {
+        if (questions.length === 0) {
+          setEngineLoadError("Kairo couldn't find any questions for this topic yet.");
         } else {
           setEngineQuestions(questions);
         }
@@ -124,34 +137,25 @@ export function PracticeFlow() {
     const newResults = [...results, { correct, confidence, time: 40 + Math.floor(Math.random() * 30) }];
     setResults(newResults);
 
-    if (usingEngine && engineQuestions) {
-      const kairo = getEngine();
-      const eq = engineQuestions[qIndex];
-      if (kairo && eq) {
-        kairo.submitAnswer({
-          conceptId: eq.conceptId ?? null,
-          correct,
-          responseTimeMs: 15000,
-          selectedOption: selectedOptionLabel(eq, selectedIndex),
-          correctOption: eq.correctOption,
-          questionId: eq.id,
-          questionDifficulty: eq.difficulty,
-        });
-      }
-      if (qIndex + 1 >= engineQuestions.length) {
-        setHasHistory(true);
-        if (kairo) {
-          kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
-        }
-        go('practiceSummary');
-      } else {
-        setQIndex(qIndex + 1);
-      }
-      return;
+    if (!engineQuestions) return;
+    const kairo = getEngine();
+    const eq = engineQuestions[qIndex];
+    if (kairo && eq) {
+      kairo.submitAnswer({
+        conceptId: eq.conceptId ?? null,
+        correct,
+        responseTimeMs: 15000,
+        selectedOption: selectedOptionLabel(eq, selectedIndex),
+        correctOption: eq.correctOption,
+        questionId: eq.id,
+        questionDifficulty: eq.difficulty,
+      });
     }
-
-    if (qIndex + 1 >= practiceQuestions.length) {
+    if (qIndex + 1 >= engineQuestions.length) {
       setHasHistory(true);
+      if (kairo) {
+        kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
+      }
       go('practiceSummary');
     } else {
       setQIndex(qIndex + 1);
@@ -229,12 +233,7 @@ export function PracticeFlow() {
         onBack={back}
         onPick={(t) => {
           setTopic(t);
-          if (t.subtopics.length) go('subtopic');
-          else {
-            setQIndex(0);
-            setResults([]);
-            go('practiceQuestion');
-          }
+          go('subtopic');
         }}
       />
     );
@@ -249,17 +248,19 @@ export function PracticeFlow() {
           setSubtopic(s);
           setQIndex(0);
           setResults([]);
+          startTopicSession(activeSubject.label, topic, s);
           go('practiceQuestion');
         }}
         onSkip={() => {
           setQIndex(0);
           setResults([]);
+          startTopicSession(activeSubject.label, topic);
           go('practiceQuestion');
         }}
       />
     );
   }
-  if (screen === 'practiceQuestion' && usingEngine) {
+  if (screen === 'practiceQuestion') {
     if (engineLoadError) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
@@ -281,18 +282,6 @@ export function PracticeFlow() {
         question={toUiQuestion(engineQuestions[qIndex])}
         index={qIndex}
         total={engineQuestions.length}
-        onNext={handleNextQuestion}
-        onExit={toHome}
-      />
-    );
-  }
-  if (screen === 'practiceQuestion') {
-    return (
-      <PracticeQuestion
-        key={practiceQuestions[qIndex].id}
-        question={practiceQuestions[qIndex]}
-        index={qIndex}
-        total={practiceQuestions.length}
         onNext={handleNextQuestion}
         onExit={toHome}
       />

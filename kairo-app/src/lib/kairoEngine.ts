@@ -179,6 +179,79 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
   return { questions };
 }
 
+// ─────────────────────────────────────────────
+// Topic Practice — real topic/subtopic taxonomy from kairo.concepts via
+// ProfileSettings.getLearningJourney() and TopicPracticeEngine, replacing
+// the old fixed 2-topic/2-subtopic picker. Only subjects in
+// SEEDED_SUBJECTS return real topics.
+// ─────────────────────────────────────────────
+
+export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number }
+export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number }
+
+/** The subject picker's label ("English Language") predates the seeded catalog's real name ("Use of English") — normalized here rather than touching the shared subject list every other Practice entry point also uses. */
+function normalizeSubjectName(subject: string): string {
+  return subject === 'English Language' ? 'Use of English' : subject;
+}
+
+/** Real topics for a subject, with concept counts and mastery — replaces the old hardcoded 2-topic list. */
+export async function getRealTopics(subjectLabel: string): Promise<TopicInfo[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const subject = normalizeSubjectName(subjectLabel);
+  await ensureContentLoaded([subject]);
+  const journey = kairo.settings.getLearningJourney();
+  const topics = journey[subject]?.topics || {};
+  return Object.entries(topics).map(([topic, t]: [string, Engine]) => ({
+    topic, total: t.total, mastered: t.mastered, masteryPct: t.masteryPct,
+  }));
+}
+
+/** Real subtopics for a subject+topic, with mastery — replaces the old hardcoded 2-subtopic list. */
+export async function getRealSubtopics(subjectLabel: string, topic: string): Promise<SubtopicInfo[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const subject = normalizeSubjectName(subjectLabel);
+  await ensureContentLoaded([subject]);
+  const { subtopics } = kairo.topicPractice.getTopicJourney(subject, topic);
+  return subtopics.map((s: Engine) => ({ subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct }));
+}
+
+/**
+ * Starts a real topic-scoped session. subtopic is optional — omitting it
+ * (the SubtopicSelect screen's "practise all of this topic" skip) pulls
+ * from every subtopic under the topic instead of one.
+ */
+export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10): Promise<SuggestedSessionResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const subject = normalizeSubjectName(subjectLabel);
+  await ensureContentLoaded([subject]);
+
+  const concepts = subtopic
+    ? kairo.getAllConcepts({ subject, topic, subtopic })
+    : kairo.getAllConcepts({ subject, topic });
+  const queue = concepts
+    .slice()
+    .sort((a: Engine, b: Engine) => (a.state === 'fading' ? -1 : 1) - (b.state === 'fading' ? -1 : 1))
+    .slice(0, limit)
+    .map((c: Engine) => c.id);
+
+  kairo.startSession({ mode: 'topic_practice', plan: queue });
+
+  const questions: Engine[] = [];
+  const seenIds: string[] = [];
+  for (const conceptId of queue) {
+    if (questions.length >= limit) break;
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    if (q) {
+      questions.push(q);
+      seenIds.push(q.id);
+    }
+  }
+  return { questions };
+}
+
 /** Real profile + stats for the Profile screen. null when nothing is signed in yet. */
 export function getProfileSummary(): Engine | null {
   const kairo = getEngine();
