@@ -556,6 +556,86 @@ committed:
   send anything. From the OneSignal dashboard → Settings → Keys & IDs →
   REST API Key.
 
+## 5i. Tenth pass — Resend lifecycle emails (streak-at-risk + achievements)
+
+A real, deployed backend for exactly this now exists: `send-lifecycle-emails`,
+a Supabase Edge Function (`supabase/functions/send-lifecycle-emails/index.ts`
+in this repo), invoked once a day by a `pg_cron` job via `pg_net`
+(`kairo-lifecycle-emails`, `0 8 * * *` UTC). This is the "no cron/scheduler
+exists inside this engine" gap §5h explicitly called out — now closed, for
+email specifically, by infrastructure that lives in Supabase rather than
+inside the Node engine.
+
+Two email types, both computed by new SQL functions rather than app code —
+`kairo.get_streak_risk_candidates()` and `kairo.get_new_achievement_candidates()`
+(migration `add_lifecycle_email_infrastructure`), both `SECURITY DEFINER`
+with a pinned `search_path`, `EXECUTE` revoked from `public`/`authenticated`
+and granted only to `service_role` — no signed-in student can call either
+and see every other student's email address:
+
+- **`streak_risk`** — a student's `MomentumStreak` breaks tomorrow if they
+  don't practice today: `streak_last_session_date = current_date - 3`,
+  which is exactly one day before `MomentumStreak.recordSession()`'s own
+  break rule (`gapDays > PROTECTED_GAP_DAYS + 1`, i.e. `> 3`) would halve
+  their momentum. One email per calendar day per student, enforced by the
+  idempotency table below, not by hoping the cron only runs once.
+- **`achievement`** — a badge id present in `kairo.students.badges` that's
+  never been emailed. Copy (name/desc) is copied verbatim from
+  `ProgressionSystem.js`'s `BadgeSystem.getBadgeCatalog()` into the Edge
+  Function's own `BADGE_CATALOG` map (Deno can't import the Node engine's
+  source directly, so this is a manually-kept-in-sync copy, not a shared
+  import — a badge id missing from that map is skipped and logged, never
+  guessed at).
+
+**`kairo.email_log`** (new table) is the idempotency record for both —
+`unique (student_id, category, dedupe_key)`. RLS enabled with **no
+policies at all**: only the Edge Function's service-role client ever
+touches it, matching the same "no anonymous path" shape used everywhere
+else in this document. A send is logged only after Resend actually
+accepts it, so a failed send retries on the next run instead of being
+silently marked done.
+
+**Consent is enforced at the SQL layer, not just trusted from the app** —
+both functions require, straight out of `ConsentManager.canSend()`'s own
+rule: `hardStopActive = false`, `channelPermissions.email = true`, and
+the specific category's `categoryPreferences.email[...]` explicitly
+`true` (`motivational_consistency` for streak risk, `milestone_celebration`
+for achievements). Since nothing in the onboarding flow collects email
+consent yet, **every student's `comms` column is `null` today, so both
+functions correctly return zero candidates right now** — this is §10.8's
+"silence by default" working as designed, not a bug, and it means the
+pipeline is live but dormant until a consent-collection step exists
+somewhere (onboarding or settings — a product/UI decision, not built
+here).
+
+Email sending itself reuses the exact pattern already proven in
+`pay-webhook` (`POST https://api.resend.com/emails`, same verified
+`techmedng.com` sending domain, just a different local part —
+`kai@techmedng.com` instead of `noreply@techmedng.com` — since this is
+Kai's voice, not a transactional receipt).
+
+### What still needs a human to finish this
+
+- **`CRON_SECRET`** — the Edge Function checks this against an
+  `x-cron-secret` header before doing anything (it's `verify_jwt: false`,
+  since `pg_cron` isn't a signed-in user — same shape as `pay-webhook`
+  authenticating Paystack via its own signature instead of a JWT). This
+  is *not* a third-party credential; it's an internal token minted purely
+  to let the cron job prove the call is really scheduled and not a public
+  hit on the function's URL. It's already baked into the `pg_cron` job
+  definition (migration `schedule_lifecycle_emails_cron`); it still needs
+  to be set as the Edge Function's own `CRON_SECRET` secret (Supabase
+  dashboard → Edge Functions → Manage secrets) for the two sides to
+  match — until then every invocation gets `401`.
+- **`RESEND_API_KEY`** — almost certainly already set project-wide (Edge
+  Function secrets are shared across every function in a project, and
+  `pay-webhook`/`pay-initiate` already depend on this same variable for
+  their own emails). Nothing new to do here unless that key has since
+  been rotated or removed.
+- **Consent collection** — flagged above, and deliberately left alone:
+  building a UI moment that asks a student for email permission is a
+  product/onboarding decision, not something to invent here.
+
 ## 6. What is still NOT done
 
 - ~~The onboarding subject picker offers 8 subjects but only 4 have
