@@ -5,12 +5,19 @@ import { Welcome } from './Welcome';
 import { SignIn } from './SignIn';
 import { SignUp } from './SignUp';
 import { AboutYou } from './AboutYou';
+import { DiagnosticIntro } from './DiagnosticIntro';
+import { DiagnosticQuiz } from './DiagnosticQuiz';
+import { DiagnosticResults } from './DiagnosticResults';
 import { AccountReady } from './AccountReady';
 import { EnableNotifications } from './EnableNotifications';
 import type { OnboardingData } from './data';
-import { getEngine } from '../../lib/kairoEngine';
+import {
+  getEngine, beginOnboarding, submitOnboardingProfile, getDiagnosticQuestions, completeOnboardingFlow,
+  type OnboardingKaiStep, type DiagnosticAnswer,
+} from '../../lib/kairoEngine';
+import type { EngineFlatQuestion } from '../../lib/engineAdapter';
 
-type Screen = 'intro' | 'welcome' | 'signin' | 'signup' | 'about' | 'ready' | 'notifications';
+type Screen = 'intro' | 'welcome' | 'signin' | 'signup' | 'about' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'ready' | 'notifications';
 
 // segmented indicator covers Sign Up -> Account Ready
 const SEQ: Screen[] = ['signup', 'about', 'ready'];
@@ -19,7 +26,12 @@ export function OnboardingFlow() {
   const navigate = useNavigate();
   const [screen, setScreen] = useState<Screen>('intro');
   const [history, setHistory] = useState<Screen[]>([]);
-  const [data, setData] = useState<OnboardingData>({ name: '', email: '', examYear: null, course: null, subjects: [] });
+  const [data, setData] = useState<OnboardingData>({ name: '', email: '', examDate: null, course: null, subjects: [] });
+  const [diagnosticIntroStep, setDiagnosticIntroStep] = useState<OnboardingKaiStep>({});
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+  const [diagnosticQuestions, setDiagnosticQuestions] = useState<EngineFlatQuestion[] | null>(null);
+  const [diagnosticSummary, setDiagnosticSummary] = useState<{ total: number; correct: number; accuracy: number; message: string } | null>(null);
 
   function go(next: Screen) {
     setHistory((h) => [...h, screen]);
@@ -52,7 +64,7 @@ export function OnboardingFlow() {
             state: {
               name: profile?.name || data.name || 'there',
               course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : data.course,
-              examYear: data.examYear,
+              examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : data.examDate,
               subjects: profile?.targetSubjects?.length ? profile.targetSubjects : data.subjects,
             },
           });
@@ -66,19 +78,86 @@ export function OnboardingFlow() {
         step={stepIndex}
         total={total}
         onBack={back}
-        onGoogleSignUp={() => {
-          setData((d) => ({ ...d, name: d.name || 'Wisdom Adeyemi', email: d.email || 'wisdom@gmail.com' }));
-          go('about');
-        }}
+        // Google OAuth isn't configured in Supabase yet — GoogleButton renders disabled, so this never actually fires.
+        onGoogleSignUp={() => {}}
         onEmailSignUp={({ name, email }) => {
           setData((d) => ({ ...d, name, email }));
+          beginOnboarding(name);
           go('about');
         }}
         onGoToSignIn={() => go('signin')}
       />
     );
   } else if (screen === 'about') {
-    body = <AboutYou step={stepIndex} total={total} onBack={back} data={data} setData={setData} onContinue={() => go('ready')} />;
+    body = (
+      <AboutYou
+        step={stepIndex}
+        total={total}
+        onBack={back}
+        data={data}
+        setData={setData}
+        onContinue={() => {
+          const introStep = submitOnboardingProfile(data.course?.name ?? 'Not sure yet', data.examDate ?? '', data.subjects);
+          setDiagnosticIntroStep(introStep);
+          go('diagnosticIntro');
+        }}
+      />
+    );
+  } else if (screen === 'diagnosticIntro') {
+    body = (
+      <DiagnosticIntro
+        title={diagnosticIntroStep.title}
+        body={diagnosticIntroStep.body}
+        loading={diagnosticLoading}
+        error={diagnosticError}
+        onContinue={() => {
+          setDiagnosticLoading(true);
+          setDiagnosticError(null);
+          getDiagnosticQuestions(data.subjects)
+            .then((questions) => {
+              setDiagnosticLoading(false);
+              if (questions.length === 0) {
+                setDiagnosticError("Kairo couldn't find any questions to check in with just yet.");
+                return;
+              }
+              setDiagnosticQuestions(questions);
+              go('diagnosticQuiz');
+            })
+            .catch((err) => {
+              setDiagnosticLoading(false);
+              setDiagnosticError(err instanceof Error ? err.message : 'Could not load your check-in.');
+            });
+        }}
+      />
+    );
+  } else if (screen === 'diagnosticQuiz' && diagnosticQuestions) {
+    body = (
+      <DiagnosticQuiz
+        questions={diagnosticQuestions}
+        onExit={() => navigate('/home')}
+        onComplete={(answers: DiagnosticAnswer[]) => {
+          completeOnboardingFlow(answers)
+            .then(({ diagnosticSummary: summary }) => {
+              setDiagnosticSummary(summary);
+              go('diagnosticResults');
+            })
+            .catch(() => {
+              // completeOnboarding() failed to build the real plan (e.g. content catalog load error) — the
+              // answers themselves are still real, so show the genuine tally rather than inventing a summary.
+              const correct = answers.filter((a) => a.correct).length;
+              setDiagnosticSummary({
+                total: answers.length,
+                correct,
+                accuracy: answers.length ? Math.round((correct / answers.length) * 100) : 0,
+                message: "Kairo couldn't finish building your plan just now, but your answers are saved — we'll pick up from here.",
+              });
+              go('diagnosticResults');
+            });
+        }}
+      />
+    );
+  } else if (screen === 'diagnosticResults' && diagnosticSummary) {
+    body = <DiagnosticResults summary={diagnosticSummary} onContinue={() => go('ready')} />;
   } else if (screen === 'ready') {
     body = (
       <AccountReady
@@ -86,21 +165,13 @@ export function OnboardingFlow() {
         total={total}
         onBack={back}
         data={data}
-        onStart={async () => {
-          const kairo = getEngine();
-          if (kairo) {
-            kairo.profile.targetCourse = data.course?.name ?? null;
-            kairo.profile.targetSubjects = data.subjects;
-            await kairo.sync.sync();
-          }
-          go('notifications');
-        }}
+        onStart={() => go('notifications')}
       />
     );
   } else if (screen === 'notifications') {
     body = (
       <EnableNotifications
-        onDone={() => navigate('/home', { state: { name: data.name, course: data.course, examYear: data.examYear, subjects: data.subjects } })}
+        onDone={() => navigate('/home', { state: { name: data.name, course: data.course, examDate: data.examDate, subjects: data.subjects } })}
       />
     );
   }

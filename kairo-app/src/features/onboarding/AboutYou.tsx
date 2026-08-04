@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { FlowHeader, SkipLink } from './shared';
-import { examYears, courses, allSubjects, type Course, type OnboardingData } from './data';
+import { courses, allSubjects, type Course, type OnboardingData } from './data';
 
 export interface AboutYouProps {
   step: number;
@@ -46,7 +46,8 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
     if (!data.subjects.includes(subj)) setData({ ...data, subjects: [...data.subjects, subj] });
     setSubjectQuery('');
   }
-  const canContinue = !!data.examYear;
+  const today = new Date().toISOString().slice(0, 10);
+  const canContinue = !!data.examDate;
 
   return (
     <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
@@ -57,26 +58,10 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
       </div>
 
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 10 }}>When are you taking UTME?</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {examYears.map((y) => {
-            const active = data.examYear === y;
-            return (
-              <button type="button" key={y} aria-pressed={active} onClick={() => setData({ ...data, examYear: y })} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: 15, fontWeight: 600, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-                border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'rgba(46,124,246,0.12)' : 'var(--dark-bg-surface)', color: 'var(--dark-text-heading)',
-              }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-text-faint)'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    {active && <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--dark-accent-blue)' }} />}
-                  </span>
-                  {y}
-                </span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
-              </button>
-            );
-          })}
-        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 6 }}>When is your UTME?</div>
+        <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginBottom: 10 }}>If you don't know exactly, guess close — Kairo adjusts as you go.</div>
+        <Input tone="dark" type="date" min={today} value={data.examDate ?? ''} onChange={(e) => setData({ ...data, examDate: e.target.value || null })}
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>} />
       </div>
 
       <div style={{ position: 'relative' }}>

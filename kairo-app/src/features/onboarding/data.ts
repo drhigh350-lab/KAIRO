@@ -6,7 +6,8 @@ export interface Course {
 export interface OnboardingData {
   name: string;
   email: string;
-  examYear: string | null;
+  /** ISO date string (e.g. "2027-05-15") the student picked as their real UTME date. */
+  examDate: string | null;
   course: Course | null;
   subjects: string[];
 }
@@ -27,8 +28,6 @@ export const allSubjects: string[] = [
   'Agricultural Science',
   'History',
 ];
-
-export const examYears: string[] = ['UTME 2027', 'UTME 2028', 'Other'];
 
 export const courses: Course[] = [
   { name: 'Medicine & Surgery', subjects: ['English Language', 'Biology', 'Chemistry', 'Physics'] },

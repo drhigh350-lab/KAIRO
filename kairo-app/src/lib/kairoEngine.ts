@@ -360,6 +360,106 @@ export async function finishCbtExam(): Promise<Engine> {
 }
 
 // ─────────────────────────────────────────────
+// Onboarding & Diagnostic — the real engine.onboarding step machine
+// (OnboardingEngine.js: startOnboarding/submitOnboardingStep/
+// completeOnboarding). Its step list also includes 'welcome' and 'name' —
+// this app already has its own screens for both (Welcome.tsx, the name
+// field on the sign-up form), so beginOnboarding() walks past those two
+// with data already collected instead of asking the student twice. The
+// engine's 'diagnostic' step is just a placeholder ({count:5}) — it has no
+// question bank of its own, so getDiagnosticQuestions() sources real
+// questions the same way every other real session does (getAllConcepts +
+// getQuestionForConcept), not a separate quiz bank.
+// ─────────────────────────────────────────────
+
+/** Starts the real onboarding step machine and walks past 'welcome'/'name', landing on 'goal'. */
+export function beginOnboarding(name: string): void {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.startOnboarding(); // -> 'welcome'
+  kairo.submitOnboardingStep(null); // -> 'name'
+  kairo.submitOnboardingStep(name); // -> 'goal'
+}
+
+export interface OnboardingKaiStep { title?: string; body?: string }
+
+/** Submits goal/exam date/subjects through the real step machine, landing on 'diagnostic_intro' — returns its real Kai copy instead of hardcoded UI text. */
+export function submitOnboardingProfile(course: string, examDateISO: string, subjects: string[]): OnboardingKaiStep {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.submitOnboardingStep(course); // -> 'exam_date'
+  kairo.submitOnboardingStep(examDateISO); // -> 'subjects'
+  const introStep = kairo.submitOnboardingStep(subjects); // -> 'diagnostic_intro'
+  return { title: introStep?.title, body: introStep?.body };
+}
+
+/** A real 5-question diagnostic spread across the student's seeded subjects, sourced the same way as every other real practice question. */
+export async function getDiagnosticQuestions(subjects: string[], count = 5): Promise<Engine[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const normalized = subjects.map(normalizeSubjectName);
+  await ensureContentLoaded(normalized);
+  const seeded = normalized.filter((s) => SEEDED_SUBJECTS.includes(s));
+  const pool = seeded.length ? seeded : SEEDED_SUBJECTS;
+
+  const concepts: Engine[] = [];
+  for (const subject of pool) {
+    concepts.push(...kairo.getAllConcepts({ subject }));
+  }
+  for (let i = concepts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [concepts[i], concepts[j]] = [concepts[j], concepts[i]];
+  }
+
+  const questions: Engine[] = [];
+  const seenIds: string[] = [];
+  for (const concept of concepts) {
+    if (questions.length >= count) break;
+    const q = kairo.getQuestionForConcept(concept.id, { excludeIds: seenIds });
+    if (q) {
+      questions.push(q);
+      seenIds.push(q.id);
+    }
+  }
+  return questions;
+}
+
+export interface DiagnosticAnswer {
+  conceptId: string | null;
+  correct: boolean;
+  responseTimeMs: number;
+  selectedOption?: string;
+  correctOption: string;
+  questionId: string;
+}
+
+export interface OnboardingCompleteResult {
+  seededConcepts: number;
+  diagnosticSummary: { total: number; correct: number; accuracy: number; message: string };
+  profile: Engine;
+}
+
+/**
+ * Submits the diagnostic results, walks the remaining message-only steps
+ * ('results', 'first_session') to reach 'complete', then builds the
+ * student's real initial plan — seeds the local content catalog, feeds the
+ * diagnostic answers into the knowledge graph, sets profile fields
+ * (name/targetCourse/examDate/targetSubjects), and generates the first
+ * real adaptive session. Persists immediately, same as AccountReady's old
+ * onStart used to for these same profile fields.
+ */
+export async function completeOnboardingFlow(results: DiagnosticAnswer[]): Promise<OnboardingCompleteResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.submitOnboardingStep(results); // -> 'results'
+  kairo.submitOnboardingStep(null); // -> 'first_session'
+  kairo.submitOnboardingStep(null); // -> complete
+  const { seededConcepts, diagnosticSummary, profile } = await kairo.completeOnboarding();
+  await kairo.sync.sync();
+  return { seededConcepts, diagnosticSummary, profile };
+}
+
+// ─────────────────────────────────────────────
 // Notification consent (Notifications & Communication Systems §10) —
 // this frontend never invents its own consent model; every read/write
 // here goes straight through the engine's own ConsentManager

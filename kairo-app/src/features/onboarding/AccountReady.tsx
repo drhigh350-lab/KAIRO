@@ -10,6 +10,11 @@ export interface AccountReadyProps {
   onStart: () => void;
 }
 
+function formatExamDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 export function AccountReady({ step, total, onBack, data, onStart }: AccountReadyProps) {
   const firstName = (data.name || '').split(' ')[0] || 'there';
   return (
@@ -25,7 +30,7 @@ export function AccountReady({ step, total, onBack, data, onStart }: AccountRead
       <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <SummaryRow label="Name" value={data.name || '—'} />
         <SummaryRow label="Course" value={data.course ? data.course.name : 'Not set yet'} />
-        <SummaryRow label="Exam Year" value={data.examYear || '—'} />
+        <SummaryRow label="Exam Date" value={formatExamDate(data.examDate)} />
         <div>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginBottom: 8 }}>Subjects</div>
           {data.subjects.length ? (

@@ -9,7 +9,8 @@ import { getEngine } from '../../lib/kairoEngine';
 interface HomeDashboardState {
   name?: string;
   course?: Course | null;
-  examYear?: string | null;
+  /** ISO date string, e.g. "2027-05-15". */
+  examDate?: string | null;
   subjects?: string[];
 }
 
@@ -36,11 +37,12 @@ export function HomeDashboard() {
   const data: HomeDashboardState = {
     name: routerState?.name || profile?.name || 'there',
     course: routerState?.course ?? (profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : null),
-    examYear: routerState?.examYear ?? null,
+    examDate: routerState?.examDate ?? (profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : null),
     subjects: routerState?.subjects?.length ? routerState.subjects : (profile?.targetSubjects ?? []),
   };
   const firstName = (data.name || '').split(' ')[0] || 'there';
   const subjects = data.subjects ?? [];
+  const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
 
   const [liveChallenge, setLiveChallenge] = useState<Challenge | null>(null);
   useEffect(() => {
@@ -68,19 +70,19 @@ export function HomeDashboard() {
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
       </div>
 
-      {data.examYear && (
+      {daysToGo != null && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--dark-text-muted)' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
-          Aiming for UTME {data.examYear}
+          {daysToGo} days to your UTME
         </div>
       )}
 
       <MissionCard
-        badge="Recommended First Step"
-        title="Start Your Diagnostic"
-        reason={`Answer a short set of questions across ${subjects.length ? subjects.join(', ') : 'your subjects'} so Kairo can personalize what you practise.`}
-        chips={['≈10 min', 'Adaptive', 'One-time setup']}
-        ctaLabel="Start Diagnostic"
+        badge="Recommended Next Step"
+        title="Start Practising"
+        reason={`Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`}
+        chips={['≈5 min', 'Adaptive']}
+        ctaLabel="Start Session"
         onStart={() => navigate('/practice', { state: { entry: 'suggested' } })}
       />
 
