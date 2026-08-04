@@ -22,6 +22,24 @@ function createEngine(name: string): Engine {
   return engine;
 }
 
+/**
+ * A session persisted in local storage from a previous visit can outlive the
+ * account it belongs to (e.g. the account was deleted server-side while this
+ * browser still held its session) — Supabase then rejects it with "User from
+ * sub claim in JWT does not exist" on the very next authenticated request,
+ * which can collide with an unrelated sign-up/sign-in happening in the same
+ * page load. Sign-up and sign-in both start a deliberately fresh auth flow,
+ * so any leftover session is irrelevant to them regardless of whether it's
+ * still valid — clear it first rather than let it interfere.
+ */
+async function clearStaleSession(supabase: Engine): Promise<void> {
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // best-effort — a signOut() failure here just means there was nothing to clear
+  }
+}
+
 export interface SignUpArgs {
   name: string;
   email: string;
@@ -31,6 +49,7 @@ export interface SignUpArgs {
 /** Creates a new Supabase Auth account, then connects a fresh KairoEngine to it. */
 export async function signUpAndConnect({ name, email, password }: SignUpArgs): Promise<Engine> {
   const supabase = getSupabase();
+  await clearStaleSession(supabase);
   const kairo = createEngine(name);
   await kairo.init();
   const adapter = new SupabaseSyncAdapter(supabase, kairo.store);
@@ -47,6 +66,7 @@ export interface SignInArgs {
 /** Signs in an existing student and connects the engine, pulling their saved profile down. */
 export async function signInAndConnect({ email, password }: SignInArgs): Promise<Engine> {
   const supabase = getSupabase();
+  await clearStaleSession(supabase);
   const kairo = createEngine('');
   await kairo.init();
   await kairo.connectSupabase(supabase, { email, password });
@@ -80,6 +100,10 @@ export async function restoreSession(): Promise<boolean> {
     await kairo.sync.sync();
     return true;
   } catch {
+    // The restored session didn't actually work (e.g. the account behind it
+    // no longer exists) — clear it so it doesn't linger and collide with a
+    // later sign-up/sign-in in the same browser.
+    await clearStaleSession(supabase);
     engine = null;
     return false;
   }
