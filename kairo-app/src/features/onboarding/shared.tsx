@@ -97,15 +97,23 @@ export function OrDivider({ tone = 'light' }: OrDividerProps) {
 export interface GoogleButtonProps {
   onClick: () => void;
   children?: ReactNode;
+  /** Google OAuth isn't configured in Supabase yet — render as a disabled "coming soon" state instead of faking a sign-in. */
+  disabled?: boolean;
+  tone?: 'light' | 'dark';
 }
 
-export function GoogleButton({ onClick, children = 'Continue with Google' }: GoogleButtonProps) {
+export function GoogleButton({ onClick, children = 'Continue with Google', disabled = false, tone = 'light' }: GoogleButtonProps) {
   return (
-    <Button variant="secondary" size="lg" fullWidth onClick={onClick}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z" /><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16.1 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.6 4 24 4c-7.7 0-14.3 4.3-17.7 10.7z" /><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.1-5.1l-6.5-5.5C29.5 35 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.6 5C9.6 39.6 16.2 44 24 44z" /><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.5 5.5C41.4 36 44 30.5 44 24c0-1.2-.1-2.4-.4-3.5z" /></svg>
-        {children}
-      </span>
-    </Button>
+    <div>
+      <Button variant="secondary" size="lg" fullWidth disabled={disabled} onClick={onClick}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z" /><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16.1 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6 29.6 4 24 4c-7.7 0-14.3 4.3-17.7 10.7z" /><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.1-5.1l-6.5-5.5C29.5 35 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.6 5C9.6 39.6 16.2 44 24 44z" /><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.5l6.5 5.5C41.4 36 44 30.5 44 24c0-1.2-.1-2.4-.4-3.5z" /></svg>
+          {children}
+        </span>
+      </Button>
+      {disabled && (
+        <div style={{ fontSize: 11, textAlign: 'center', marginTop: 6, color: tone === 'dark' ? 'var(--dark-text-faint)' : 'var(--text-faint)' }}>Coming soon — use email for now</div>
+      )}
+    </div>
   );
 }

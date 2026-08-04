@@ -51,7 +51,7 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
         <div style={{ textAlign: 'right', fontSize: 13 }}><a href="#" style={{ color: 'var(--dark-accent-blue)' }}>Forgot password?</a></div>
         <Button variant="darkAccent" size="lg" fullWidth disabled={!canSubmit} onClick={handleSubmit}>{submitting ? 'Signing in…' : 'Sign In'}</Button>
         <OrDivider tone="dark" />
-        <GoogleButton onClick={onSignedIn} />
+        <GoogleButton disabled tone="dark" onClick={onSignedIn} />
       </div>
       <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 'auto' }}>
         New to Kairo? <a href="#" onClick={(e) => { e.preventDefault(); onGoToSignUp(); }} style={{ color: 'var(--dark-accent-blue)' }}>Create an account</a>

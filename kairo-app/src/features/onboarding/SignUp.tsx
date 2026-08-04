@@ -41,7 +41,7 @@ export function SignUp({ step, total, onBack, onGoogleSignUp, onEmailSignUp, onG
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--dark-text-heading)' }}>Create your account</div>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 6 }}>Let's get you started on your journey to success.</div>
       </div>
-      <GoogleButton onClick={onGoogleSignUp} />
+      <GoogleButton disabled tone="dark" onClick={onGoogleSignUp} />
       <OrDivider tone="dark" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Input tone="dark" label="Full Name" placeholder="Enter your full name" value={name} onChange={(e) => setName(e.target.value)} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0116 0" /></svg>} />
