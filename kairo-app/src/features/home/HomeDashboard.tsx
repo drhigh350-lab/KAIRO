@@ -97,7 +97,7 @@ export function HomeDashboard() {
             <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>0%</span>
           </div>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>Your progress will appear here after your first study session.</div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>Your progress will appear here after you complete a practice session.</div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--dark-border)' }}>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>—</span></div>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Study Time<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>—</span></div>

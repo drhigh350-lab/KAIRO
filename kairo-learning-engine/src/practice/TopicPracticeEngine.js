@@ -17,6 +17,12 @@ export class TopicPracticeEngine {
     const subtopics = {};
 
     for (const c of concepts) {
+      // A concept with no real subtopic must never become a pickable option —
+      // object keys coerce `null` to the string "null", so without this guard
+      // the journey surfaces a bogus "null" subtopic. Selecting it then fails
+      // getAllConcepts()'s strict subtopic === match (real null vs the string
+      // "null"), silently returning zero concepts and zero questions.
+      if (c.subtopic == null) continue;
       if (!subtopics[c.subtopic]) {
         subtopics[c.subtopic] = { concepts: [], mastered: 0, total: 0 };
       }
