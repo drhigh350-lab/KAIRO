@@ -21,10 +21,11 @@ function greeting(): string {
   return 'Good evening';
 }
 
-const quickActions: { label: string; d: string; color: string; entry: string }[] = [
-  { label: 'Subject Practice', d: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z', color: '#2E7CF6', entry: 'subject' },
-  { label: 'Topic Practice', d: 'M4 6h16M4 12h16M4 18h10', color: '#9B6BE0', entry: 'topic' },
-  { label: 'Mixed Practice', d: 'M16 3h5v5M4 20L21 3M21 16v5h-5M4 4l5 5', color: '#28B5C4', entry: 'mixed' },
+const quickActions: { label: string; d: string; color: string; to: string; entry?: string }[] = [
+  { label: 'Subject Practice', d: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z', color: '#2E7CF6', to: '/practice', entry: 'subject' },
+  { label: 'Topic Practice', d: 'M4 6h16M4 12h16M4 18h10', color: '#9B6BE0', to: '/practice', entry: 'topic' },
+  { label: 'Mixed Practice', d: 'M16 3h5v5M4 20L21 3M21 16v5h-5M4 4l5 5', color: '#28B5C4', to: '/practice', entry: 'mixed' },
+  { label: 'Rapid Fire', d: 'M13 2L3 14h7l-1 8 11-14h-7l1-6z', color: '#E0A039', to: '/rapid-fire' },
 ];
 
 export function HomeDashboard() {
@@ -106,9 +107,9 @@ export function HomeDashboard() {
 
       <div>
         <div style={{ fontWeight: 700, color: 'var(--dark-text-heading)', fontSize: 15, marginBottom: 12 }}>Quick Actions</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {quickActions.map((q) => (
-            <button key={q.label} type="button" onClick={() => navigate('/practice', { state: { entry: q.entry } })} style={{
+            <button key={q.label} type="button" onClick={() => navigate(q.to, q.entry ? { state: { entry: q.entry } } : undefined)} style={{
               background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 14,
               display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
             }}>

@@ -553,6 +553,91 @@ export async function completeLearnLesson(conceptId: string, returnTo = 'practic
 }
 
 // ─────────────────────────────────────────────
+// Rapid Fire — timed burst practice via the real kairo.rapidFire
+// (RapidFireEngine). It only ever pulls concepts the student has already
+// built real history against (Held/Fading/Reinforced) — a speed/recall
+// drill, not a first-exposure mode — so an empty pool here is an honest
+// "not enough history yet", not a bug to work around.
+// ─────────────────────────────────────────────
+
+export interface RapidFireOptions {
+  subjects?: string[];
+  questionCount?: number;
+  timePerQuestionSec?: number;
+}
+
+/** A question paired with the concept id it was actually queued for — a question can test more than one concept, and only _flattenQuestion's primary one survives onto the question object itself, so grading uses this pairing rather than trusting the question's own (possibly different) conceptId field. */
+export interface RapidFireQueuedQuestion {
+  conceptId: string;
+  question: Engine;
+}
+
+export interface RapidFireStartResult {
+  totalQuestions: number;
+  timePerQuestionSec: number;
+  questions: RapidFireQueuedQuestion[];
+}
+
+export async function startRapidFireSession(options: RapidFireOptions = {}): Promise<RapidFireStartResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const subjects = (options.subjects?.length ? options.subjects : kairo.profile.targetSubjects || []).map(normalizeSubjectName);
+  await ensureContentLoaded(subjects);
+
+  const started = kairo.startRapidFire({ ...options, subjects: options.subjects?.length ? subjects : [] });
+  const queue: string[] = kairo.rapidFire.queue || [];
+  const questions: RapidFireQueuedQuestion[] = [];
+  const seenIds: string[] = [];
+  for (const conceptId of queue) {
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    if (q) {
+      questions.push({ conceptId, question: q });
+      seenIds.push(q.id);
+    }
+  }
+  return { totalQuestions: questions.length, timePerQuestionSec: started.timePerQuestion, questions };
+}
+
+export interface RapidFireAnswerContext {
+  conceptId: string;
+  correct: boolean;
+  responseTimeMs: number;
+  selectedOption?: string;
+  correctOption: string;
+  questionId: string;
+}
+
+export interface RapidFireAnswerResult {
+  correct: boolean;
+  streak: number;
+  bestStreak: number;
+  finished: boolean;
+}
+
+export function submitRapidFireAnswer(ctx: RapidFireAnswerContext): RapidFireAnswerResult {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  return kairo.submitRapidFireAnswer(ctx);
+}
+
+export interface RapidFireResults {
+  totalQuestions: number;
+  correct: number;
+  accuracy: number;
+  avgTimeMs: number;
+  bestStreak: number;
+  durationSec: number;
+}
+
+export async function finishRapidFire(): Promise<RapidFireResults> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const results = kairo.finishRapidFire();
+  await kairo.sync.sync();
+  return results;
+}
+
+// ─────────────────────────────────────────────
 // Notification consent (Notifications & Communication Systems §10) —
 // this frontend never invents its own consent model; every read/write
 // here goes straight through the engine's own ConsentManager

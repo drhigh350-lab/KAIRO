@@ -12,6 +12,7 @@ import { Profile } from './features/profile/Profile';
 import { NotificationSettings } from './features/profile/NotificationSettings';
 import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 import { LearnLesson } from './features/learn/LearnLesson';
+import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/profile/notifications" element={<NotificationSettings />} />
         <Route path="/challenges/*" element={<ChallengesFlow />} />
         <Route path="/learn/:conceptId" element={<LearnLesson />} />
+        <Route path="/rapid-fire" element={<RapidFireFlow />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
