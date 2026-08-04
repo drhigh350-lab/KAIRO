@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MissionCard, Card, KairoWordmark } from '../../components';
 import type { Course } from '../onboarding/data';
-import { liveChallenge } from '../challenges/data';
+import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
+import type { Challenge } from '../challenges/data';
 import { getEngine } from '../../lib/kairoEngine';
 
 interface HomeDashboardState {
@@ -39,6 +41,13 @@ export function HomeDashboard() {
   };
   const firstName = (data.name || '').split(' ')[0] || 'there';
   const subjects = data.subjects ?? [];
+
+  const [liveChallenge, setLiveChallenge] = useState<Challenge | null>(null);
+  useEffect(() => {
+    listChallenges()
+      .then((rows) => setLiveChallenge(rows.map(mapDbChallenge).find((c) => c.status === 'live') || null))
+      .catch(() => setLiveChallenge(null));
+  }, []);
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
@@ -117,7 +126,7 @@ export function HomeDashboard() {
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Challenges</div>
           <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 2, lineHeight: 1.4 }}>
-            {liveChallenge ? `${liveChallenge.title} is live — ${liveChallenge.participantCount.toLocaleString()} students already joined.` : 'Compete with students across Nigeria.'}
+            {liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.'}
           </div>
         </div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>

@@ -214,6 +214,12 @@ export function getWeaknessReview(): Engine | null {
   return kairo ? kairo.review.buildWeaknessReview() : null;
 }
 
+/** Real momentum-streak status ({ momentum, protectedGapsUsed, lastSessionDate, message }), or null if signed out. */
+export function getStreakStatus(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.getStreakStatus() : null;
+}
+
 // ─────────────────────────────────────────────
 // Notification consent (Notifications & Communication Systems §10) —
 // this frontend never invents its own consent model; every read/write

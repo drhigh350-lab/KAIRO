@@ -1,35 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnswerFeedback, Button, IconButton, ProgressBar } from '../../components';
 import { CloseIcon, Modal } from '../learning/shared';
-import type { Challenge } from './data';
+import type { Challenge, ChallengeQuestion } from './data';
 
 export interface ChallengeAttemptProps {
   challenge: Challenge;
-  onFinish: (answers: Record<number, number>) => void;
+  questions: ChallengeQuestion[];
+  onFinish: (answers: Record<number, number>, timeTakenMs: number) => void;
   onExit: () => void;
 }
 
-export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttemptProps) {
+export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: ChallengeAttemptProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(challenge.timeLimitSec ?? 0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const startedAt = useRef(Date.now());
 
-  const total = challenge.questions.length;
-  const question = challenge.questions[index];
+  const total = questions.length;
+  const question = questions[index];
 
   useEffect(() => {
-    if (!challenge.timeLimitSec) return;
-    if (timeLeft <= 0) {
-      onFinish({ ...answers, [index]: selected ?? -1 });
-      return;
-    }
-    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, challenge.timeLimitSec]);
+    const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - startedAt.current) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   function submit() {
     if (selected === null) return;
@@ -40,7 +36,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
     const newAnswers = { ...answers, [index]: selected ?? -1 };
     setAnswers(newAnswers);
     if (index + 1 >= total) {
-      onFinish(newAnswers);
+      onFinish(newAnswers, Date.now() - startedAt.current);
     } else {
       setIndex(index + 1);
       setSelected(null);
@@ -53,6 +49,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
     return `${m}:${s.toString().padStart(2, '0')}`;
   }
 
+  if (!question) return null;
   const isCorrect = selected === question.correct;
 
   return (
@@ -60,11 +57,7 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
       <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 8px', background: 'var(--dark-bg-canvas)' }}>
         <IconButton dark onClick={() => setShowExitConfirm(true)}><CloseIcon /></IconButton>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>Question {index + 1} of {total}</div>
-        {challenge.timeLimitSec ? (
-          <div style={{ fontSize: 13, fontWeight: 700, color: timeLeft <= 15 ? 'var(--dark-danger)' : 'var(--dark-text-heading)', minWidth: 40, textAlign: 'right' }}>{formatTime(timeLeft)}</div>
-        ) : (
-          <div style={{ minWidth: 40 }} />
-        )}
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)', minWidth: 40, textAlign: 'right' }}>{formatTime(elapsedSec)}</div>
       </div>
 
       {showExitConfirm && (

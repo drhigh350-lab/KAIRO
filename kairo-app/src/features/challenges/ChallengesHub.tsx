@@ -1,10 +1,13 @@
 import { Badge, Card, StreakBadge } from '../../components';
 import { ScreenHeader } from '../learning/shared';
-import { challenges, liveChallenge, type Challenge } from './data';
+import type { Challenge } from './data';
+import { getStreakStatus } from '../../lib/kairoEngine';
 
 export interface ChallengesHubProps {
+  loading: boolean;
+  challenges: Challenge[];
   onBack: () => void;
-  onSelect: (challenge: Challenge) => void;
+  onSelect: (challengeId: string) => void;
 }
 
 function accentStyle(accent: Challenge['accent']) {
@@ -13,12 +16,14 @@ function accentStyle(accent: Challenge['accent']) {
   return { background: 'var(--dark-bg-surface)', color: 'var(--dark-text-heading)', border: '1px solid var(--dark-border)' };
 }
 
-function ChallengeCard({ challenge, onSelect }: { challenge: Challenge; onSelect: (c: Challenge) => void }) {
+const scoringLabel: Record<Challenge['scoringFormula'], string> = { accuracy: 'Accuracy scored', speed: 'Speed scored', hybrid: 'Accuracy + speed scored' };
+
+function ChallengeCard({ challenge, onSelect }: { challenge: Challenge; onSelect: (id: string) => void }) {
   const style = accentStyle(challenge.accent);
   const onGradient = challenge.accent === 'navy';
   return (
     <Card
-      onClick={() => onSelect(challenge)}
+      onClick={() => onSelect(challenge.id)}
       style={{ ...style, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: style.boxShadow ?? 'none' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -28,31 +33,35 @@ function ChallengeCard({ challenge, onSelect }: { challenge: Challenge; onSelect
         </div>
         <Badge tone={challenge.status === 'live' ? 'success' : 'darkNeutral'}>{challenge.status === 'live' ? 'Live now' : challenge.timingLabel}</Badge>
       </div>
-      <div style={{ fontSize: 13, lineHeight: 1.5, color: onGradient ? 'rgba(255,255,255,0.85)' : 'var(--dark-text-muted)' }}>{challenge.description}</div>
       <div style={{ fontSize: 12, fontWeight: 600, color: onGradient ? 'rgba(255,255,255,0.85)' : 'var(--dark-text-muted)' }}>
-        {challenge.participantCount.toLocaleString()} students already joined
+        {challenge.questionCount} question{challenge.questionCount === 1 ? '' : 's'} · {scoringLabel[challenge.scoringFormula]}
       </div>
     </Card>
   );
 }
 
-export function ChallengesHub({ onBack, onSelect }: ChallengesHubProps) {
+export function ChallengesHub({ loading, challenges, onBack, onSelect }: ChallengesHubProps) {
   const live = challenges.filter((c) => c.status === 'live');
   const upcoming = challenges.filter((c) => c.status === 'upcoming');
   const ended = challenges.filter((c) => c.status === 'ended');
+  const streak = getStreakStatus();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
-      <ScreenHeader onBack={onBack} title="Challenges" right={<StreakBadge dark days={5} />} tone="dark" />
+      <ScreenHeader onBack={onBack} title="Challenges" right={streak?.momentum ? <StreakBadge dark days={streak.momentum} /> : undefined} tone="dark" />
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 22 }}>
-        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.5 }}>
-          {liveChallenge
-            ? `${liveChallenge.title} is live right now — ${liveChallenge.participantCount.toLocaleString()} students already joined.`
-            : "Nothing live right now — here's what's coming up."}
-        </div>
+        {loading && (
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40 }}>Loading challenges…</div>
+        )}
 
-        {live.length > 0 && (
+        {!loading && challenges.length === 0 && (
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40, lineHeight: 1.5 }}>
+            Nothing scheduled right now — check back soon.
+          </div>
+        )}
+
+        {!loading && live.length > 0 && (
           <div>
             <SectionLabel>Live Now</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
@@ -61,7 +70,7 @@ export function ChallengesHub({ onBack, onSelect }: ChallengesHubProps) {
           </div>
         )}
 
-        {upcoming.length > 0 && (
+        {!loading && upcoming.length > 0 && (
           <div>
             <SectionLabel>Starting Soon</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
@@ -70,7 +79,7 @@ export function ChallengesHub({ onBack, onSelect }: ChallengesHubProps) {
           </div>
         )}
 
-        {ended.length > 0 && (
+        {!loading && ended.length > 0 && (
           <div>
             <SectionLabel>Recently Concluded</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
