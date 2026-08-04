@@ -496,6 +496,66 @@ correctly restricting instead of a permission error), and (b)
 `get_challenge_leaderboard()` still returns both rows correctly ranked
 regardless of caller identity. Test fixtures cleaned up after.
 
+## 5h. Ninth pass — `pushExternalId` + `KairoEngine.sendNotifications()`
+
+Closes the one gap §5f/§5g's notification write-up left open: resolving
+a student to their OneSignal `external_id`. Added
+`StudentProfile.pushExternalId` (declared in the constructor + `toJSON()`,
+same discipline as every other field in this document — undeclared means
+silently dropped on save), mapped to a new `kairo.students.push_external_id`
+column (migration `add_push_external_id_to_students`) via
+`SupabaseSyncAdapter._profileToRow()`/`_rowToProfile()`, and added
+`'pushExternalId'` to `ProfileSettings.updateProfile()`'s allowed-fields
+list — the actual API surface a real client calls once its OneSignal SDK
+registers a device and gets back an `external_id`. This code never
+invents, guesses, or looks up that id itself; it only stores what the
+client hands it.
+
+`KairoEngine.sendNotifications()` is the last piece: runs
+`checkAndResolveNotifications()`, and for each deliverable
+`{candidate, resolved}` pair calls a lazily-constructed
+`OneSignalTransport` (test-overridable via `engine._pushTransport`,
+mirroring how `sync.adapter` is attached post-construction rather than
+injected through the constructor) targeting `profile.pushExternalId`.
+If no `pushExternalId` is set, it returns `{ sent: [], skipped: n,
+reason: 'no pushExternalId set for this student — nothing to target' }`
+instead of throwing or silently dropping candidates. Successful sends
+call `notificationPipeline.recordDelivered()` so the frequency budget
+and one-time-event dedup both see the send as having actually happened,
+not just been resolved.
+
+**Nothing in this codebase calls `sendNotifications()` automatically —
+no cron/scheduler exists inside the engine.** Whoever hosts this backend
+decides the trigger (a scheduled job, an endpoint hit on app open, etc.)
+and calls it from there. That trigger, the real client-side OneSignal SDK
+registration, and the actual `ONESIGNAL_APP_ID`/`ONESIGNAL_API_KEY`
+deployment secrets are all outside this repo's scope — see the
+environment-variable list below.
+
+4 new/modified tests (91/91 passing): the `StudentProfile` structural
+round-trip extended to cover `pushExternalId`, a
+`ProfileSettings.updateProfile()` test, and two `sendNotifications()`
+tests — one confirming the "skip with a clear reason" path when no
+`pushExternalId` is set (even with a real deliverable candidate), one
+confirming a real send-and-record pass through an injected fake
+transport.
+
+### Environment variables this project still needs someone to set
+
+None of these have been seen or handled by this session beyond the
+already-public OneSignal app id below — they must be set as environment
+variables wherever this backend actually runs, never hardcoded or
+committed:
+
+- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — only needed to run
+  `scripts/seed-content-catalog.js --apply`. From the Supabase dashboard
+  → Settings → API.
+- `ONESIGNAL_APP_ID` — already known and not secret:
+  `25f06ed1-29ab-4da8-871a-2fb9f0aa35b5` (the existing "Techmed app").
+- `ONESIGNAL_API_KEY` — secret, required for `OneSignalTransport` to
+  send anything. From the OneSignal dashboard → Settings → Keys & IDs →
+  REST API Key.
+
 ## 6. What is still NOT done
 
 - ~~The onboarding subject picker offers 8 subjects but only 4 have
@@ -634,12 +694,16 @@ regardless of caller identity. Test fixtures cleaned up after.
   confirmed the post-exam immediate window correctly suppresses that
   same candidate down to just the acknowledgment.
 
-  **Still not done**: actually wiring `checkAndResolveNotifications()`'s
+  ~~Still not done: actually wiring `checkAndResolveNotifications()`'s
   output into `OneSignalTransport` needs a way to resolve a student to
-  their OneSignal `external_id`, which doesn't exist as a profile
-  concept yet — left for whoever wires the client-side subscription
-  registration, since that's a decision about the actual device/app
-  identity scheme, not something to guess at here.
+  their OneSignal `external_id`~~ — **closed in §5h.**
+  `StudentProfile.pushExternalId` + `KairoEngine.sendNotifications()`
+  now carry a resolved candidate all the way to a real OneSignal send,
+  once the client has registered a device and a deployment has real
+  `ONESIGNAL_API_KEY`/`ONESIGNAL_APP_ID` secrets set. What's left is
+  genuinely outside this repo: the real client-side OneSignal SDK
+  registration, and whatever process/cron/endpoint actually calls
+  `sendNotifications()` on a schedule — see §5h.
 - **`kairo.students` RLS/security posture is clean** — every advisory
   finding on this project is on the legacy `public.*` RoboMed tables
   and functions, unrelated to the `kairo` schema.

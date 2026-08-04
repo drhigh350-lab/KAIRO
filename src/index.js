@@ -25,6 +25,7 @@ import { LearningStateTracker } from "./student/LearningStateTracker.js";
 import { JourneyStageTracker } from "./sjee/JourneyStageTracker.js";
 import { NotificationOrchestrator } from "./sjee/NotificationOrchestrator.js";
 import { NotificationPipeline } from "./sjee/NotificationPipeline.js";
+import { OneSignalTransport } from "./comms/transport/OneSignalTransport.js";
 import { ReEngagementEngine } from "./sjee/ReEngagementEngine.js";
 import { CrossModuleMilestones } from "./sjee/CrossModuleMilestones.js";
 import { ContinuationEngine } from "./sjee/ContinuationEngine.js";
@@ -608,6 +609,43 @@ export class KairoEngine {
    */
   checkAndResolveNotifications() {
     return this.notificationPipeline.run();
+  }
+
+  /**
+   * checkAndResolveNotifications() + actually deliver via OneSignal.
+   * Requires this.profile.pushExternalId to already be set (the
+   * client's OneSignal SDK registers a subscription and calls
+   * settings.updateProfile({ pushExternalId }) — this method never
+   * invents or looks up that id itself) and ONESIGNAL_APP_ID/
+   * ONESIGNAL_API_KEY to be configured wherever this code runs.
+   *
+   * Nothing calls this automatically — no cron/scheduler exists inside
+   * this engine. Whoever hosts it decides the trigger (a scheduled job,
+   * an endpoint hit on app open, etc.) and calls this from there.
+   */
+  async sendNotifications() {
+    const deliverable = this.checkAndResolveNotifications();
+    if (deliverable.length === 0) return { sent: [], skipped: 0 };
+
+    if (!this.profile.pushExternalId) {
+      return { sent: [], skipped: deliverable.length, reason: 'no pushExternalId set for this student — nothing to target' };
+    }
+
+    // Lazily constructed (and test-overridable via engine._pushTransport)
+    // rather than injected through the constructor — this keeps
+    // KairoEngine's constructor free of transport-specific concerns,
+    // consistent with how sync.adapter is attached after construction
+    // via connectSupabase() rather than passed in up front.
+    const transport = this._pushTransport || (this._pushTransport = new OneSignalTransport());
+    const sent = [];
+    for (const { candidate, resolved } of deliverable) {
+      const result = await transport.send(resolved, this.profile.pushExternalId);
+      if (result.sent) {
+        this.notificationPipeline.recordDelivered(candidate, resolved);
+        sent.push({ candidate, result });
+      }
+    }
+    return { sent, skipped: deliverable.length - sent.length };
   }
 
   // ═══════════════════════════════════════════════════════════════

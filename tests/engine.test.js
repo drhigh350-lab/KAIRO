@@ -860,6 +860,7 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   p.responseTimeBaselines = { 'Chemistry:Stoichiometry': 15000 };
   p.email = 'ada@example.com';
   p.avatar = 'avatar_3.png';
+  p.pushExternalId = 'onesignal_ext_ada_1';
   p.completedChallenges = ['daily_5_reinforced'];
   p.totalXP = 420;
   p.badges = ['first_reinforced', 'three_day_streak'];
@@ -892,6 +893,7 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   assertEqual(restored.notificationHistory.length, 1, 'notificationHistory should round-trip exactly');
   assertEqual(restored.email, 'ada@example.com', 'email should round-trip exactly');
   assertEqual(restored.avatar, 'avatar_3.png', 'avatar should round-trip exactly');
+  assertEqual(restored.pushExternalId, 'onesignal_ext_ada_1', 'pushExternalId should round-trip exactly — without this, the student-to-OneSignal-device mapping OneSignalTransport.send() needs would be silently lost on every save');
   assertEqual(restored.completedChallenges.length, 1, 'completedChallenges should round-trip exactly — ChallengesModule.checkAndAward() wrote directly onto the profile without this field ever being declared, so it was silently dropped on every save');
   assertEqual(restored.totalXP, 420, 'totalXP should round-trip exactly — without this a returning student\'s level would incorrectly reset to 1 on every fresh load until their next completed session recalculated it');
   assertEqual(restored.badges.length, 2, 'badges should round-trip exactly — without this, every earned badge would be silently lost on reload and immediately re-awarded (and re-notified) the next time its condition was checked');
@@ -1534,6 +1536,45 @@ await test('CBTExamMode: getResult()/getResultHistory() require connectSupabase(
 
   const single = await cbtHistoryEngine.cbt.getResult('cbt_1');
   assertEqual(single.id, 'cbt_1', 'getResult() should return the specific result requested');
+});
+
+test('ProfileSettings.updateProfile() accepts pushExternalId — the client-registered OneSignal device mapping', () => {
+  const settingsEngine = new (engine.constructor)({ studentId: 'push_ext_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  settingsEngine.settings.updateProfile({ pushExternalId: 'onesignal_ext_xyz' });
+  assertEqual(settingsEngine.profile.pushExternalId, 'onesignal_ext_xyz', 'updateProfile should set pushExternalId, the same way it already sets avatar/email — this is how a client hands the engine the device mapping OneSignalTransport needs');
+});
+
+await test('KairoEngine.sendNotifications(): skips delivery (with a clear reason) when no pushExternalId is set, even with a real deliverable candidate', async () => {
+  const sendEngine = new KairoEngine({ studentId: 'send_test_1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await sendEngine.init();
+  sendEngine.comms.consent.grantChannelPermission('push');
+  sendEngine.comms.consent.setCategoryPreference('push', 'academic_nudge', true);
+  const cid3 = sendEngine.addConcept({ name: 'Fading Concept 3', subject: 'Biology', topic: 'Cells' });
+  sendEngine.graph.getConcept(cid3).retentionState = 'fading';
+
+  const result = await sendEngine.sendNotifications();
+  assert(result.sent.length === 0 && result.skipped > 0, 'without pushExternalId set, nothing should be sent even though a real candidate was generated and resolved');
+  assert(result.reason && result.reason.includes('pushExternalId'), 'the skip reason should be explicit about why, not a silent no-op');
+});
+
+await test('KairoEngine.sendNotifications(): sends through the transport and records delivery once pushExternalId is set', async () => {
+  const sendEngine2 = new KairoEngine({ studentId: 'send_test_2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await sendEngine2.init();
+  sendEngine2.comms.consent.grantChannelPermission('push');
+  sendEngine2.comms.consent.setCategoryPreference('push', 'academic_nudge', true);
+  sendEngine2.profile.pushExternalId = 'onesignal_ext_send_test_2';
+  const cid4 = sendEngine2.addConcept({ name: 'Fading Concept 4', subject: 'Biology', topic: 'Cells' });
+  sendEngine2.graph.getConcept(cid4).retentionState = 'fading';
+
+  const sendCalls = [];
+  sendEngine2._pushTransport = {
+    send: async (resolved, externalId) => { sendCalls.push({ resolved, externalId }); return { sent: true, oneSignalId: 'fake_msg_1' }; }
+  };
+
+  const result = await sendEngine2.sendNotifications();
+  assert(result.sent.length > 0, 'a real deliverable candidate with pushExternalId set should actually be sent through the transport');
+  assertEqual(sendCalls[0].externalId, 'onesignal_ext_send_test_2', 'the transport should be called with the student\'s real pushExternalId, never invented or looked up');
+  assert(sendCalls[0].resolved.rendered.text.length > 0, 'the transport should receive real rendered text, not a placeholder');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);

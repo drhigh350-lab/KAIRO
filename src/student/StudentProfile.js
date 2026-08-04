@@ -29,12 +29,14 @@ export class StudentProfile {
     parentGuardianContact = null,      // optional, dormant — reserved for future Parent Dashboard
     languageRegion = null,             // lets Kai choose relatable analogies — never a proxy for ability
     email = null,
-    avatar = null
+    avatar = null,
+    pushExternalId = null  // OneSignal external_id this student's device subscription is tagged with, set by the client once it registers with the OneSignal SDK — never invented/looked-up server-side
   }) {
     this.studentId = studentId;
     this.name = name;
     this.email = email;
     this.avatar = avatar;
+    this.pushExternalId = pushExternalId;
     this.examDate = examDate;
     this.targetSubjects = targetSubjects;
     this.targetCourse = targetCourse;
@@ -238,6 +240,7 @@ export class StudentProfile {
       name: this.name,
       email: this.email,
       avatar: this.avatar,
+      pushExternalId: this.pushExternalId,
       examDate: this.examDate,
       targetSubjects: this.targetSubjects,
       targetCourse: this.targetCourse,
