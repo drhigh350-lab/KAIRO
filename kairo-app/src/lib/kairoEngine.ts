@@ -213,3 +213,111 @@ export function getWeaknessReview(): Engine | null {
   const kairo = getEngine();
   return kairo ? kairo.review.buildWeaknessReview() : null;
 }
+
+// ─────────────────────────────────────────────
+// Notification consent (Notifications & Communication Systems §10) —
+// this frontend never invents its own consent model; every read/write
+// here goes straight through the engine's own ConsentManager
+// (kairo.comms.consent), the single entry point the notification
+// backend's own send checks (canSend()) already gate on.
+// ─────────────────────────────────────────────
+
+export type ConsentChannel = 'push' | 'in_app_badge' | 'whatsapp' | 'email' | 'sms';
+export type ConsentCategory =
+  | 'academic_nudge'
+  | 'motivational_consistency'
+  | 'milestone_celebration'
+  | 'community_social'
+  | 'reengagement_winback'
+  | 'exam_critical'
+  | 'account_administrative'
+  | 'editorial_broadcast';
+
+/** The six product categories a channel opts into by default once granted (§10.2) — Editorial & Broadcast is deliberately excluded (§10.5, tracked as its own separate consent) and Account & Administrative sits outside consent entirely (§3.5). */
+export const CONSENT_PRODUCT_CATEGORIES: ConsentCategory[] = [
+  'academic_nudge',
+  'motivational_consistency',
+  'milestone_celebration',
+  'community_social',
+  'reengagement_winback',
+  'exam_critical',
+];
+
+export interface ConsentSummary {
+  channelPermissions: Record<ConsentChannel, boolean>;
+  categoryPreferences: Partial<Record<ConsentChannel, Partial<Record<ConsentCategory, boolean>>>>;
+  hardStopActive: boolean;
+  editorialConsent: boolean;
+}
+
+/**
+ * Mirrors the exact snapshot+save+sync sequence KairoEngine's own
+ * endSession()/connectSupabase() already use internally (index.js) —
+ * there's no separate public "save now" method, so a consent change
+ * (which must persist immediately, not wait for a practice session to
+ * end) goes through the same private sequence directly.
+ */
+async function persistConsent(kairo: Engine): Promise<void> {
+  kairo._snapshotSjeeState();
+  await kairo.store.saveProfile(kairo.profile);
+  await kairo.sync.sync();
+}
+
+/** Current consent state for the signed-in student, or null if no one's signed in. */
+export function getConsentSummary(): ConsentSummary | null {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  const consent = kairo.comms.consent;
+  return {
+    channelPermissions: { ...consent.channelPermissions },
+    categoryPreferences: JSON.parse(JSON.stringify(consent.categoryPreferences || {})),
+    hardStopActive: !!consent.hardStopActive,
+    editorialConsent: !!consent.editorialConsent,
+  };
+}
+
+/**
+ * Grants a channel and defaults every product category on to true
+ * (§10.2: "Default is opt-in once a channel is granted... a student
+ * adjusts downward, never upward"). Editorial & Broadcast is never
+ * defaulted here — it stays its own explicit ask (§10.5).
+ */
+export async function grantChannelConsent(channel: ConsentChannel): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.comms.consent.grantChannelPermission(channel);
+  for (const category of CONSENT_PRODUCT_CATEGORIES) {
+    kairo.comms.consent.setCategoryPreference(channel, category, true);
+  }
+  await persistConsent(kairo);
+}
+
+export async function revokeChannelConsent(channel: ConsentChannel): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.comms.consent.revokeChannelPermission(channel);
+  await persistConsent(kairo);
+}
+
+export async function setCategoryConsent(channel: ConsentChannel, category: ConsentCategory, allowed: boolean): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.comms.consent.setCategoryPreference(channel, category, allowed);
+  await persistConsent(kairo);
+}
+
+/** §10.5 — tracked independently from the six product categories above. */
+export async function setEditorialConsent(allowed: boolean): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.comms.consent.setEditorialConsent(allowed);
+  await persistConsent(kairo);
+}
+
+/** §10.2 tier 3 — overrides every channel/category preference except Account & Administrative (§3.5), which sits outside consent entirely. */
+export async function setHardStopConsent(active: boolean): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.comms.consent.setHardStop(active);
+  await persistConsent(kairo);
+}

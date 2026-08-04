@@ -6,10 +6,11 @@ import { SignIn } from './SignIn';
 import { SignUp } from './SignUp';
 import { AboutYou } from './AboutYou';
 import { AccountReady } from './AccountReady';
+import { EnableNotifications } from './EnableNotifications';
 import type { OnboardingData } from './data';
 import { getEngine } from '../../lib/kairoEngine';
 
-type Screen = 'intro' | 'welcome' | 'signin' | 'signup' | 'about' | 'ready';
+type Screen = 'intro' | 'welcome' | 'signin' | 'signup' | 'about' | 'ready' | 'notifications';
 
 // segmented indicator covers Sign Up -> Account Ready
 const SEQ: Screen[] = ['signup', 'about', 'ready'];
@@ -92,8 +93,14 @@ export function OnboardingFlow() {
             kairo.profile.targetSubjects = data.subjects;
             await kairo.sync.sync();
           }
-          navigate('/home', { state: { name: data.name, course: data.course, examYear: data.examYear, subjects: data.subjects } });
+          go('notifications');
         }}
+      />
+    );
+  } else if (screen === 'notifications') {
+    body = (
+      <EnableNotifications
+        onDone={() => navigate('/home', { state: { name: data.name, course: data.course, examYear: data.examYear, subjects: data.subjects } })}
       />
     );
   }

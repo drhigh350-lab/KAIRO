@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, Switch } from '../../components';
-import { ScreenHeader } from '../learning/shared';
+import { Badge, Button, Card } from '../../components';
+import { ScreenHeader, ChevronRight } from '../learning/shared';
 import { getEngine, getProfileSummary, signOutAndDisconnect } from '../../lib/kairoEngine';
 
 export function Profile() {
   const navigate = useNavigate();
-  const [notif, setNotif] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const profile = getProfileSummary();
   const signedIn = !!getEngine();
@@ -61,12 +60,12 @@ export function Profile() {
             <div style={{ fontSize: 13, color: 'var(--dark-text-faint)' }}>Nothing to show yet — this fills in as you practise.</div>
           )}
         </Card>
-        <Card style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+        <Card onClick={() => navigate('/profile/notifications')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--dark-text-heading)' }}>Academic Nudges</div>
-            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>Fading concepts &amp; review reminders</div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--dark-text-heading)' }}>Notifications</div>
+            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>Channels, categories, and what Kairo sends you</div>
           </div>
-          <Switch dark checked={notif} onChange={() => setNotif(!notif)} />
+          <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
         </Card>
 
         {signedIn ? (
