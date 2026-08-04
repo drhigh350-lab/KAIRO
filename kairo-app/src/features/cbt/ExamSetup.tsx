@@ -1,6 +1,6 @@
 import { Button, Card } from '../../components';
 import { ScreenHeader } from '../learning/shared';
-import { cbtSubjects } from './data';
+import { CBT_DEFAULT_SUBJECTS as cbtSubjects } from '../../lib/kairoEngine';
 
 export interface RowProps {
   label: string;
@@ -35,8 +35,8 @@ export function ExamSetup({ onBack, onContinue }: ExamSetupProps) {
         </Card>
         <Card style={{ background: 'var(--dark-bg-elevated)', boxShadow: 'none' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 8 }}>THIS SESSION</div>
-          <Row label="Questions" value="16 total (4 per subject)" />
-          <Row label="Duration" value="20 minutes" />
+          <Row label="Questions" value="180 total (60 English, 40 each other subject)" />
+          <Row label="Duration" value={`${cbtSubjects.length * 26} minutes`} />
           <Row label="Mode" value="Simulated JAMB CBT" />
         </Card>
         <div style={{ marginTop: 'auto' }}>

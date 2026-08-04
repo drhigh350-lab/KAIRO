@@ -1,35 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton } from '../../components';
 import { CalcIcon, CloseIcon, FlagIcon, InlineToast, MiniCalculator, Modal } from '../learning/shared';
-import { cbtQuestions, cbtSubjects, type CbtQuestion } from './data';
-
-export interface ExamQuestion extends CbtQuestion {
-  subject: string;
-}
-
-export function buildExamQuestions(): ExamQuestion[] {
-  const all: ExamQuestion[] = [];
-  cbtSubjects.forEach((subj) => {
-    (cbtQuestions[subj] || []).forEach((q) => all.push({ ...q, subject: subj }));
-  });
-  return all;
-}
+import { submitCbtAnswer, toggleCbtFlag, type CbtPaperQuestion } from '../../lib/kairoEngine';
 
 export interface CbtExamProps {
-  onSubmit: (answers: Record<number, number>, questions: ExamQuestion[]) => void;
+  paper: CbtPaperQuestion[];
+  totalTimeMin: number;
+  onSubmit: () => void;
   onExit?: () => void;
 }
 
-export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
-  const questions = useMemo(buildExamQuestions, []);
+export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps) {
   const [current, setCurrent] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [flagged, setFlagged] = useState<Record<number, boolean>>({});
   const [showPalette, setShowPalette] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(20 * 60);
+  const [secondsLeft, setSecondsLeft] = useState(totalTimeMin * 60);
   const [warned, setWarned] = useState(false);
+  const questionStartedAt = useRef(Date.now());
+
+  const subjects = Array.from(new Set(paper.map((q) => q.subject)));
 
   useEffect(() => {
     const t = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
@@ -37,19 +29,35 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
   }, []);
   useEffect(() => {
     if (secondsLeft === 300 && !warned) setWarned(true);
-    if (secondsLeft === 0) { onSubmit(answers, questions); }
+    if (secondsLeft === 0) onSubmit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsLeft]);
 
-  const q = questions[current];
+  const q = paper[current];
   const answeredCount = Object.keys(answers).length;
 
-  function selectOption(i: number) { setAnswers((a) => ({ ...a, [current]: i })); }
-  function toggleFlag() { setFlagged((f) => ({ ...f, [current]: !f[current] })); }
-  function jumpTo(i: number) { setCurrent(i); setShowPalette(false); }
+  function selectOption(label: string) {
+    setAnswers((a) => ({ ...a, [current]: label }));
+    submitCbtAnswer(current, label, Date.now() - questionStartedAt.current);
+  }
+  function toggleFlag() {
+    const nowFlagged = toggleCbtFlag(current);
+    setFlagged((f) => ({ ...f, [current]: nowFlagged }));
+  }
+  function jumpTo(i: number) {
+    setCurrent(i);
+    questionStartedAt.current = Date.now();
+    setShowPalette(false);
+  }
+  function goTo(i: number) {
+    setCurrent(i);
+    questionStartedAt.current = Date.now();
+  }
 
   const mins = Math.floor(secondsLeft / 60), secs = secondsLeft % 60;
   const timeLow = secondsLeft <= 300;
+
+  if (!q) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--dark-bg-canvas)' }}>
@@ -68,19 +76,19 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
       </div>
 
       <div style={{ padding: '4px 18px 18px', flex: 1 }}>
-        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', fontWeight: 600 }}>Question {current + 1} of {questions.length}</div>
-        <div style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 12, fontWeight: 500 }}>{q.stem}</div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', fontWeight: 600 }}>Question {current + 1} of {paper.length}</div>
+        <div style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 12, fontWeight: 500 }}>{q.text}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
-          {q.options.map((opt, i) => {
-            const isSelected = answers[current] === i;
+          {q.options.map((opt) => {
+            const isSelected = answers[current] === opt.label;
             return (
-              <button key={i} onClick={() => selectOption(i)} style={{
+              <button key={opt.label} onClick={() => selectOption(opt.label)} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)',
                 border: `1.5px solid ${isSelected ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: isSelected ? 'var(--dark-bg-elevated)' : 'var(--dark-bg-surface)',
                 color: 'var(--dark-text-body)', fontSize: 16, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', gap: 10, alignItems: 'center',
               }}>
-                <span style={{ width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isSelected ? 'var(--dark-accent-blue)' : 'var(--dark-text-faint)'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, background: isSelected ? 'var(--dark-accent-blue)' : 'transparent', color: isSelected ? '#fff' : 'var(--dark-text-muted)' }}>{String.fromCharCode(65 + i)}</span>
-                {opt}
+                <span style={{ width: 24, height: 24, borderRadius: '50%', border: `1.5px solid ${isSelected ? 'var(--dark-accent-blue)' : 'var(--dark-text-faint)'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, background: isSelected ? 'var(--dark-accent-blue)' : 'transparent', color: isSelected ? '#fff' : 'var(--dark-text-muted)' }}>{opt.label}</span>
+                {opt.text}
               </button>
             );
           })}
@@ -97,13 +105,13 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
         </button>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <Button variant="secondary" size="lg" fullWidth disabled={current === 0} onClick={() => setCurrent((c) => Math.max(0, c - 1))}>Previous</Button>
+            <Button variant="secondary" size="lg" fullWidth disabled={current === 0} onClick={() => goTo(Math.max(0, current - 1))}>Previous</Button>
           </div>
           <div style={{ flex: 1 }}>
-            {current + 1 === questions.length ? (
+            {current + 1 === paper.length ? (
               <Button variant="darkAccent" size="lg" fullWidth onClick={() => setShowConfirm(true)}>Submit</Button>
             ) : (
-              <Button variant="darkAccent" size="lg" fullWidth onClick={() => setCurrent((c) => Math.min(questions.length - 1, c + 1))}>Next</Button>
+              <Button variant="darkAccent" size="lg" fullWidth onClick={() => goTo(Math.min(paper.length - 1, current + 1))}>Next</Button>
             )}
           </div>
         </div>
@@ -112,12 +120,12 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
       {showPalette && (
         <Modal onClose={() => setShowPalette(false)} tone="dark">
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 4 }}>Question Palette</div>
-          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginBottom: 16 }}>{answeredCount} of {questions.length} answered</div>
-          {cbtSubjects.map((subj) => (
+          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginBottom: 16 }}>{answeredCount} of {paper.length} answered</div>
+          {subjects.map((subj) => (
             <div key={subj} style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 8 }}>{subj}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
-                {questions.map((qq, i) => {
+                {paper.map((qq, i) => {
                   if (qq.subject !== subj) return null;
                   const isAnswered = answers[i] !== undefined;
                   const isFlagged = flagged[i];
@@ -152,14 +160,14 @@ export function CbtExam({ onSubmit, onExit }: CbtExamProps) {
         <Modal onClose={() => setShowConfirm(false)} tone="dark">
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)' }}>Submit exam?</div>
           <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 10, lineHeight: 1.5 }}>
-            You've answered {answeredCount} of {questions.length} questions. Once submitted, you can't make changes.
+            You've answered {answeredCount} of {paper.length} questions. Once submitted, you can't make changes.
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <div style={{ flex: 1 }}>
               <Button variant="secondary" size="lg" fullWidth onClick={() => setShowConfirm(false)}>Keep Reviewing</Button>
             </div>
             <div style={{ flex: 1 }}>
-              <Button variant="darkAccent" size="lg" fullWidth onClick={() => onSubmit(answers, questions)}>Submit</Button>
+              <Button variant="darkAccent" size="lg" fullWidth onClick={onSubmit}>Submit</Button>
             </div>
           </div>
         </Modal>

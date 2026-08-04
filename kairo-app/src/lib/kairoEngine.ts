@@ -221,6 +221,72 @@ export function getStreakStatus(): Engine | null {
 }
 
 // ─────────────────────────────────────────────
+// CBT Exam Mode — real questions via kairo.cbt (CBTExamMode), sourced
+// from the same local question queue ensureContentLoaded() already
+// populates for Practice. Only subjects with real seeded content
+// (SEEDED_SUBJECTS) return real questions.
+// ─────────────────────────────────────────────
+
+export interface CbtPaperQuestion {
+  globalIndex: number;
+  subject: string;
+  questionId: string;
+  text: string;
+  options: { label: string; text: string }[];
+}
+
+/** The one real, fully-seeded JAMB combination available today (Science/Medicine track). */
+export const CBT_DEFAULT_SUBJECTS = ['Use of English', 'Biology', 'Chemistry', 'Physics'];
+
+export async function startCbtExam(subjects: string[] = CBT_DEFAULT_SUBJECTS): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[] }> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(subjects);
+  kairo.cbt.setup({ subjects });
+  const built = await kairo.cbt.buildPaper();
+  kairo.cbt.start();
+  // CBTExamMode.buildPaper() strips correctOption but its per-option
+  // objects still carry isCorrect (Question.js's normal shape) — CBT
+  // Exam Mode spec §2.3/§5.2/§5.4 forbid any correctness signal reaching
+  // the student mid-attempt, so strip it here defensively before this
+  // ever reaches the browser's own state.
+  const paper: CbtPaperQuestion[] = built.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[] }) => ({
+    ...q,
+    options: q.options.map((o) => ({ label: o.label, text: o.text })),
+  }));
+  return { totalQuestions: built.totalQuestions, totalTimeMin: subjects.length * 26, paper };
+}
+
+export interface CbtQuestionResult {
+  globalIndex: number;
+  subject: string;
+  studentAnswer: string | null;
+  correctOption: string;
+  isCorrect: boolean;
+}
+
+export function submitCbtAnswer(globalIndex: number, selectedOption: string, timeSpentMs: number): void {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.cbt.submitAnswer(globalIndex, selectedOption, timeSpentMs);
+}
+
+export function toggleCbtFlag(globalIndex: number): boolean {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  return kairo.cbt.toggleFlag(globalIndex).flagged;
+}
+
+/** Ends the exam, computes real results, and queues the attempt as a real kairo.sessions row (mode 'cbt_exam') — handled internally by CBTExamMode.finish(). */
+export async function finishCbtExam(): Promise<Engine> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const results = kairo.cbt.finish();
+  await kairo.sync.sync();
+  return results;
+}
+
+// ─────────────────────────────────────────────
 // Notification consent (Notifications & Communication Systems §10) —
 // this frontend never invents its own consent model; every read/write
 // here goes straight through the engine's own ConsentManager

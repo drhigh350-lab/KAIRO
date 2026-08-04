@@ -8,8 +8,11 @@ export class CBTExamMode {
   // every other subject in the combination carries 40 (CBT Exam Mode
   // Spec §4.5 — treated as ground truth, not configurable, for a real
   // UTME Mock). A uniform per-subject count would misrepresent the
-  // actual exam format the module exists to rehearse.
-  static JAMB_QUESTION_COUNT = { English: 60, default: 40 };
+  // actual exam format the module exists to rehearse. Keyed to
+  // 'Use of English' to match the subject name actually seeded in
+  // kairo.questions/concepts (JAMB calls the subject "English" for
+  // short, but TECHMED's content catalog uses its full JAMB name).
+  static JAMB_QUESTION_COUNT = { 'Use of English': 60, default: 40 };
   static JAMB_TOTAL_TIME_MIN = 120;
 
   constructor(kairoEngine) {
@@ -31,7 +34,7 @@ export class CBTExamMode {
   /**
    * Configure a mock exam.
    */
-  setup({ subjects = ['English', 'Mathematics', 'Physics', 'Chemistry'],
+  setup({ subjects = ['Use of English', 'Biology', 'Chemistry', 'Physics'],
           timePerSubjectMin = 26,
           difficultyMix = 'mixed' }) {
     this.config = { subjects, timePerSubjectMin, difficultyMix };
