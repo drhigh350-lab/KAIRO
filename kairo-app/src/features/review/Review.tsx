@@ -23,21 +23,21 @@ export function Review() {
   const totalWaiting = (recap?.fadingCount ?? 0) + categories.reduce((s, c) => s + c.count, 0);
 
   return (
-    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-heading)' }}>Review</div>
-      <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
+      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>Review</div>
+      <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>
         {totalWaiting > 0
           ? `${totalWaiting} thing${totalWaiting === 1 ? ' is' : 's are'} ready to come back to you.`
           : "Nothing's waiting for review right now — that changes as you practise."}
       </div>
 
       {recap?.hasUrgentReview && (
-        <Card style={{ background: 'var(--kairo-navy-900)', color: '#fff' }}>
-          <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'var(--kairo-blue-300)', fontWeight: 700 }}>SUGGESTED REVIEW</div>
+        <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
+          <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>SUGGESTED REVIEW</div>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginTop: 8 }}>
             Quick pass on {recap.fadingCount} fading concept{recap.fadingCount === 1 ? '' : 's'}
           </div>
-          <div style={{ fontSize: 13, color: 'var(--kairo-blue-200)', marginTop: 8 }}>About {recap.recap.estimatedTimeMin} minutes</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 8 }}>About {recap.recap.estimatedTimeMin} minutes</div>
           <div style={{ marginTop: 16 }}>
             <Button variant="gold" size="md" fullWidth>Start Review</Button>
           </div>
@@ -45,12 +45,12 @@ export function Review() {
       )}
 
       {categories.map((c) => (
-        <Card key={c.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Card key={c.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-heading)' }}>{c.label}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, maxWidth: 240 }}>{c.desc}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>{c.label}</div>
+            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>{c.desc}</div>
           </div>
-          <Badge tone="neutral">{c.count}</Badge>
+          <Badge tone="darkNeutral">{c.count}</Badge>
         </Card>
       ))}
     </div>

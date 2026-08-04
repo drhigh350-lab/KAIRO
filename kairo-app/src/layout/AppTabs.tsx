@@ -33,7 +33,7 @@ export function AppTabs() {
       <BottomNav
         items={items}
         active={active}
-        dark={active === 'home'}
+        dark
         onChange={(key) => {
           const tab = TABS.find((t) => t.key === key);
           if (tab) navigate(tab.path);
