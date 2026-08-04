@@ -40,6 +40,30 @@ async function clearStaleSession(supabase: Engine): Promise<void> {
   }
 }
 
+/**
+ * Extracts a real, specific message from anything a failed auth/Supabase
+ * call might throw. `err instanceof Error` isn't reliable here — Postgrest/
+ * Auth errors from supabase-js aren't guaranteed to pass that check — so a
+ * naive `instanceof Error` guard was silently swallowing the real cause
+ * (e.g. an RLS denial or a schema error on the kairo.students insert) behind
+ * a generic "Could not sign you in" message that was actively misleading
+ * about what actually failed.
+ */
+export function describeError(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object') {
+    const obj = err as Record<string, unknown>;
+    const parts = [obj.message, obj.details, obj.hint].filter((p): p is string => typeof p === 'string' && p.length > 0);
+    if (parts.length) return parts.join(' — ');
+    if (typeof obj.code === 'string') return `Error (${obj.code})`;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export interface SignUpArgs {
   name: string;
   email: string;

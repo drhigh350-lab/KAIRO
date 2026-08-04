@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { KaiMark, OrDivider, GoogleButton } from './shared';
-import { signInAndConnect } from '../../lib/kairoEngine';
+import { signInAndConnect, describeError } from '../../lib/kairoEngine';
 
 export interface SignInProps {
   onBack: () => void;
@@ -23,7 +23,7 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
       await signInAndConnect({ email: email.trim(), password });
       onSignedIn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign you in. Check your email and password.');
+      setError(describeError(err));
     } finally {
       setSubmitting(false);
     }

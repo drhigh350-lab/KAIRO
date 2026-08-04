@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { FlowHeader, OrDivider, GoogleButton } from './shared';
-import { signUpAndConnect } from '../../lib/kairoEngine';
+import { signUpAndConnect, describeError } from '../../lib/kairoEngine';
 
 export interface SignUpProps {
   step: number;
@@ -28,7 +28,7 @@ export function SignUp({ step, total, onBack, onGoogleSignUp, onEmailSignUp, onG
       await signUpAndConnect({ name: name.trim(), email: email.trim(), password });
       onEmailSignUp({ name: name.trim(), email: email.trim() });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create your account. Please try again.');
+      setError(describeError(err));
     } finally {
       setSubmitting(false);
     }
