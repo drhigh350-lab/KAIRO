@@ -85,6 +85,18 @@ export async function restoreSession(): Promise<boolean> {
   }
 }
 
+/** Signs the current student out of Supabase and drops the in-memory engine, so the app returns to a guest state. */
+export async function signOutAndDisconnect(): Promise<void> {
+  try {
+    const supabase = getSupabase();
+    await supabase.auth.signOut();
+  } catch {
+    // best-effort — still drop the local session below even if the network call fails
+  }
+  engine = null;
+  contentLoadedFor = [];
+}
+
 // Only these four subjects have a seeded live question bank today (verified
 // directly against kairo.questions) — a student can pick from 14 subjects at
 // onboarding, but most have zero content yet. This is a content gap, not
