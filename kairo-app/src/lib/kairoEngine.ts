@@ -387,7 +387,7 @@ export async function startCbtExam(subjects: string[] = CBT_DEFAULT_SUBJECTS): P
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(subjects);
-  kairo.cbt.setup({ subjects });
+  const setup = kairo.cbt.setup({ subjects });
   const built = await kairo.cbt.buildPaper();
   kairo.cbt.start();
   // CBTExamMode.buildPaper() strips correctOption but its per-option
@@ -399,7 +399,7 @@ export async function startCbtExam(subjects: string[] = CBT_DEFAULT_SUBJECTS): P
     ...q,
     options: q.options.map((o) => ({ label: o.label, text: o.text })),
   }));
-  return { totalQuestions: built.totalQuestions, totalTimeMin: subjects.length * 26, paper };
+  return { totalQuestions: built.totalQuestions, totalTimeMin: setup.totalTimeMin, paper };
 }
 
 export interface CbtQuestionResult {

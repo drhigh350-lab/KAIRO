@@ -19,9 +19,8 @@ export class CBTExamMode {
     this.engine = kairoEngine;
     this.config = {
       subjects: [],
-      timePerSubjectMin: 26,
       totalQuestions: 180, // UTME standard
-      totalTimeMin: 120
+      totalTimeMin: CBTExamMode.JAMB_TOTAL_TIME_MIN
     };
     this.state = 'idle'; // idle | setup | running | paused | submitted | finished
     this.examData = null;
@@ -35,9 +34,13 @@ export class CBTExamMode {
    * Configure a mock exam.
    */
   setup({ subjects = ['Use of English', 'Biology', 'Chemistry', 'Physics'],
-          timePerSubjectMin = 26,
           difficultyMix = 'mixed' }) {
-    this.config = { subjects, timePerSubjectMin, difficultyMix };
+    // JAMB's UTME CBT is a fixed 2-hour sitting regardless of subject count
+    // — it was previously computed as subjects.length * 26 (104 min for the
+    // standard 4-subject combination), which doesn't match the real exam
+    // and doesn't match this class's own JAMB_TOTAL_TIME_MIN constant.
+    const totalTimeMin = CBTExamMode.JAMB_TOTAL_TIME_MIN;
+    this.config = { subjects, totalTimeMin, difficultyMix };
     this.state = 'setup';
 
     const totalQuestions = subjects.reduce((sum, s) => sum + this._questionCountFor(s), 0);
@@ -46,8 +49,7 @@ export class CBTExamMode {
       mode: 'cbt_mock',
       subjects,
       totalQuestions,
-      totalTimeMin: subjects.length * timePerSubjectMin,
-      timePerSubjectMin
+      totalTimeMin
     };
   }
 
@@ -204,7 +206,7 @@ export class CBTExamMode {
 
     // Time remaining
     const elapsedMs = Date.now() - this.examData.startTime;
-    const totalTimeMs = this.config.subjects.length * this.config.timePerSubjectMin * 60 * 1000;
+    const totalTimeMs = this.config.totalTimeMin * 60 * 1000;
     const remainingMs = Math.max(0, totalTimeMs - elapsedMs);
 
     return {

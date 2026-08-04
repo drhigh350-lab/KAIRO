@@ -59,7 +59,16 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
   const hasInsights = !!(strongest && weakest && strongest.subject !== weakest.subject) || !!topicNeedingAttention;
 
   const recommendations: { key: PracticeSummaryAction; label: string; detail: string; disabled?: boolean }[] = [
-    { key: 'weak', label: 'Continue Weak Areas', detail: topicNeedingAttention ? `A focused pass on ${topicNeedingAttention}.` : 'Practise more so Kairo can find your weak areas.' },
+    {
+      key: 'weak',
+      label: 'Continue Weak Areas',
+      detail: topicNeedingAttention ? `A focused pass on ${topicNeedingAttention}.` : 'Nothing missed yet to build this from — clean sweep.',
+      // A perfect (or nothing-missed) session gives Kairo no fresh signal for
+      // what's actually weak — offering this anyway routes into a session
+      // that predictably comes back with "no questions found" and nowhere
+      // useful to land, which reads as broken rather than honest.
+      disabled: !incorrectCount,
+    },
     { key: 'retry', label: 'Retry Incorrect Questions', detail: incorrectCount ? `${incorrectCount} question${incorrectCount === 1 ? '' : 's'} to revisit.` : 'Nothing to retry — clean sweep.', disabled: !incorrectCount },
     { key: 'challenge', label: 'Challenge Yourself', detail: 'Move up to Hard difficulty.' },
     { key: 'cbt', label: 'Take a CBT Simulation', detail: 'Practise under real exam conditions.' },
