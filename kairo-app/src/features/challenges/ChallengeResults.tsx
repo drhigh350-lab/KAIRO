@@ -61,14 +61,14 @@ export function ChallengeResults({ challenge, answers, onBackToHub }: ChallengeR
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
-        <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>Calculating your results…</div>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Calculating your results…</div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--dark-bg-canvas)' }}>
       {toastMsg && (
         <div style={{ position: 'absolute', top: 16, left: 16, right: 16, zIndex: 20, display: 'flex', justifyContent: 'center' }}>
           <InlineToast>{toastMsg}</InlineToast>
@@ -76,16 +76,16 @@ export function ChallengeResults({ challenge, answers, onBackToHub }: ChallengeR
       )}
 
       <div style={{ padding: '32px 20px 16px', textAlign: 'center' }}>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--text-heading)' }}>{challenge.title}</div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>Results are in</div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>{challenge.title}</div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>Results are in</div>
       </div>
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Card>
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <div style={{ display: 'flex' }}>
-            <StatTile label="Score" value={score} />
-            <StatTile label="Accuracy" value={`${accuracy}%`} />
-            <StatTile label="Time" value={formatTime(timeTaken)} />
+            <StatTile dark label="Score" value={score} />
+            <StatTile dark label="Accuracy" value={`${accuracy}%`} />
+            <StatTile dark label="Time" value={formatTime(timeTaken)} />
           </div>
         </Card>
 
@@ -95,45 +95,46 @@ export function ChallengeResults({ challenge, answers, onBackToHub }: ChallengeR
           </div>
         )}
 
-        <Card style={{ background: 'var(--kairo-blue-100)' }}>
-          <div style={{ fontSize: 14, color: 'var(--text-body)', lineHeight: 1.55 }}>{encouragement}</div>
+        <Card style={{ background: 'var(--dark-bg-elevated)', boxShadow: 'none' }}>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.55 }}>{encouragement}</div>
         </Card>
 
-        <Card>
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em' }}>LEADERBOARD</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>You're #{yourRank} of {totalParticipants}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em' }}>LEADERBOARD</div>
+            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>You're #{yourRank} of {totalParticipants}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {entries.map((e) => (
               <div key={e.rank} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 10px',
-                borderRadius: 'var(--radius-sm)', background: e.isYou ? 'var(--kairo-blue-100)' : 'transparent',
+                borderRadius: 'var(--radius-sm)', background: e.isYou ? 'var(--dark-bg-elevated)' : 'transparent',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', width: 20 }}>{e.rank}</span>
-                  <span style={{ fontSize: 13, fontWeight: e.isYou ? 700 : 500, color: 'var(--text-heading)' }}>{e.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-muted)', width: 20 }}>{e.rank}</span>
+                  <span style={{ fontSize: 13, fontWeight: e.isYou ? 700 : 500, color: 'var(--dark-text-heading)' }}>{e.name}</span>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-heading)' }}>{e.score}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{e.score}</span>
               </div>
             ))}
           </div>
         </Card>
 
-        <Card>
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <button type="button" onClick={() => setShowReview((v) => !v)} aria-expanded={showReview} style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', width: '100%',
             background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
           }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em' }}>QUESTION REVIEW</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--kairo-blue-700)' }}>{showReview ? 'Hide' : 'Show'}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em' }}>QUESTION REVIEW</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--dark-accent-blue)' }}>{showReview ? 'Hide' : 'Show'}</span>
           </button>
           {showReview && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
               {challenge.questions.map((q, i) => (
                 <div key={q.id}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 6 }}>{i + 1}. {q.stem}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 6 }}>{i + 1}. {q.stem}</div>
                   <AnswerFeedback
+                    dark
                     correct={answers[i] === q.correct}
                     title={answers[i] === q.correct ? 'Correct' : `Correct answer: ${String.fromCharCode(65 + q.correct)}`}
                     detail={q.why}
@@ -144,16 +145,16 @@ export function ChallengeResults({ challenge, answers, onBackToHub }: ChallengeR
           )}
         </Card>
 
-        <Card style={{ background: 'var(--kairo-navy-900)', color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Share your result</div>
-          <div style={{ fontSize: 12, color: 'var(--kairo-blue-200)' }}>{challenge.title} · {score} points · {accuracy}% accuracy</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>{challenge.title} · {score} points · {accuracy}% accuracy</div>
           <Button variant="gold" size="md" fullWidth onClick={share}>Share Result</Button>
         </Card>
       </div>
 
       <div style={{ padding: '0 20px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Button variant="secondary" size="lg" fullWidth onClick={() => navigate('/practice', { state: { entry: 'weak' } })}>Practice {challenge.theme}</Button>
-        <Button variant="primary" size="lg" fullWidth onClick={onBackToHub}>Back to Challenges</Button>
+        <Button variant="darkAccent" size="lg" fullWidth onClick={onBackToHub}>Back to Challenges</Button>
       </div>
     </div>
   );

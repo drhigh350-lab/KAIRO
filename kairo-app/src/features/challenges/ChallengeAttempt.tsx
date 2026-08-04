@@ -56,56 +56,56 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
   const isCorrect = selected === question.correct;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative' }}>
-      <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 8px' }}>
-        <IconButton onClick={() => setShowExitConfirm(true)}><CloseIcon /></IconButton>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Question {index + 1} of {total}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--dark-bg-canvas)' }}>
+      <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 8px', background: 'var(--dark-bg-canvas)' }}>
+        <IconButton dark onClick={() => setShowExitConfirm(true)}><CloseIcon /></IconButton>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>Question {index + 1} of {total}</div>
         {challenge.timeLimitSec ? (
-          <div style={{ fontSize: 13, fontWeight: 700, color: timeLeft <= 15 ? 'var(--state-danger)' : 'var(--text-heading)', minWidth: 40, textAlign: 'right' }}>{formatTime(timeLeft)}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: timeLeft <= 15 ? 'var(--dark-danger)' : 'var(--dark-text-heading)', minWidth: 40, textAlign: 'right' }}>{formatTime(timeLeft)}</div>
         ) : (
           <div style={{ minWidth: 40 }} />
         )}
       </div>
 
       {showExitConfirm && (
-        <Modal onClose={() => setShowExitConfirm(false)}>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text-heading)', marginBottom: 8 }}>Leave this challenge?</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 18 }}>
+        <Modal onClose={() => setShowExitConfirm(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Leave this challenge?</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.5, marginBottom: 18 }}>
             Leaving now means this attempt won't be scored or count toward the leaderboard. You can rejoin while it's still live.
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}><Button variant="secondary" fullWidth onClick={() => setShowExitConfirm(false)}>Stay</Button></div>
-            <div style={{ flex: 1 }}><Button variant="primary" fullWidth onClick={onExit}>Exit</Button></div>
+            <div style={{ flex: 1 }}><Button variant="darkAccent" fullWidth onClick={onExit}>Exit</Button></div>
           </div>
         </Modal>
       )}
 
-      <div style={{ padding: '0 20px' }}><ProgressBar value={index + 1} max={total} /></div>
+      <div style={{ padding: '0 20px' }}><ProgressBar value={index + 1} max={total} tone="dark" /></div>
 
       <div style={{ padding: '22px 20px', flex: 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--kairo-blue-700)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{challenge.theme}</div>
-        <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{challenge.theme}</div>
+        <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
           {question.options.map((opt, i) => {
             const isSelected = selected === i;
             const showCorrect = submitted && i === question.correct;
             const showWrongPick = submitted && isSelected && i !== question.correct;
-            let border = 'var(--color-border-subtle)', bg = '#fff';
-            if (!submitted && isSelected) { border = 'var(--kairo-navy-900)'; bg = 'var(--kairo-blue-100)'; }
-            if (showCorrect) { border = 'var(--state-success)'; bg = 'var(--state-success-bg)'; }
-            if (showWrongPick) { border = 'var(--state-danger)'; bg = 'var(--state-danger-bg)'; }
+            let border = 'var(--dark-border)', bg = 'var(--dark-bg-surface)';
+            if (!submitted && isSelected) { border = 'var(--dark-accent-blue)'; bg = 'var(--dark-bg-elevated)'; }
+            if (showCorrect) { border = 'var(--dark-success)'; bg = 'var(--dark-success-bg)'; }
+            if (showWrongPick) { border = 'var(--dark-danger)'; bg = 'var(--dark-danger-bg)'; }
             return (
               <button key={i} disabled={submitted} onClick={() => setSelected(i)} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `1.5px solid ${border}`,
-                background: bg, color: 'var(--text-body)', fontSize: 16, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
+                background: bg, color: 'var(--dark-text-body)', fontSize: 16, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
                 display: 'flex', gap: 10, alignItems: 'center',
               }}>
                 <span style={{
                   width: 24, height: 24, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-                  border: `1.5px solid ${isSelected || showCorrect ? border : 'var(--kairo-ink-300)'}`,
-                  background: (isSelected && !submitted) ? 'var(--kairo-navy-900)' : showCorrect ? 'var(--state-success)' : showWrongPick ? 'var(--state-danger)' : 'transparent',
-                  color: ((isSelected && !submitted) || showCorrect || showWrongPick) ? '#fff' : 'var(--text-muted)',
+                  border: `1.5px solid ${isSelected || showCorrect ? border : 'var(--dark-text-faint)'}`,
+                  background: (isSelected && !submitted) ? 'var(--dark-accent-blue)' : showCorrect ? 'var(--dark-success)' : showWrongPick ? 'var(--dark-danger)' : 'transparent',
+                  color: ((isSelected && !submitted) || showCorrect || showWrongPick) ? '#fff' : 'var(--dark-text-muted)',
                 }}>{showCorrect ? '✓' : showWrongPick ? '✕' : String.fromCharCode(65 + i)}</span>
                 {opt}
               </button>
@@ -115,16 +115,16 @@ export function ChallengeAttempt({ challenge, onFinish, onExit }: ChallengeAttem
 
         {submitted && (
           <div style={{ marginTop: 20 }}>
-            <AnswerFeedback correct={isCorrect} title={isCorrect ? 'Correct' : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} />
+            <AnswerFeedback dark correct={isCorrect} title={isCorrect ? 'Correct' : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} />
           </div>
         )}
       </div>
 
-      <div className="app-footer-bar" style={{ padding: '16px 20px 24px' }}>
+      <div className="app-footer-bar" style={{ padding: '16px 20px 24px', background: 'var(--dark-bg-canvas)' }}>
         {!submitted ? (
-          <Button variant="primary" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit</Button>
+          <Button variant="darkAccent" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit</Button>
         ) : (
-          <Button variant="primary" size="lg" fullWidth onClick={next}>{index + 1 === total ? 'See Results' : 'Next'}</Button>
+          <Button variant="darkAccent" size="lg" fullWidth onClick={next}>{index + 1 === total ? 'See Results' : 'Next'}</Button>
         )}
       </div>
     </div>

@@ -7,9 +7,9 @@ export interface BadgeProps {
 
 const tones: Record<string, CSSProperties> = {
   neutral: { background: 'var(--kairo-blue-100)', color: 'var(--kairo-navy-900)' },
-  gold: { background: 'var(--accent-gold-bg)', color: 'var(--kairo-gold-600)' },
-  success: { background: 'var(--state-success-bg)', color: 'var(--state-success)' },
-  danger: { background: 'var(--state-danger-bg)', color: 'var(--state-danger)' },
+  gold: { background: 'rgba(240,177,42,0.14)', color: 'var(--kairo-gold-500)' },
+  success: { background: 'var(--dark-success-bg)', color: 'var(--dark-success)' },
+  danger: { background: 'var(--dark-danger-bg)', color: 'var(--dark-danger)' },
   navy: { background: 'var(--kairo-navy-900)', color: '#fff' },
   darkNeutral: { background: 'var(--dark-bg-elevated)', color: 'var(--dark-accent-blue)' },
 };
