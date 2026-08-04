@@ -306,6 +306,30 @@ export function getProfileSummary(): Engine | null {
   return kairo ? kairo.settings.getProfile() : null;
 }
 
+export interface ProfileEditDetails {
+  name: string;
+  targetCourse: string | null;
+  targetSubjects: string[];
+  /** ISO date string (e.g. "2027-05-15"), or null to clear it. */
+  examDate: string | null;
+}
+
+/**
+ * Direct profile edit — for a student who signed in without ever completing
+ * onboarding (e.g. reconnecting an account after an earlier session), so
+ * name/course/subjects/exam date aren't permanently stuck at whatever they
+ * were (often nothing) when the account's kairo.students row was first created.
+ */
+export async function updateProfileDetails(details: ProfileEditDetails): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.profile.name = details.name;
+  kairo.profile.targetCourse = details.targetCourse;
+  kairo.profile.targetSubjects = details.targetSubjects;
+  kairo.profile.examDate = details.examDate ? new Date(details.examDate).getTime() : null;
+  await kairo.sync.sync();
+}
+
 /** Real strengths/weaknesses/score/streak for the Insights screen. Safe with zero data loaded. */
 export function getInsightsSummary(): Engine | null {
   const kairo = getEngine();

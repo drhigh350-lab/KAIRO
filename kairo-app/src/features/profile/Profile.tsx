@@ -34,7 +34,7 @@ export function Profile() {
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" /></svg>
             )}
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--dark-text-heading)' }}>{firstName}</div>
             <div style={{ fontSize: 13, color: 'var(--dark-text-muted)' }}>
               {signedIn
@@ -42,8 +42,16 @@ export function Profile() {
                 : 'Not signed in'}
             </div>
           </div>
+          {signedIn && (
+            <button type="button" onClick={() => navigate('/profile/edit')} aria-label="Edit profile" style={{
+              width: 36, height: 36, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', cursor: 'pointer', flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>
+            </button>
+          )}
         </Card>
-        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+        <Card onClick={signedIn ? () => navigate('/profile/edit') : undefined} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: signedIn ? 'pointer' : 'default' }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>What I'm Aiming For</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--dark-text-muted)' }}>Target University</span><span style={{ fontWeight: 600, color: 'var(--dark-text-heading)' }}>{profile?.targetUniversity || 'Not set yet'}</span></div>

@@ -4,7 +4,10 @@ import { StatTile, ChevronRight } from '../learning/shared';
 export interface PracticeResult {
   correct: boolean;
   confidence?: string | null;
+  /** Real elapsed seconds on this question — always measured, never estimated. */
   time?: number;
+  subject?: string;
+  topic?: string;
 }
 
 export type PracticeSummaryAction = 'weak' | 'retry' | 'challenge' | 'cbt' | 'review';
@@ -27,11 +30,36 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
   const correctCount = results.filter((r) => r.correct).length;
   const incorrectCount = total - correctCount;
   const accuracy = total ? Math.round((correctCount / total) * 100) : 0;
-  const totalTime = results.reduce((s, r) => s + (r.time || 45), 0);
+  const totalTime = results.reduce((s, r) => s + (r.time || 0), 0);
   const avgTime = total ? Math.round(totalTime / total) : 0;
 
+  // Real per-subject accuracy from what was actually answered this session —
+  // a comparison only means something with 2+ distinct subjects present.
+  const bySubject = new Map<string, { correct: number; total: number }>();
+  for (const r of results) {
+    if (!r.subject) continue;
+    const s = bySubject.get(r.subject) || { correct: 0, total: 0 };
+    s.total++;
+    if (r.correct) s.correct++;
+    bySubject.set(r.subject, s);
+  }
+  const subjectStats = [...bySubject.entries()].map(([subject, s]) => ({ subject, pct: Math.round((s.correct / s.total) * 100) }));
+  const strongest = subjectStats.length > 1 ? subjectStats.reduce((a, b) => (b.pct > a.pct ? b : a)) : null;
+  const weakest = subjectStats.length > 1 ? subjectStats.reduce((a, b) => (b.pct < a.pct ? b : a)) : null;
+
+  // Real topic needing attention — the topic that came up most among this session's actual wrong answers.
+  const missedTopics = new Map<string, number>();
+  for (const r of results) {
+    if (!r.correct && r.topic) missedTopics.set(r.topic, (missedTopics.get(r.topic) || 0) + 1);
+  }
+  const topicNeedingAttention = missedTopics.size
+    ? [...missedTopics.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+    : null;
+
+  const hasInsights = !!(strongest && weakest && strongest.subject !== weakest.subject) || !!topicNeedingAttention;
+
   const recommendations: { key: PracticeSummaryAction; label: string; detail: string; disabled?: boolean }[] = [
-    { key: 'weak', label: 'Continue Weak Areas', detail: "A focused pass on Newton's Laws." },
+    { key: 'weak', label: 'Continue Weak Areas', detail: topicNeedingAttention ? `A focused pass on ${topicNeedingAttention}.` : 'Practise more so Kairo can find your weak areas.' },
     { key: 'retry', label: 'Retry Incorrect Questions', detail: incorrectCount ? `${incorrectCount} question${incorrectCount === 1 ? '' : 's'} to revisit.` : 'Nothing to retry — clean sweep.', disabled: !incorrectCount },
     { key: 'challenge', label: 'Challenge Yourself', detail: 'Move up to Hard difficulty.' },
     { key: 'cbt', label: 'Take a CBT Simulation', detail: 'Practise under real exam conditions.' },
@@ -57,12 +85,16 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
           </div>
         </Card>
 
-        {!engineSummary && (
+        {hasInsights && (
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 12 }}>PERFORMANCE INSIGHTS</div>
-            <InsightRow label="Strongest subject" value="Mathematics" tone="success" />
-            <InsightRow label="Weakest subject" value="Physics" tone="danger" />
-            <InsightRow label="Topic needing attention" value="Newton's Laws" tone="caution" />
+            {strongest && weakest && strongest.subject !== weakest.subject && (
+              <>
+                <InsightRow label="Strongest subject" value={`${strongest.subject} (${strongest.pct}%)`} tone="success" />
+                <InsightRow label="Weakest subject" value={`${weakest.subject} (${weakest.pct}%)`} tone="danger" />
+              </>
+            )}
+            {topicNeedingAttention && <InsightRow label="Topic needing attention" value={topicNeedingAttention} tone="caution" />}
           </Card>
         )}
 
@@ -70,13 +102,13 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
           <div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
-              {engineSummary?.eliteScore ? engineSummary.eliteScore.total : `+${Math.max(4, correctCount * 3)}`}
+              {engineSummary?.eliteScore ? engineSummary.eliteScore.total : '—'}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>STREAK</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
-              {engineSummary?.streak ? `${engineSummary.streak.momentum} days` : '4 days'}
+              {engineSummary?.streak ? `${engineSummary.streak.momentum} days` : '—'}
             </div>
           </div>
         </Card>

@@ -94,8 +94,8 @@ export function LearnLesson() {
         index={rIndex}
         total={total}
         onExit={exit}
-        onAnswered={({ correct }) => {
-          submitLearnReinforcement(lesson.conceptId, correct, 15000, rQuestion.id);
+        onAnswered={({ correct, responseTimeMs }) => {
+          submitLearnReinforcement(lesson.conceptId, correct, responseTimeMs, rQuestion.id);
         }}
         onNext={() => {
           if (rIndex + 1 >= total) finish();

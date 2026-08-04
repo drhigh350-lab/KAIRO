@@ -22,11 +22,11 @@ export function DiagnosticQuiz({ questions, onComplete, onExit }: DiagnosticQuiz
       index={index}
       total={questions.length}
       onExit={onExit}
-      onNext={({ correct, selectedIndex }) => {
+      onNext={({ correct, selectedIndex, responseTimeMs }) => {
         const next = [...answers, {
           conceptId: q.conceptId ?? null,
           correct,
-          responseTimeMs: 15000,
+          responseTimeMs,
           selectedOption: selectedOptionLabel(q, selectedIndex),
           correctOption: q.correctOption,
           questionId: q.id,

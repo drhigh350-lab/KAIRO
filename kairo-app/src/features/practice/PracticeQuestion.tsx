@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton } from '../../components';
 import {
   BookmarkIcon, ReportIcon, FlagIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
@@ -10,6 +10,8 @@ export interface PracticeQuestionResult {
   correct: boolean;
   confidence: ConfidenceLevel | null;
   selectedIndex: number | null;
+  /** Real elapsed time from this question rendering to the student submitting — same stopwatch pattern as CBT Exam Mode and Rapid Fire, not an estimate. */
+  responseTimeMs: number;
 }
 
 export interface PracticeQuestionProps {
@@ -19,7 +21,7 @@ export interface PracticeQuestionProps {
   onNext: (result: PracticeQuestionResult) => void;
   onExit: () => void;
   /** Fires once, right when the answer is graded — before the student advances — so a caller can record the real attempt and offer a "Learn this" follow-up immediately. */
-  onAnswered?: (result: { correct: boolean; selectedIndex: number | null }) => void;
+  onAnswered?: (result: { correct: boolean; selectedIndex: number | null; responseTimeMs: number }) => void;
   /** Only rendered when the answer was wrong and a caller passes this — routes to the real Learn Module lesson for the concept just missed. */
   onLearnThis?: () => void;
 }
@@ -42,10 +44,11 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const [showOverflow, setShowOverflow] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const questionStartedAt = useRef(Date.now());
 
   function submit() {
     setSubmitted(true);
-    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected });
+    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current });
   }
   function flashToast(msg: string) { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2200); }
   function report() { setReported(true); flashToast("Thanks — we'll take a look at this question."); }
@@ -141,7 +144,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
         {!submitted ? (
           <Button variant="darkAccent" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit Answer</Button>
         ) : (
-          <Button variant="darkAccent" size="lg" fullWidth onClick={() => onNext({ correct: isCorrect, confidence, selectedIndex: selected })}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
+          <Button variant="darkAccent" size="lg" fullWidth onClick={() => onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current })}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
         )}
       </div>
     </div>

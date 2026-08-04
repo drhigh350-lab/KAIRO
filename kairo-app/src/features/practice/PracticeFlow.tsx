@@ -70,6 +70,7 @@ export function PracticeFlow() {
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
   const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
   const [lastErrorTag, setLastErrorTag] = useState<string | null>(null);
+  const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
   const startedSuggested = useRef(false);
 
   useEffect(() => {
@@ -135,7 +136,7 @@ export function PracticeFlow() {
   }
 
   /** Fires immediately when the answer is graded (before the student advances) — records the real attempt right away so "Understand this before moving on" has a real errorTag to hand Learn. */
-  function handleAnswered({ correct, selectedIndex }: { correct: boolean; selectedIndex: number | null }) {
+  function handleAnswered({ correct, selectedIndex, responseTimeMs }: { correct: boolean; selectedIndex: number | null; responseTimeMs: number }) {
     if (!engineQuestions) return;
     const kairo = getEngine();
     const eq = engineQuestions[qIndex];
@@ -143,13 +144,14 @@ export function PracticeFlow() {
     const { attempt } = kairo.submitAnswer({
       conceptId: eq.conceptId ?? null,
       correct,
-      responseTimeMs: 15000,
+      responseTimeMs,
       selectedOption: selectedOptionLabel(eq, selectedIndex),
       correctOption: eq.correctOption,
       questionId: eq.id,
       questionDifficulty: eq.difficulty,
     });
     setLastErrorTag(attempt?.errorTag ?? null);
+    setLastResponseTimeMs(responseTimeMs);
   }
 
   function handleLearnThis() {
@@ -160,13 +162,14 @@ export function PracticeFlow() {
       questionId: eq.id,
       conceptId: eq.conceptId,
       errorTag: lastErrorTag,
-      responseTimeMs: 15000,
+      responseTimeMs: lastResponseTimeMs,
     });
     navigate(`/learn/${encodeURIComponent(eq.conceptId)}`, { state: { returnTo: '/practice' } });
   }
 
-  function handleNextQuestion({ correct, confidence }: PracticeQuestionResult) {
-    const newResults = [...results, { correct, confidence, time: 40 + Math.floor(Math.random() * 30) }];
+  function handleNextQuestion({ correct, confidence, responseTimeMs }: PracticeQuestionResult) {
+    const eq = engineQuestions?.[qIndex];
+    const newResults = [...results, { correct, confidence, time: Math.round(responseTimeMs / 1000), subject: eq?.subject, topic: eq?.topic }];
     setResults(newResults);
     setLastErrorTag(null);
 

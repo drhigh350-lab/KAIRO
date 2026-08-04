@@ -113,7 +113,13 @@ export class SupabaseSyncAdapter {
       total_correct: profileData.totalCorrect || 0,
       streak_current_momentum: profileData.streakData?.currentMomentum || 0,
       streak_protected_gaps_used: profileData.streakData?.protectedGapsUsed || 0,
-      streak_last_session_date: profileData.streakData?.lastSessionDate || null,
+      // MomentumStreak.recordSession() stores this as a raw epoch-ms number
+      // (Date.now()), not an ISO string — sending that straight into a
+      // `date` column made Postgres reject the whole PATCH with "date/time
+      // field value out of range", which silently broke every profile sync
+      // after every single session (score/streak/badges never actually
+      // reached kairo.students, even though the request otherwise succeeded).
+      streak_last_session_date: profileData.streakData?.lastSessionDate ? new Date(profileData.streakData.lastSessionDate).toISOString().slice(0, 10) : null,
       streak_window_sessions: profileData.streakData?.windowSessions || [],
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
