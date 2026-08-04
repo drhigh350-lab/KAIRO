@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { IntroCarousel } from './IntroCarousel';
 import { Welcome } from './Welcome';
 import { SignIn } from './SignIn';
@@ -24,14 +24,27 @@ const SEQ: Screen[] = ['signup', 'about', 'ready'];
 
 export function OnboardingFlow() {
   const navigate = useNavigate();
-  const [screen, setScreen] = useState<Screen>('intro');
+  const location = useLocation();
+  // GoogleAuthCallback already connected the engine and created the student row for a
+  // first-time Google sign-in — land straight on 'about' with the real Google name instead
+  // of re-showing intro/welcome/signup for someone who's already authenticated.
+  const googleName = (location.state as { googleName?: string } | null)?.googleName;
+  const [screen, setScreen] = useState<Screen>(googleName ? 'about' : 'intro');
   const [history, setHistory] = useState<Screen[]>([]);
-  const [data, setData] = useState<OnboardingData>({ name: '', email: '', examDate: null, course: null, subjects: [] });
+  const [data, setData] = useState<OnboardingData>({ name: googleName || '', email: '', examDate: null, course: null, subjects: [] });
   const [diagnosticIntroStep, setDiagnosticIntroStep] = useState<OnboardingKaiStep>({});
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const [diagnosticQuestions, setDiagnosticQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [diagnosticSummary, setDiagnosticSummary] = useState<{ total: number; correct: number; accuracy: number; message: string } | null>(null);
+  const startedGoogleOnboarding = useRef(false);
+
+  useEffect(() => {
+    if (!googleName || startedGoogleOnboarding.current) return;
+    startedGoogleOnboarding.current = true;
+    beginOnboarding(googleName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function go(next: Screen) {
     setHistory((h) => [...h, screen]);
@@ -42,6 +55,7 @@ export function OnboardingFlow() {
       const n = [...h];
       const prev = n.pop();
       if (prev) setScreen(prev);
+      else if (googleName) navigate('/home', { replace: true });
       return n;
     });
   }
@@ -78,8 +92,6 @@ export function OnboardingFlow() {
         step={stepIndex}
         total={total}
         onBack={back}
-        // Google OAuth isn't configured in Supabase yet — GoogleButton renders disabled, so this never actually fires.
-        onGoogleSignUp={() => {}}
         onEmailSignUp={({ name, email }) => {
           setData((d) => ({ ...d, name, email }));
           beginOnboarding(name);

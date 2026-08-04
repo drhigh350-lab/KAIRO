@@ -133,6 +133,50 @@ export async function restoreSession(): Promise<boolean> {
   }
 }
 
+/**
+ * Kicks off the real Google OAuth redirect (supabase.auth.signInWithOAuth) —
+ * the browser navigates away to Google and back to `redirectPath` once the
+ * handshake with Supabase's own fixed callback URL finishes. There is
+ * nothing meaningful to return here on success; the promise only resolves
+ * with an error when Supabase rejects the request before ever redirecting
+ * (e.g. the Google provider isn't actually configured server-side).
+ */
+export async function signInWithGoogle(redirectPath = '/onboarding/google'): Promise<void> {
+  const supabase = getSupabase();
+  await clearStaleSession(supabase);
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}${redirectPath}` },
+  });
+  if (error) throw error;
+}
+
+export interface GoogleSignInResult {
+  /** True when kairo.students had no row for this auth user yet — a first-time Google student who still needs the real onboarding steps (course/exam date/subjects), same as an email sign-up would get. */
+  isNewStudent: boolean;
+  /** Google's account name, for pre-filling onboarding when this is a first-time student. */
+  name: string;
+}
+
+/**
+ * Completes the Google OAuth round trip — called from the page `redirectPath`
+ * (above) points at. supabase-js has already parsed the session out of the
+ * URL by the time this runs (detectSessionInUrl is on by default), so this
+ * just connects the engine the same way restoreSession() does.
+ */
+export async function connectGoogleAccount(): Promise<GoogleSignInResult> {
+  const supabase = getSupabase();
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw new Error('Google sign-in did not complete — no session was returned.');
+
+  const googleName = (data.session.user.user_metadata?.full_name || data.session.user.user_metadata?.name || '').trim();
+  const kairo = createEngine(googleName);
+  await kairo.init();
+  const remoteProfile = await kairo.connectSupabase(supabase, {});
+  await kairo.sync.sync();
+  return { isNewStudent: remoteProfile.isNewStudent, name: remoteProfile.name || googleName };
+}
+
 /** Signs the current student out of Supabase and drops the in-memory engine, so the app returns to a guest state. */
 export async function signOutAndDisconnect(): Promise<void> {
   try {

@@ -97,7 +97,6 @@ export function OrDivider({ tone = 'light' }: OrDividerProps) {
 export interface GoogleButtonProps {
   onClick: () => void;
   children?: ReactNode;
-  /** Google OAuth isn't configured in Supabase yet — render as a disabled "coming soon" state instead of faking a sign-in. */
   disabled?: boolean;
   tone?: 'light' | 'dark';
 }

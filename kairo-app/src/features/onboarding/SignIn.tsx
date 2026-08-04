@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { KaiMark, OrDivider, GoogleButton } from './shared';
-import { signInAndConnect, describeError } from '../../lib/kairoEngine';
+import { signInAndConnect, signInWithGoogle, describeError } from '../../lib/kairoEngine';
 
 export interface SignInProps {
   onBack: () => void;
@@ -14,6 +14,7 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const canSubmit = email.trim() && password.length > 0 && !submitting;
 
   async function handleSubmit() {
@@ -26,6 +27,19 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
       setError(describeError(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleGoogle() {
+    if (googleSubmitting) return;
+    setError('');
+    setGoogleSubmitting(true);
+    try {
+      await signInWithGoogle();
+      // Success navigates the whole browser away to Google — nothing left to do here.
+    } catch (err) {
+      setError(describeError(err));
+      setGoogleSubmitting(false);
     }
   }
 
@@ -51,7 +65,7 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
         <div style={{ textAlign: 'right', fontSize: 13 }}><a href="#" style={{ color: 'var(--dark-accent-blue)' }}>Forgot password?</a></div>
         <Button variant="darkAccent" size="lg" fullWidth disabled={!canSubmit} onClick={handleSubmit}>{submitting ? 'Signing in…' : 'Sign In'}</Button>
         <OrDivider tone="dark" />
-        <GoogleButton disabled tone="dark" onClick={onSignedIn} />
+        <GoogleButton tone="dark" onClick={handleGoogle}>{googleSubmitting ? 'Connecting…' : 'Continue with Google'}</GoogleButton>
       </div>
       <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 'auto' }}>
         New to Kairo? <a href="#" onClick={(e) => { e.preventDefault(); onGoToSignUp(); }} style={{ color: 'var(--dark-accent-blue)' }}>Create an account</a>

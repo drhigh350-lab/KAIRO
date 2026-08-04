@@ -3,6 +3,7 @@ import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
 import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
+import { GoogleAuthCallback } from './features/onboarding/GoogleAuthCallback';
 import { HomeDashboard } from './features/home/HomeDashboard';
 import { PracticeFlow } from './features/practice/PracticeFlow';
 import { CbtFlow } from './features/cbt/CbtFlow';
@@ -20,6 +21,7 @@ export default function App() {
     <AppShell>
       <Routes>
         <Route path="/" element={<Splash />} />
+        <Route path="/onboarding/google" element={<GoogleAuthCallback />} />
         <Route path="/onboarding/*" element={<OnboardingFlow />} />
 
         <Route element={<AppTabs />}>

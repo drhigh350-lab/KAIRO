@@ -1,23 +1,23 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { FlowHeader, OrDivider, GoogleButton } from './shared';
-import { signUpAndConnect, describeError } from '../../lib/kairoEngine';
+import { signUpAndConnect, signInWithGoogle, describeError } from '../../lib/kairoEngine';
 
 export interface SignUpProps {
   step: number;
   total: number;
   onBack: () => void;
-  onGoogleSignUp: () => void;
   onEmailSignUp: (data: { name: string; email: string }) => void;
   onGoToSignIn: () => void;
 }
 
-export function SignUp({ step, total, onBack, onGoogleSignUp, onEmailSignUp, onGoToSignIn }: SignUpProps) {
+export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: SignUpProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const passwordValid = password.length >= 8 && /\d/.test(password);
   const canSubmit = name.trim() && email.trim() && passwordValid && !submitting;
 
@@ -34,6 +34,19 @@ export function SignUp({ step, total, onBack, onGoogleSignUp, onEmailSignUp, onG
     }
   }
 
+  async function handleGoogle() {
+    if (googleSubmitting) return;
+    setError('');
+    setGoogleSubmitting(true);
+    try {
+      await signInWithGoogle();
+      // Success navigates the whole browser away to Google — nothing left to do here.
+    } catch (err) {
+      setError(describeError(err));
+      setGoogleSubmitting(false);
+    }
+  }
+
   return (
     <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, flex: 1, background: 'var(--dark-bg-canvas)' }}>
       <FlowHeader onBack={onBack} step={step} total={total} tone="dark" />
@@ -41,7 +54,7 @@ export function SignUp({ step, total, onBack, onGoogleSignUp, onEmailSignUp, onG
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--dark-text-heading)' }}>Create your account</div>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 6 }}>Let's get you started on your journey to success.</div>
       </div>
-      <GoogleButton disabled tone="dark" onClick={onGoogleSignUp} />
+      <GoogleButton tone="dark" onClick={handleGoogle}>{googleSubmitting ? 'Connecting…' : 'Continue with Google'}</GoogleButton>
       <OrDivider tone="dark" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Input tone="dark" label="Full Name" placeholder="Enter your full name" value={name} onChange={(e) => setName(e.target.value)} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0116 0" /></svg>} />

@@ -202,7 +202,7 @@ export class KairoEngine {
     this._snapshotSjeeState();
     await this.store.saveProfile(this.profile);
 
-    return remoteProfile;
+    return { ...remoteProfile, isNewStudent: !!remoteProfile._isNewStudent };
   }
 
   /**

@@ -283,7 +283,11 @@ export class SupabaseSyncAdapter {
       .single();
     if (insertErr) throw insertErr;
 
-    return this._rowToProfile(created);
+    // Flagged so connectSupabase() can tell callers (e.g. a first-time Google
+    // sign-in, which never goes through the explicit signUp() step) that this
+    // student has no real profile yet and still needs onboarding — otherwise
+    // indistinguishable from a returning student's row.
+    return { ...this._rowToProfile(created), _isNewStudent: true };
   }
 
   async pushProfile(profileData, authUserId, studentId) {
