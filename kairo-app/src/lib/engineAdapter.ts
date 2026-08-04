@@ -27,10 +27,6 @@ export function toUiQuestion(q: EngineFlatQuestion): PracticeQuestion {
     options: q.options.map((o) => o.text),
     correct: correct === -1 ? 0 : correct,
     why: q.explanation || 'Review the option above marked correct.',
-    wrongWhy: {},
-    mistake: 'Compare your answer against the explanation above to spot the gap.',
-    concept: q.topic,
-    tip: 'Read every option before choosing — some distractors are close on purpose.',
     kai: q.explanation || "Let's look at this one together.",
   };
 }

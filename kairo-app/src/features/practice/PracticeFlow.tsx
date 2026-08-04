@@ -7,7 +7,7 @@ import { PracticeHub } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 
 type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary';
@@ -69,6 +69,7 @@ export function PracticeFlow() {
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
   const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
+  const [lastErrorTag, setLastErrorTag] = useState<string | null>(null);
   const startedSuggested = useRef(false);
 
   useEffect(() => {
@@ -133,26 +134,46 @@ export function PracticeFlow() {
     navigate('/home');
   }
 
-  function handleNextQuestion({ correct, confidence, selectedIndex }: PracticeQuestionResult) {
-    const newResults = [...results, { correct, confidence, time: 40 + Math.floor(Math.random() * 30) }];
-    setResults(newResults);
-
+  /** Fires immediately when the answer is graded (before the student advances) — records the real attempt right away so "Understand this before moving on" has a real errorTag to hand Learn. */
+  function handleAnswered({ correct, selectedIndex }: { correct: boolean; selectedIndex: number | null }) {
     if (!engineQuestions) return;
     const kairo = getEngine();
     const eq = engineQuestions[qIndex];
-    if (kairo && eq) {
-      kairo.submitAnswer({
-        conceptId: eq.conceptId ?? null,
-        correct,
-        responseTimeMs: 15000,
-        selectedOption: selectedOptionLabel(eq, selectedIndex),
-        correctOption: eq.correctOption,
-        questionId: eq.id,
-        questionDifficulty: eq.difficulty,
-      });
-    }
+    if (!kairo || !eq) return;
+    const { attempt } = kairo.submitAnswer({
+      conceptId: eq.conceptId ?? null,
+      correct,
+      responseTimeMs: 15000,
+      selectedOption: selectedOptionLabel(eq, selectedIndex),
+      correctOption: eq.correctOption,
+      questionId: eq.id,
+      questionDifficulty: eq.difficulty,
+    });
+    setLastErrorTag(attempt?.errorTag ?? null);
+  }
+
+  function handleLearnThis() {
+    if (!engineQuestions) return;
+    const eq = engineQuestions[qIndex];
+    if (!eq?.conceptId) return;
+    startLearnFromIncorrectAnswer({
+      questionId: eq.id,
+      conceptId: eq.conceptId,
+      errorTag: lastErrorTag,
+      responseTimeMs: 15000,
+    });
+    navigate(`/learn/${encodeURIComponent(eq.conceptId)}`, { state: { returnTo: '/practice' } });
+  }
+
+  function handleNextQuestion({ correct, confidence }: PracticeQuestionResult) {
+    const newResults = [...results, { correct, confidence, time: 40 + Math.floor(Math.random() * 30) }];
+    setResults(newResults);
+    setLastErrorTag(null);
+
+    if (!engineQuestions) return;
     if (qIndex + 1 >= engineQuestions.length) {
       setHasHistory(true);
+      const kairo = getEngine();
       if (kairo) {
         kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
       }
@@ -284,6 +305,8 @@ export function PracticeFlow() {
         total={engineQuestions.length}
         onNext={handleNextQuestion}
         onExit={toHome}
+        onAnswered={handleAnswered}
+        onLearnThis={engineQuestions[qIndex].conceptId ? handleLearnThis : undefined}
       />
     );
   }

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { ReactNode } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton } from '../../components';
 import {
   BookmarkIcon, ReportIcon, FlagIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
@@ -19,6 +18,10 @@ export interface PracticeQuestionProps {
   total: number;
   onNext: (result: PracticeQuestionResult) => void;
   onExit: () => void;
+  /** Fires once, right when the answer is graded — before the student advances — so a caller can record the real attempt and offer a "Learn this" follow-up immediately. */
+  onAnswered?: (result: { correct: boolean; selectedIndex: number | null }) => void;
+  /** Only rendered when the answer was wrong and a caller passes this — routes to the real Learn Module lesson for the concept just missed. */
+  onLearnThis?: () => void;
 }
 
 export function CloseIconSmall() {
@@ -28,7 +31,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
@@ -40,7 +43,10 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
   const [showCalc, setShowCalc] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  function submit() { setSubmitted(true); }
+  function submit() {
+    setSubmitted(true);
+    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected });
+  }
   function flashToast(msg: string) { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2200); }
   function report() { setReported(true); flashToast("Thanks — we'll take a look at this question."); }
   function toggleFlag() { setFlagged((f) => !f); flashToast(!flagged ? 'Flagged for review.' : 'Flag removed.'); }
@@ -113,7 +119,16 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
           <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
             <AnswerFeedback dark correct={isCorrect} title={isCorrect ? "That's correct" : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} detail={question.why} />
 
-            <ExplanationBlock question={question} />
+            {!isCorrect && onLearnThis && (
+              <button type="button" onClick={onLearnThis} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 'var(--touch-min)', padding: '12px 16px',
+                borderRadius: 'var(--radius-md)', border: '1.5px solid var(--dark-accent-blue)', background: 'rgba(46,124,246,0.1)',
+                color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6z" /></svg>
+                Understand this before moving on
+              </button>
+            )}
 
             <KaiPanel note={question.kai} tone="dark" />
 
@@ -129,29 +144,6 @@ export function PracticeQuestion({ question, index, total, onNext, onExit }: Pra
           <Button variant="darkAccent" size="lg" fullWidth onClick={() => onNext({ correct: isCorrect, confidence, selectedIndex: selected })}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
         )}
       </div>
-    </div>
-  );
-}
-
-export interface ExplanationBlockProps {
-  question: PracticeQuestionData;
-}
-
-export function ExplanationBlock({ question }: ExplanationBlockProps) {
-  const rows: { label: string; body: ReactNode }[] = [
-    { label: 'Common mistake', body: question.mistake },
-    { label: 'Key concept', body: question.concept },
-    { label: 'Exam tip', body: question.tip },
-  ];
-  return (
-    <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Why this matters</div>
-      {rows.map((r) => (
-        <div key={r.label}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{r.label}</div>
-          <div style={{ fontSize: 13, color: 'var(--dark-text-body)', lineHeight: 1.55, marginTop: 4 }}>{r.body}</div>
-        </div>
-      ))}
     </div>
   );
 }

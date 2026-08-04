@@ -11,6 +11,7 @@ import { Insights } from './features/insights/Insights';
 import { Profile } from './features/profile/Profile';
 import { NotificationSettings } from './features/profile/NotificationSettings';
 import { ChallengesFlow } from './features/challenges/ChallengesFlow';
+import { LearnLesson } from './features/learn/LearnLesson';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/profile/notifications" element={<NotificationSettings />} />
         <Route path="/challenges/*" element={<ChallengesFlow />} />
+        <Route path="/learn/:conceptId" element={<LearnLesson />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

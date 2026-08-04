@@ -18,10 +18,6 @@ export interface PracticeQuestion {
   options: string[];
   correct: number;
   why: string;
-  wrongWhy: Record<number, string>;
-  mistake: string;
-  concept: string;
-  tip: string;
   kai: string;
 }
 
