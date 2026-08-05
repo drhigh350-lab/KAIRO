@@ -51,6 +51,34 @@ export function Profile() {
             </button>
           )}
         </Card>
+        {signedIn && profile?.stats && (
+          <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginTop: 4 }}>{profile.stats.eliteScore}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>LEVEL {profile.stats.level?.level ?? 1}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>{profile.stats.level?.name || '—'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Streak</div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.currentStreak} day{profile.stats.currentStreak === 1 ? '' : 's'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Accuracy</div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.accuracy}%</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Questions</div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.totalQuestions}</div>
+              </div>
+            </div>
+          </Card>
+        )}
         <Card onClick={signedIn ? () => navigate('/profile/edit') : undefined} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: signedIn ? 'pointer' : 'default' }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>What I'm Aiming For</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
