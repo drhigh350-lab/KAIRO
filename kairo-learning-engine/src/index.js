@@ -304,6 +304,19 @@ export class KairoEngine {
     return this._flattenQuestion(chosen);
   }
 
+  /**
+   * Fetch one exact, specific question by ID — unlike getQuestionForConcept
+   * (which picks any question that tests a concept), this is for Review's
+   * Reflection Moment (Review Module §5.5), which must reconstruct the
+   * *exact* original question a student answered, not a fresh one.
+   * Returns null if that question's subject hasn't been loaded into
+   * questionGraph yet via loadContentCatalog().
+   */
+  getQuestionById(questionId) {
+    const q = this.questionGraph.getQuestion(questionId);
+    return q ? this._flattenQuestion(q) : null;
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // CONCEPT MANAGEMENT
   // ═══════════════════════════════════════════════════════════════
@@ -406,6 +419,14 @@ export class KairoEngine {
 
     const genuine = this.classifier.detectGaming(concept, correct, responseTimeMs);
 
+    // selectedOption/correctOption were computed above for classification
+    // but never actually carried into the persisted attempt — kairo.attempts
+    // has had real selected_option/correct_option columns (and
+    // SupabaseSyncAdapter._attemptToRow has mapped them) since the schema
+    // was created, so every synced attempt has been writing null into both.
+    // Recording them here is also what lets Review's Reflection Moment
+    // (CBT Exam Mode Spec's Review Module §5.5) show a student their own
+    // original answer later — there is no other place that answer is kept.
     const attempt = {
       conceptId: cid,
       correct,
@@ -413,6 +434,8 @@ export class KairoEngine {
       timestamp: Date.now(),
       errorTag,
       questionId,
+      selectedOption,
+      correctOption,
       difficulty: questionDifficulty,
       genuineConfidence: genuine
     };
@@ -425,8 +448,11 @@ export class KairoEngine {
           conceptId: cid,
           correct,
           responseTimeMs,
+          timestamp: attempt.timestamp,
           errorTag,
           questionId,
+          selectedOption,
+          correctOption,
           difficulty: questionDifficulty
         })
       : null;

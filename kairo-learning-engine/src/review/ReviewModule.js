@@ -115,6 +115,64 @@ export class ReviewModule {
   }
 
   /**
+   * Builds a real Review Session plan — Review Module Spec §5.3's flow
+   * (Session Framing -> Reflection Moment -> Resolution -> Pattern
+   * Surfacing -> Reinforcement Attempt -> Consolidation Summary) needs a
+   * concrete list of items plus, for each one, whether it's resurfacing a
+   * genuine prior mistake (Reflection Moment, §5.5) or just a due spaced
+   * revisit (lighter framing, no prior answer to reconsider) — pulled from
+   * buildDailyRecap()'s own queue and each concept's real attemptHistory,
+   * not a new prioritisation model of its own (Review never runs a
+   * separate intelligence layer, §7.8).
+   */
+  buildReviewSession({ limit = 8 } = {}) {
+    const recap = this.buildDailyRecap();
+    const items = recap.queue.slice(0, limit).map((entry) => {
+      const concept = this.engine.graph.getConcept(entry.id);
+      const history = concept ? concept.attemptHistory : [];
+      const lastWrong = [...history].reverse().find((a) => !a.correct);
+      return {
+        conceptId: entry.id,
+        conceptName: entry.name,
+        subject: concept?.subject || null,
+        topic: concept?.topic || null,
+        reason: entry.reason, // 'fading' | 'recently_missed' | 'stale'
+        priority: entry.priority,
+        hasPriorMiss: !!lastWrong,
+        priorQuestionId: lastWrong?.questionId || null,
+        priorSelectedOption: lastWrong?.selectedOption || null,
+        priorCorrectOption: lastWrong?.correctOption || null,
+        priorErrorTag: lastWrong?.errorTag || null,
+      };
+    });
+
+    // Pattern Surfacing (§5.7): the same misconception type recurring
+    // across two or more items in this one session is the exact
+    // cross-concept signal the Misconception Library already accumulates
+    // (Question Intelligence Model §4.2) — named once here, not left for
+    // the student to notice unaided across separate item explanations.
+    const tagCounts = {};
+    for (const it of items) {
+      if (it.priorErrorTag) tagCounts[it.priorErrorTag] = (tagCounts[it.priorErrorTag] || 0) + 1;
+    }
+    const dominant = Object.entries(tagCounts).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1])[0];
+
+    const fadingCount = items.filter((i) => i.reason === 'fading').length;
+    const framing = items.length === 0
+      ? "Nothing waiting for review right now."
+      : fadingCount > 0
+        ? `A quick pass on ${items.length} thing${items.length === 1 ? '' : 's'} — ${fadingCount} starting to fade.`
+        : `Let's look back at ${items.length} thing${items.length === 1 ? '' : 's'} worth revisiting.`;
+
+    return {
+      items,
+      framing,
+      estimatedTimeMin: Math.max(1, Math.ceil(items.length * 1.5)),
+      pattern: dominant ? { tag: dominant[0], count: dominant[1] } : null,
+    };
+  }
+
+  /**
    * Pre-Session Recap: shown before main practice if Fading concepts exist.
    * Returns null if nothing urgent — student proceeds to normal practice.
    */

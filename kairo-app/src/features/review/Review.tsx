@@ -52,7 +52,7 @@ export function Review() {
           </div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 8 }}>About {recap.recap.estimatedTimeMin} minutes</div>
           <div style={{ marginTop: 16 }}>
-            <Button variant="gold" size="md" fullWidth onClick={() => navigate('/practice', { state: { entry: 'weak' } })}>Start Review</Button>
+            <Button variant="gold" size="md" fullWidth onClick={() => navigate('/review/session')}>Start Review</Button>
           </div>
         </Card>
       )}
