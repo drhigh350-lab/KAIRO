@@ -293,15 +293,34 @@ export interface CustomSessionArgs {
 /**
  * Mixed Practice / Weak Areas, via the same real session lifecycle as
  * startSuggestedSession(). Only subjects with a real seeded question bank
- * are ever passed as a filter — an unseeded subject (e.g. "Mathematics",
- * "English Language") would otherwise silently return zero questions.
+ * are ever passed as a filter.
+ *
+ * Two real bugs lived here previously: "English Language" was never
+ * normalized to "Use of English" (the name the seeded catalog actually
+ * uses) before being checked against SEEDED_SUBJECTS, so it silently
+ * failed the same way an actually-unseeded subject would; and — the
+ * bigger one — CustomPracticeEngine.buildSession() treats an *empty*
+ * subjects array as "no filter, include everything" (correct for Mixed
+ * Practice's own [] request), so a student who explicitly picked a
+ * single unseeded subject (e.g. Mathematics) and had it filtered down to
+ * [] here got served a random mix of Biology/Chemistry/Physics/English
+ * questions instead — silently answering a different subject than the
+ * one they chose, not the "zero questions" this function's old comment
+ * assumed. Now: a non-empty request that has nothing seeded left after
+ * filtering returns no questions honestly, so the caller's existing
+ * "couldn't find any questions" message is accurate instead of masked by
+ * a wrong-subject substitution.
  */
 export async function startCustomSession({ subjects = [], includeFading = true, limit = 10 }: CustomSessionArgs): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(subjects.length ? subjects : kairo.profile.targetSubjects || []);
 
-  const seededSubjects = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
+  const normalized = subjects.map(normalizeSubjectName);
+  const seededSubjects = normalized.filter((s) => SEEDED_SUBJECTS.includes(s));
+  if (normalized.length > 0 && seededSubjects.length === 0) {
+    return { questions: [] };
+  }
   const { queue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
   const questions: Engine[] = [];
   const seenIds: string[] = [];

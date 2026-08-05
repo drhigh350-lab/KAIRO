@@ -10,6 +10,7 @@ import {
   listChallenges, getMyAttempt, joinChallenge, getChallengeQuestions, submitChallengeAttempt,
   mapDbChallenge, type DbChallenge, type DbChallengeAttempt,
 } from '../../lib/challengesApi';
+import { useBackIntercept } from '../../lib/useBackIntercept';
 
 type Screen = 'hub' | 'preview' | 'getReady' | 'attempt' | 'results';
 
@@ -54,6 +55,12 @@ export function ChallengesFlow() {
     setScreen('hub');
     setHistory([]);
   }
+
+  // Challenges' screens all share one route (/challenges/*), same as
+  // Practice/CBT — without this, the phone/browser back button skips the
+  // whole flow in one tap instead of stepping through hub -> preview ->
+  // getReady -> attempt -> results like the in-screen back arrow does.
+  useBackIntercept(history.length, back);
 
   const challenges: Challenge[] = (dbChallenges || []).map(mapDbChallenge);
   const selected: Challenge | null = selectedDb ? mapDbChallenge(selectedDb) : null;

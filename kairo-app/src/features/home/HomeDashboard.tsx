@@ -7,6 +7,8 @@ import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
 import { getEngine, getTodayProgress, setDailyGoal } from '../../lib/kairoEngine';
 
+interface EarnedBadge { id: string; name: string; desc: string }
+
 interface HomeDashboardState {
   name?: string;
   course?: Course | null;
@@ -45,6 +47,11 @@ export function HomeDashboard() {
   const firstName = (data.name || '').split(' ')[0] || 'there';
   const subjects = data.subjects ?? [];
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
+  // Genuinely the most recently earned badge — badges are appended to
+  // profile.badges in earn order (BadgeSystem.checkAndAward()), so the
+  // last one really is the most recent, not just any random earned badge.
+  const earnedBadges: EarnedBadge[] = getEngine()?.getBadges()?.earned ?? [];
+  const latestBadge = earnedBadges.length ? earnedBadges[earnedBadges.length - 1] : null;
   const [todayProgress, setTodayProgress] = useState(getTodayProgress());
   const hasTodayProgress = todayProgress.questionsToday > 0;
   const [showGoalModal, setShowGoalModal] = useState(false);
@@ -173,13 +180,15 @@ export function HomeDashboard() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
       </Card>
 
-      <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z" /></svg>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-accent-blue)' }}>Kai Wisdom Spark</div>
-          <div style={{ fontSize: 'var(--fs-body-sm)', color: 'var(--dark-text-body)', lineHeight: 1.5, marginTop: 4 }}>Small consistent actions today create extraordinary results tomorrow.</div>
+      {latestBadge && (
+        <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z" /></svg>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-accent-blue)' }}>Kai Wisdom Spark — {latestBadge.name}</div>
+            <div style={{ fontSize: 'var(--fs-body-sm)', color: 'var(--dark-text-body)', lineHeight: 1.5, marginTop: 4 }}>{latestBadge.desc}. That's not luck — that's real progress showing up.</div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
