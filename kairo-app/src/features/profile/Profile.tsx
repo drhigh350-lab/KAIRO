@@ -103,6 +103,13 @@ export function Profile() {
           </div>
           <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
         </Card>
+        <Card onClick={() => navigate('/profile/leaderboard')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--dark-text-heading)' }}>Leaderboard</div>
+            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>Opt-in only — off by default</div>
+          </div>
+          <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
+        </Card>
 
         {signedIn ? (
           <Button variant="secondary" size="lg" fullWidth disabled={signingOut} onClick={handleSignOut}>

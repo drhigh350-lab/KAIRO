@@ -24,6 +24,7 @@ const emptyConsent: ConsentSummary = {
   categoryPreferences: {},
   hardStopActive: false,
   editorialConsent: false,
+  leaderboardOptIn: false,
 };
 
 export function NotificationSettings() {

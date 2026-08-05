@@ -33,6 +33,11 @@ export class ConsentManager {
     // §10.5 — Editorial & Broadcast consent tracked independently from
     // the five product-notification categories.
     this.editorialConsent = false;
+    // Profile & Settings §8.2 — cohort/leaderboard visibility, its own
+    // Layer 2 consent flag alongside Editorial & Broadcast. Defaults to
+    // opted-out, consistent with the platform-wide rule that comparative
+    // content is never default-on (Learning Engine Phase 2 §7.2 rule 2).
+    this.leaderboardOptIn = false;
   }
 
   /**
@@ -66,6 +71,11 @@ export class ConsentManager {
 
   setEditorialConsent(allowed) {
     this.editorialConsent = allowed;
+  }
+
+  /** Profile & Settings §8.2 — turning this off removes the student from every leaderboard surface immediately, since the leaderboard-reading functions themselves gate on this flag, not just the client UI. */
+  setLeaderboardOptIn(allowed) {
+    this.leaderboardOptIn = allowed;
   }
 
   /**
@@ -140,6 +150,7 @@ export class ConsentManager {
       categoryPreferences: this.categoryPreferences,
       hardStopActive: this.hardStopActive,
       editorialConsent: this.editorialConsent,
+      leaderboardOptIn: this.leaderboardOptIn,
       contactDataDeletedAt: this.contactDataDeletedAt || null
     };
   }
@@ -151,6 +162,7 @@ export class ConsentManager {
       manager.categoryPreferences = data.categoryPreferences || {};
       manager.hardStopActive = data.hardStopActive || false;
       manager.editorialConsent = data.editorialConsent || false;
+      manager.leaderboardOptIn = data.leaderboardOptIn || false;
       manager.contactDataDeletedAt = data.contactDataDeletedAt || null;
     }
     return manager;

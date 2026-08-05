@@ -1018,6 +1018,7 @@ export interface ConsentSummary {
   categoryPreferences: Partial<Record<ConsentChannel, Partial<Record<ConsentCategory, boolean>>>>;
   hardStopActive: boolean;
   editorialConsent: boolean;
+  leaderboardOptIn: boolean;
 }
 
 /**
@@ -1043,6 +1044,7 @@ export function getConsentSummary(): ConsentSummary | null {
     categoryPreferences: JSON.parse(JSON.stringify(consent.categoryPreferences || {})),
     hardStopActive: !!consent.hardStopActive,
     editorialConsent: !!consent.editorialConsent,
+    leaderboardOptIn: !!consent.leaderboardOptIn,
   };
 }
 
@@ -1090,4 +1092,66 @@ export async function setHardStopConsent(active: boolean): Promise<void> {
   if (!kairo) throw new Error('No active engine — sign in first.');
   kairo.comms.consent.setHardStop(active);
   await persistConsent(kairo);
+}
+
+/** Profile & Settings §8.2 — turning this off removes the student from every leaderboard surface immediately: kairo.get_segment_leaderboard/get_university_rankings (see SupabaseSyncAdapter's schema) both re-check this same flag server-side, not just the client UI. */
+export async function setLeaderboardOptIn(allowed: boolean): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.comms.consent.setLeaderboardOptIn(allowed);
+  await persistConsent(kairo);
+}
+
+// ─────────────────────────────────────────────
+// Opt-in leaderboards (Profile & Settings §8.2, Learning Engine Phase 2
+// §8.4) — SegmentedLeaderboard/UniversityLeaderboard's in-engine Maps are
+// populated only from the current runtime's own endSession() calls, so
+// they can never hold real other-student data across sessions/devices.
+// The real cross-student view lives in two SECURITY DEFINER Postgres
+// functions instead (kairo.get_segment_leaderboard, kairo.get_university_
+// rankings) that only ever run for, and only ever return, students who
+// have opted in — mirroring the direct-Supabase-read pattern Challenges
+// already established for its own leaderboard (challengesApi.ts).
+// ─────────────────────────────────────────────
+
+export interface SegmentLeaderboardRow {
+  rank: number;
+  studentId: string;
+  name: string;
+  score: number;
+  isCurrentUser: boolean;
+}
+
+export interface UniversityRankingRow {
+  rank: number;
+  university: string;
+  avgScore: number;
+  studentCount: number;
+}
+
+/** Real ~20-student segment leaderboard (same course + Kairo Score tier) — empty if the student hasn't opted in themselves (Section 8.2's server-side gate, not just a client check). */
+export async function getSegmentLeaderboard(limit = 20): Promise<SegmentLeaderboardRow[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('get_segment_leaderboard', { p_limit: limit });
+  if (error) throw error;
+  return (data || []).map((row: { rank: number; student_id: string; name: string; score: number; is_current_user: boolean }) => ({
+    rank: row.rank,
+    studentId: row.student_id,
+    name: row.name,
+    score: Number(row.score),
+    isCurrentUser: row.is_current_user,
+  }));
+}
+
+/** Real per-university average score rankings, aggregate-only (no individual student identity) — same server-side opt-in gate as the segment leaderboard. */
+export async function getUniversityRankings(limit = 20): Promise<UniversityRankingRow[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('get_university_rankings', { p_limit: limit });
+  if (error) throw error;
+  return (data || []).map((row: { rank: number; university: string; avg_score: number; student_count: number }) => ({
+    rank: row.rank,
+    university: row.university,
+    avgScore: Number(row.avg_score),
+    studentCount: row.student_count,
+  }));
 }

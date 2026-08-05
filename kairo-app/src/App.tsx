@@ -13,6 +13,7 @@ import { Insights } from './features/insights/Insights';
 import { Profile } from './features/profile/Profile';
 import { EditProfile } from './features/profile/EditProfile';
 import { NotificationSettings } from './features/profile/NotificationSettings';
+import { Leaderboard } from './features/profile/Leaderboard';
 import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 import { LearnLesson } from './features/learn/LearnLesson';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/profile/edit" element={<EditProfile />} />
         <Route path="/profile/notifications" element={<NotificationSettings />} />
+        <Route path="/profile/leaderboard" element={<Leaderboard />} />
         <Route path="/challenges/*" element={<ChallengesFlow />} />
         <Route path="/learn/:conceptId" element={<LearnLesson />} />
         <Route path="/rapid-fire" element={<RapidFireFlow />} />
