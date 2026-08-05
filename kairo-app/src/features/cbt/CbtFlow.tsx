@@ -5,9 +5,10 @@ import { ExamInstructions } from './ExamInstructions';
 import { CbtExam } from './CbtExam';
 import { CbtSummary, type CbtResults } from './CbtSummary';
 import { CbtReview } from './CbtReview';
+import { CbtHistory } from './CbtHistory';
 import { startCbtExam, finishCbtExam, type CbtPaperQuestion } from '../../lib/kairoEngine';
 
-type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review';
+type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
 
 /** Controller for CBT Exam Mode: setup -> instructions -> exam -> summary -> review, driven by the real kairo.cbt (CBTExamMode) instance. */
 export function CbtFlow() {
@@ -54,7 +55,10 @@ export function CbtFlow() {
         </div>
       );
     }
-    return <ExamSetup onBack={toHome} onContinue={() => setScreen('instructions')} />;
+    return <ExamSetup onBack={toHome} onContinue={() => setScreen('instructions')} onViewHistory={() => setScreen('history')} />;
+  }
+  if (screen === 'history') {
+    return <CbtHistory onBack={() => setScreen('setup')} />;
   }
   if (screen === 'instructions') {
     return <ExamInstructions onBack={() => setScreen('setup')} onBegin={handleBegin} />;

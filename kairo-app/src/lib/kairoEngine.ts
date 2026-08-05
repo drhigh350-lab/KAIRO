@@ -378,6 +378,8 @@ export interface TodayProgress {
   studyMinutesToday: number;
   /** null when nothing's been answered today yet — there's no real accuracy to show. */
   accuracyPct: number | null;
+  /** null when the student hasn't set one — never defaulted to a made-up number. */
+  dailyGoal: number | null;
 }
 
 /**
@@ -410,7 +412,16 @@ export function getTodayProgress(): TodayProgress {
     questionsToday,
     studyMinutesToday: Math.round(studyMs / 60000),
     accuracyPct: questionsToday > 0 ? Math.round((correctToday / questionsToday) * 100) : null,
+    dailyGoal: kairo?.profile?.dailyQuestionGoal ?? null,
   };
+}
+
+/** Sets (or clears, with null) the student's own daily-question-count goal — a real, student-declared target, never a system-invented default. */
+export async function setDailyGoal(goal: number | null): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.settings.updateProfile({ dailyQuestionGoal: goal });
+  await kairo.sync.sync();
 }
 
 /** Real profile + stats for the Profile screen. null when nothing is signed in yet. */
@@ -557,6 +568,38 @@ export async function finishCbtExam(): Promise<Engine> {
   const results = kairo.cbt.finish();
   await kairo.sync.sync();
   return results;
+}
+
+export interface CbtHistoryEntry {
+  id: string;
+  subjects: string[];
+  totalQuestions: number;
+  score: number;
+  maxScore: number;
+  percentage: number;
+  bySubject: { subject: string; correct: number; total: number; percentage: number }[];
+  timeAnalysis: { totalTimeMin: number; avgTimePerQuestionSec: number } | null;
+  startedAt: number;
+  completedAt: number;
+}
+
+/** Real past CBT exam history from kairo.cbt_results — a table that had real RLS policies from the schema's creation but nothing ever wrote to or read from it until now. */
+export async function getCbtHistory(limit = 20): Promise<CbtHistoryEntry[]> {
+  const kairo = getEngine();
+  if (!kairo || !kairo.sync.adapter) return [];
+  const rows = await kairo.sync.adapter.fetchCbtResults(kairo.profile.studentId, { limit });
+  return rows.map((row: Engine) => ({
+    id: row.id,
+    subjects: row.subjects || [],
+    totalQuestions: row.total_questions,
+    score: row.score,
+    maxScore: row.max_score,
+    percentage: row.percentage,
+    bySubject: row.by_subject || [],
+    timeAnalysis: row.time_analysis,
+    startedAt: new Date(row.started_at).getTime(),
+    completedAt: new Date(row.completed_at).getTime(),
+  }));
 }
 
 // ─────────────────────────────────────────────

@@ -1,0 +1,68 @@
+import { useEffect, useState } from 'react';
+import { Card } from '../../components';
+import { ScreenHeader } from '../learning/shared';
+import { Row } from './ExamSetup';
+import { getCbtHistory, type CbtHistoryEntry } from '../../lib/kairoEngine';
+
+export interface CbtHistoryProps {
+  onBack?: () => void;
+}
+
+/** Real past-exam log from kairo.cbt_results — every completed mock, in date order, with the same per-subject breakdown the summary screen showed right after finishing it. */
+export function CbtHistory({ onBack }: CbtHistoryProps) {
+  const [entries, setEntries] = useState<CbtHistoryEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getCbtHistory()
+      .then(setEntries)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load your exam history.'));
+  }, []);
+
+  const avgPct = entries && entries.length ? Math.round(entries.reduce((s, e) => s + e.percentage, 0) / entries.length) : null;
+  const bestPct = entries && entries.length ? Math.max(...entries.map((e) => e.percentage)) : null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+      <ScreenHeader onBack={onBack} title="Exam History" tone="dark" />
+      <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {error && <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>{error}</div>}
+        {!error && entries === null && <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>Loading…</div>}
+        {!error && entries && entries.length === 0 && (
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40, lineHeight: 1.5 }}>
+            No exams taken yet. Complete a CBT simulation to see your history here.
+          </div>
+        )}
+        {entries && entries.length > 0 && (
+          <>
+            <Card style={{ background: 'var(--dark-bg-elevated)', boxShadow: 'none' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 8 }}>OVERALL</div>
+              <Row label="Exams taken" value={String(entries.length)} />
+              <Row label="Average score" value={`${avgPct}%`} />
+              <Row label="Best score" value={`${bestPct}%`} />
+            </Card>
+            {entries.map((e) => (
+              <Card key={e.id} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>
+                    {new Date(e.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: e.percentage >= 60 ? 'var(--dark-success)' : 'var(--dark-danger)' }}>{e.score}/{e.maxScore} · {e.percentage}%</div>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4 }}>{e.subjects.join(', ')}</div>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--dark-border)' }}>
+                  {e.bySubject.map((s) => (
+                    <div key={s.subject} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                      <span style={{ fontSize: 12.5, color: 'var(--dark-text-body)' }}>{s.subject}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: s.percentage >= 60 ? 'var(--dark-success)' : 'var(--dark-danger)' }}>{s.percentage}%</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

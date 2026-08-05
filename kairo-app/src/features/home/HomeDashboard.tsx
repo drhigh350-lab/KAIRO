@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MissionCard, Card, KairoWordmark } from '../../components';
+import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
+import { Modal } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, setDailyGoal } from '../../lib/kairoEngine';
 
 interface HomeDashboardState {
   name?: string;
@@ -44,8 +45,23 @@ export function HomeDashboard() {
   const firstName = (data.name || '').split(' ')[0] || 'there';
   const subjects = data.subjects ?? [];
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
-  const todayProgress = getTodayProgress();
+  const [todayProgress, setTodayProgress] = useState(getTodayProgress());
   const hasTodayProgress = todayProgress.questionsToday > 0;
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalInput, setGoalInput] = useState(todayProgress.dailyGoal != null ? String(todayProgress.dailyGoal) : '');
+  const [savingGoal, setSavingGoal] = useState(false);
+
+  async function handleSaveGoal() {
+    const n = parseInt(goalInput, 10);
+    setSavingGoal(true);
+    try {
+      await setDailyGoal(Number.isFinite(n) && n > 0 ? n : null);
+      setTodayProgress(getTodayProgress());
+      setShowGoalModal(false);
+    } finally {
+      setSavingGoal(false);
+    }
+  }
 
   const [liveChallenge, setLiveChallenge] = useState<Challenge | null>(null);
   useEffect(() => {
@@ -105,9 +121,27 @@ export function HomeDashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--dark-border)' }}>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? todayProgress.questionsToday : '—'}</span></div>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Study Time<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? `${todayProgress.studyMinutesToday}m` : '—'}</span></div>
-          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Daily Goal<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>—/—</span></div>
+          <button type="button" onClick={() => { setGoalInput(todayProgress.dailyGoal != null ? String(todayProgress.dailyGoal) : ''); setShowGoalModal(true); }} style={{
+            background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+          }}>
+            <span style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Daily Goal</span><br />
+            <span style={{ color: 'var(--dark-accent-blue)', fontWeight: 700 }}>
+              {todayProgress.dailyGoal != null ? `${todayProgress.questionsToday}/${todayProgress.dailyGoal}` : 'Set goal'}
+            </span>
+          </button>
         </div>
       </div>
+
+      {showGoalModal && (
+        <Modal onClose={() => setShowGoalModal(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 4 }}>Daily question goal</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginBottom: 16, lineHeight: 1.5 }}>How many questions do you want to answer each day? Leave blank to remove your goal.</div>
+          <Input tone="dark" type="number" min="1" placeholder="e.g. 20" value={goalInput} onChange={(e) => setGoalInput(e.target.value)} />
+          <div style={{ marginTop: 16 }}>
+            <Button variant="darkAccent" size="lg" fullWidth disabled={savingGoal} onClick={handleSaveGoal}>{savingGoal ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </Modal>
+      )}
 
       <div>
         <div style={{ fontWeight: 700, color: 'var(--dark-text-heading)', fontSize: 15, marginBottom: 12 }}>Quick Actions</div>

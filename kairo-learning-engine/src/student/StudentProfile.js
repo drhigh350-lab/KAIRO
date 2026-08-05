@@ -20,6 +20,7 @@ export class StudentProfile {
     examType = 'UTME',            // UTME | Post-UTME | IJMB | JUPEB
     examYear = null,              // sitting year — distinct from examDate, supports repeat candidates
     targetUniversity = null,
+    dailyQuestionGoal = null,     // student-set target questions/day — null means no goal set yet, never defaulted to a made-up number
     targetUTMEScore = null,       // student's own definition of "ready" (§6 Exam Readiness benchmark)
     registrationDate = null,      // anchors "days until exam" + cohort analysis; set once, never changes
     preferredStudyDurationMin = null,  // session-length default, e.g. 20 or 45
@@ -44,6 +45,7 @@ export class StudentProfile {
     this.examType = examType;
     this.examYear = examYear;
     this.targetUniversity = targetUniversity;
+    this.dailyQuestionGoal = dailyQuestionGoal;
     this.targetUTMEScore = targetUTMEScore;
     this.registrationDate = registrationDate ?? Date.now();
     this.preferredStudyDurationMin = preferredStudyDurationMin;
@@ -243,6 +245,7 @@ export class StudentProfile {
       examType: this.examType,
       examYear: this.examYear,
       targetUniversity: this.targetUniversity,
+      dailyQuestionGoal: this.dailyQuestionGoal,
       targetUTMEScore: this.targetUTMEScore,
       registrationDate: this.registrationDate,
       preferredStudyDurationMin: this.preferredStudyDurationMin,

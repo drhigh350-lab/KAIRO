@@ -51,6 +51,7 @@ export class SyncManager {
     const toSync = [...this.pendingSync];
     const pendingAttempts = toSync.filter(i => i.type === 'attempt').map(i => i.data);
     const pendingSessions = toSync.filter(i => i.type === 'session').map(i => i.data);
+    const pendingCbtResults = toSync.filter(i => i.type === 'cbt_result').map(i => i.data);
     this.pendingSync = [];
 
     try {
@@ -61,6 +62,7 @@ export class SyncManager {
         conceptNodes: Array.from(this.engine.graph.nodes.values()),
         pendingAttempts,
         pendingSessions,
+        pendingCbtResults,
         since: this.engine.profile.lastSessionAt
       });
 

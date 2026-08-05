@@ -292,6 +292,27 @@ export class CBTExamMode {
       }
     });
 
+    // kairo.cbt_results holds the full per-question/per-subject breakdown —
+    // real RLS policies for it have existed since the schema was created,
+    // but nothing ever wrote to it, so a student had no exam log or
+    // performance history at all once they left the summary screen.
+    this.engine.sync.queue({
+      type: 'cbt_result',
+      data: {
+        id: `cbt_${this.examData.startTime}`,
+        subjects: this.config.subjects,
+        questionResults: results.questionResults,
+        bySubject: results.bySubject,
+        timeAnalysis: results.timeAnalysis,
+        totalQuestions: results.totalQuestions,
+        score: results.score,
+        maxScore: results.maxScore,
+        percentage: results.percentage,
+        startedAt: this.examData.startTime,
+        completedAt: this.examData.endTime
+      }
+    });
+
     return results;
   }
 
