@@ -117,8 +117,12 @@ export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
       const text = await onAction(a);
       if (text) setResult(text);
       else setError("Kai couldn't get to that just now — try again.");
-    } catch {
-      setError("Kai couldn't get to that just now — try again.");
+    } catch (err) {
+      // Temporarily surfaces the real failure reason (from
+      // generateKaiTextWithDiagnostics) instead of a generic message —
+      // needed while tracking down why some calls never reach Supabase's
+      // own logs at all.
+      setError(err instanceof Error ? err.message : "Kai couldn't get to that just now — try again.");
     } finally {
       setLoading(false);
     }

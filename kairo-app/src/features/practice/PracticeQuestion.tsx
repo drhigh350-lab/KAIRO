@@ -5,7 +5,7 @@ import {
   InlineToast, Modal, OverflowMenu, MiniCalculator, type ConfidenceLevel,
 } from '../learning/shared';
 import type { PracticeQuestion as PracticeQuestionData } from './data';
-import { generateKaiText } from '../../lib/kaiAi';
+import { generateKaiTextWithDiagnostics } from '../../lib/kaiAi';
 
 export interface PracticeQuestionResult {
   correct: boolean;
@@ -58,9 +58,16 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   function toggleFlag() { setFlagged((f) => !f); flashToast(!flagged ? 'Flagged for review.' : 'Flag removed.'); }
   function sendFeedback() { flashToast('Feedback sent — thanks for helping Kai improve.'); }
 
-  /** KaiPanel's "Ask Kai for more" row (Explain again / Give another example / Simplify / Teach from scratch / Show formula / Show memory trick) — previously had no onAction handler at all, so tapping any of them did nothing. */
-  function handleKaiFollowupAction(action: string): Promise<string | null> {
-    return generateKaiText('explain_followup', {
+  /**
+   * KaiPanel's "Ask Kai for more" row (Explain again / Give another example
+   * / Simplify / Teach from scratch / Show formula / Show memory trick) —
+   * previously had no onAction handler at all, so tapping any of them did
+   * nothing. Uses the diagnostics variant and throws the real failure
+   * reason on error (KaiPanel surfaces it) — temporary, while tracking
+   * down why some calls to kai-generate never even reach Supabase's logs.
+   */
+  async function handleKaiFollowupAction(action: string): Promise<string | null> {
+    const result = await generateKaiTextWithDiagnostics('explain_followup', {
       action,
       subject: question.subject,
       topic: question.topic,
@@ -69,6 +76,8 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
       correctOption: String.fromCharCode(65 + question.correct),
       explanation: question.why,
     });
+    if (!result.text) throw new Error(result.errorDetail || "Kai couldn't get to that just now — try again.");
+    return result.text;
   }
 
   const isCorrect = selected === question.correct;
