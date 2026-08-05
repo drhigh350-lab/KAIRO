@@ -538,11 +538,39 @@ export const CBT_TOTAL_QUESTIONS = CBT_DEFAULT_SUBJECTS.reduce(
   0,
 );
 
-export async function startCbtExam(subjects: string[] = CBT_DEFAULT_SUBJECTS): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[] }> {
+/** Per-subject JAMB question count (60 for English, 40 for everything else) — the same ground truth CBTExamMode itself uses, exposed here so setup screens can preview real numbers before starting. */
+export function cbtQuestionCountFor(subject: string): number {
+  const counts = CBTExamMode.JAMB_QUESTION_COUNT as Record<string, number>;
+  return counts[subject] ?? counts.default;
+}
+
+/** Mirrors CBTExamMode.setup()'s own proportional-pacing formula (CBT Exam Mode Spec §4.3) so a Subject-Specific or Custom Mock's setup preview shows the same duration the exam itself will actually start with. */
+export function cbtProportionalTimeMin(totalQuestions: number): number {
+  return Math.max(1, Math.round((CBT_TOTAL_TIME_MIN * totalQuestions) / CBTExamMode.JAMB_FULL_COMBO_QUESTIONS));
+}
+
+export type CbtExamType = 'full' | 'subject' | 'custom';
+
+export interface StartCbtExamOptions {
+  subjects?: string[];
+  examType?: CbtExamType;
+  /** Custom Mock only — bounded, student-chosen per-subject question counts, distinct from the JAMB-fixed counts a Subject-Specific Mock uses. */
+  customQuestionCounts?: Record<string, number>;
+  /** Custom Mock only — bounded, student-chosen duration; omitted falls back to the same proportional pacing a Subject-Specific Mock gets. */
+  customTotalTimeMin?: number;
+}
+
+export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[] }> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
+  const subjects = options.subjects?.length ? options.subjects : CBT_DEFAULT_SUBJECTS;
   await ensureContentLoaded(subjects);
-  const setup = kairo.cbt.setup({ subjects });
+  const setup = kairo.cbt.setup({
+    subjects,
+    examType: options.examType ?? 'full',
+    customQuestionCounts: options.customQuestionCounts ?? null,
+    customTotalTimeMin: options.customTotalTimeMin ?? null,
+  });
   const built = await kairo.cbt.buildPaper();
   kairo.cbt.start();
   // CBTExamMode.buildPaper() strips correctOption but its per-option

@@ -14,6 +14,12 @@ export class CBTExamMode {
   // short, but TECHMED's content catalog uses its full JAMB name).
   static JAMB_QUESTION_COUNT = { 'Use of English': 60, default: 40 };
   static JAMB_TOTAL_TIME_MIN = 120;
+  // The real JAMB UTME combination is always 1 compulsory + 3 electives —
+  // 60 + 40*3 = 180 — regardless of which specific subjects fill the
+  // elective slots. Used as the reference ratio for Subject-Specific Mock's
+  // "proportional share of the full exam" pacing (CBT Exam Mode Spec §4.3),
+  // not as a count of any one student's actual combination.
+  static JAMB_FULL_COMBO_QUESTIONS = 180;
 
   constructor(kairoEngine) {
     this.engine = kairoEngine;
@@ -27,26 +33,58 @@ export class CBTExamMode {
   }
 
   _questionCountFor(subject) {
+    if (this.config.customQuestionCounts?.[subject] != null) return this.config.customQuestionCounts[subject];
     return CBTExamMode.JAMB_QUESTION_COUNT[subject] ?? CBTExamMode.JAMB_QUESTION_COUNT.default;
   }
 
   /**
    * Configure a mock exam.
+   *
+   * examType distinguishes the three setup shapes CBT Exam Mode Spec §4.3
+   * defines that this engine can honestly serve today from real seeded
+   * content — 'full' (the complete JAMB combination, fixed 2-hour sitting),
+   * 'subject' (one subject at its own proportional share of the full
+   * exam's pacing), and 'custom' (student-set scope and bounded
+   * question-count/duration presets). Past Question Simulation and
+   * Official TECHMED Mock Events are separate, not-yet-built content
+   * pipelines (tagged past papers, admin-scheduled events) — out of scope
+   * here.
    */
   setup({ subjects = ['Use of English', 'Biology', 'Chemistry', 'Physics'],
-          difficultyMix = 'mixed' }) {
+          difficultyMix = 'mixed',
+          examType = 'full',
+          customQuestionCounts = null,
+          customTotalTimeMin = null }) {
+    this.config = { subjects, difficultyMix, examType, customQuestionCounts };
+    this.state = 'setup';
+
+    const totalQuestions = customQuestionCounts
+      ? Object.values(customQuestionCounts).reduce((sum, n) => sum + n, 0)
+      : subjects.reduce((sum, s) => sum + this._questionCountFor(s), 0);
+
     // JAMB's UTME CBT is a fixed 2-hour sitting regardless of subject count
     // — it was previously computed as subjects.length * 26 (104 min for the
     // standard 4-subject combination), which doesn't match the real exam
     // and doesn't match this class's own JAMB_TOTAL_TIME_MIN constant.
-    const totalTimeMin = CBTExamMode.JAMB_TOTAL_TIME_MIN;
-    this.config = { subjects, totalTimeMin, difficultyMix };
-    this.state = 'setup';
-
-    const totalQuestions = subjects.reduce((sum, s) => sum + this._questionCountFor(s), 0);
+    // That fixed duration is exam-accurate only for the *full* combination;
+    // a Subject-Specific or Custom Mock covering fewer questions gets that
+    // same share of the full exam's pacing instead (Section 4.3), not the
+    // full 120 minutes for a fraction of the paper.
+    let totalTimeMin;
+    if (examType === 'full') {
+      totalTimeMin = CBTExamMode.JAMB_TOTAL_TIME_MIN;
+    } else if (customTotalTimeMin) {
+      totalTimeMin = customTotalTimeMin;
+    } else {
+      totalTimeMin = Math.max(1, Math.round(
+        (CBTExamMode.JAMB_TOTAL_TIME_MIN * totalQuestions) / CBTExamMode.JAMB_FULL_COMBO_QUESTIONS
+      ));
+    }
+    this.config.totalTimeMin = totalTimeMin;
 
     return {
       mode: 'cbt_mock',
+      examType,
       subjects,
       totalQuestions,
       totalTimeMin

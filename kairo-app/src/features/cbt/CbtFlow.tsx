@@ -6,7 +6,7 @@ import { CbtExam } from './CbtExam';
 import { CbtSummary, type CbtResults } from './CbtSummary';
 import { CbtReview } from './CbtReview';
 import { CbtHistory } from './CbtHistory';
-import { startCbtExam, finishCbtExam, type CbtPaperQuestion } from '../../lib/kairoEngine';
+import { startCbtExam, finishCbtExam, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
 
@@ -19,13 +19,33 @@ export function CbtFlow() {
   const [results, setResults] = useState<CbtResults | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
 
+  const [examType, setExamType] = useState<CbtExamType>('full');
+  const [subject, setSubject] = useState(CBT_DEFAULT_SUBJECTS[1]);
+  const [customSubjects, setCustomSubjects] = useState<string[]>(CBT_DEFAULT_SUBJECTS);
+  const [customTotalPreset, setCustomTotalPreset] = useState(80);
+
+  function toggleCustomSubject(s: string) {
+    setCustomSubjects((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  }
+
   const toHome = () => navigate('/home');
 
   async function handleBegin() {
     setStartError(null);
     setScreen('starting');
     try {
-      const started = await startCbtExam();
+      let started;
+      if (examType === 'subject') {
+        started = await startCbtExam({ examType: 'subject', subjects: [subject] });
+      } else if (examType === 'custom') {
+        const per = Math.floor(customTotalPreset / customSubjects.length);
+        const remainder = customTotalPreset - per * customSubjects.length;
+        const customQuestionCounts: Record<string, number> = {};
+        customSubjects.forEach((s, i) => { customQuestionCounts[s] = per + (i < remainder ? 1 : 0); });
+        started = await startCbtExam({ examType: 'custom', subjects: customSubjects, customQuestionCounts });
+      } else {
+        started = await startCbtExam({ examType: 'full' });
+      }
       if (started.paper.length === 0) {
         setStartError("Kairo couldn't find questions for this combination yet.");
         setScreen('setup');
@@ -55,7 +75,21 @@ export function CbtFlow() {
         </div>
       );
     }
-    return <ExamSetup onBack={toHome} onContinue={() => setScreen('instructions')} onViewHistory={() => setScreen('history')} />;
+    return (
+      <ExamSetup
+        onBack={toHome}
+        onContinue={() => setScreen('instructions')}
+        onViewHistory={() => setScreen('history')}
+        examType={examType}
+        onExamTypeChange={setExamType}
+        subject={subject}
+        onSubjectChange={setSubject}
+        customSubjects={customSubjects}
+        onToggleCustomSubject={toggleCustomSubject}
+        customTotalPreset={customTotalPreset}
+        onCustomTotalPresetChange={setCustomTotalPreset}
+      />
+    );
   }
   if (screen === 'history') {
     return <CbtHistory onBack={() => setScreen('setup')} />;
