@@ -38,8 +38,19 @@ export async function generateKaiTextWithDiagnostics(kind: KaiGenerateKind, cont
     if (error) {
       const name = error instanceof Error ? error.name : typeof error;
       const message = error instanceof Error ? error.message : String(error);
-      const status = (error as { context?: { status?: number } })?.context?.status;
-      return { text: null, errorDetail: `${name}${status ? ` (${status})` : ''}: ${message}` };
+      const context = (error as { context?: Response })?.context;
+      const status = context?.status;
+      // FunctionsHttpError's own .message is just the SDK's generic "non-2xx
+      // status code" text — the actual reason kai-generate returned is in
+      // the response body it already sent back, so read that directly.
+      let bodyDetail = '';
+      try {
+        const bodyJson = await context?.clone().json();
+        if (bodyJson?.error) bodyDetail = ` — ${bodyJson.error}`;
+      } catch {
+        // body wasn't JSON or already consumed — fall back to the generic message below
+      }
+      return { text: null, errorDetail: `${name}${status ? ` (${status})` : ''}: ${message}${bodyDetail}` };
     }
     const text = (data as { text?: string } | null)?.text;
     return text && text.trim() ? { text: text.trim() } : { text: null, errorDetail: 'Empty response from kai-generate' };
