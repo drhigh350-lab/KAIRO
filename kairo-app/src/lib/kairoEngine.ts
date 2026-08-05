@@ -123,14 +123,30 @@ export async function restoreSession(): Promise<boolean> {
     await kairo.connectSupabase(supabase, {});
     await kairo.sync.sync();
     return true;
-  } catch {
-    // The restored session didn't actually work (e.g. the account behind it
-    // no longer exists) — clear it so it doesn't linger and collide with a
-    // later sign-up/sign-in in the same browser.
-    await clearStaleSession(supabase);
+  } catch (err) {
+    // Only clear the session when the failure actually means the session
+    // is bad (e.g. the account behind it no longer exists — a genuine 401/
+    // 403 or JWT rejection from Supabase). A plain network failure
+    // reconnecting — very real on the mobile connections this app is
+    // actually tested on — says nothing about whether the session itself
+    // is still good, and signing out on every such blip turned "the
+    // network hiccuped for a moment" into "you're signed out, sign in
+    // again" on every single page load.
+    if (isAuthRejection(err)) {
+      await clearStaleSession(supabase);
+    }
     engine = null;
     return false;
   }
+}
+
+function isAuthRejection(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const obj = err as Record<string, unknown>;
+  const status = obj.status ?? obj.statusCode;
+  if (status === 401 || status === 403) return true;
+  const message = describeError(err).toLowerCase();
+  return message.includes('jwt') || message.includes('does not exist') || message.includes('not authenticated') || (message.includes('invalid') && message.includes('token'));
 }
 
 /**

@@ -53,6 +53,12 @@ export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps)
     setCurrent(i);
     questionStartedAt.current = Date.now();
   }
+  /** Real JAMB CBT lets a candidate jump straight to any subject, not just step through questions sequentially — landing on the first unanswered question there, or the first question if the whole subject is done. */
+  function jumpToSubject(subj: string) {
+    const firstUnanswered = paper.findIndex((qq, i) => qq.subject === subj && answers[i] === undefined);
+    const firstOfSubject = paper.findIndex((qq) => qq.subject === subj);
+    goTo(firstUnanswered !== -1 ? firstUnanswered : firstOfSubject);
+  }
 
   const mins = Math.floor(secondsLeft / 60), secs = secondsLeft % 60;
   const timeLow = secondsLeft <= 300;
@@ -73,6 +79,22 @@ export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps)
           <IconButton dark onClick={() => setShowCalc(true)}><CalcIcon /></IconButton>
           <IconButton dark onClick={() => setShowPalette(true)}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg></IconButton>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, padding: '0 18px 10px', overflowX: 'auto' }}>
+        {subjects.map((subj) => {
+          const isActive = subj === q.subject;
+          const subjTotal = paper.filter((qq) => qq.subject === subj).length;
+          const subjAnswered = paper.filter((qq, i) => qq.subject === subj && answers[i] !== undefined).length;
+          return (
+            <button type="button" key={subj} onClick={() => jumpToSubject(subj)} style={{
+              flexShrink: 0, padding: '8px 14px', borderRadius: 'var(--radius-pill)', minHeight: 'var(--touch-min)', fontFamily: 'inherit',
+              border: `1.5px solid ${isActive ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`,
+              background: isActive ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)',
+              color: isActive ? '#fff' : 'var(--dark-text-body)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+            }}>{subj} <span style={{ opacity: 0.75 }}>{subjAnswered}/{subjTotal}</span></button>
+          );
+        })}
       </div>
 
       <div style={{ padding: '4px 18px 18px', flex: 1 }}>
