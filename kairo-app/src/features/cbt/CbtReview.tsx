@@ -47,6 +47,9 @@ export function CbtReview({ paper, questionResults, onBack }: CbtReviewProps) {
                 })}
                 {!r.studentAnswer && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', fontStyle: 'italic' }}>Not answered</div>}
               </div>
+              {r.explanation && (
+                <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 12, lineHeight: 1.5, paddingTop: 10, borderTop: '1px solid var(--dark-border)' }}>{r.explanation}</div>
+              )}
             </Card>
           );
         })}

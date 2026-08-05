@@ -46,7 +46,12 @@ export class KaiBehavior {
   }
 
   _errorResponse(errorTag, context) {
-    const { conceptName } = context;
+    // conceptName lives on context.result (respondToAnswer's own doc
+    // comment above says so), not on context itself — destructuring it
+    // straight off context silently produced "undefined" in every one of
+    // these templates. Invisible until now because the frontend discarded
+    // kaiResponse entirely; visible the moment that was fixed.
+    const conceptName = context.result?.conceptName;
     const responses = {
       [ErrorTag.CONCEPTUAL_GAP]: {
         text: `Not quite — let's look at "${conceptName}" from a different angle. The first explanation didn't land, so here's another way to think about it.`,
@@ -90,7 +95,7 @@ export class KaiBehavior {
   }
 
   _correctResponse(state, macroState, context) {
-    const { conceptName } = context;
+    const conceptName = context.result?.conceptName;
 
     // Vary by macro-state
     if (macroState === MacroState.ORIENTING) {
@@ -131,7 +136,7 @@ export class KaiBehavior {
   }
 
   _milestoneMessage(context) {
-    const { conceptName } = context;
+    const conceptName = context.result?.conceptName;
     return {
       text: `"${conceptName}" — you remembered this after time had passed. That's not luck. That's learning.`,
       tone: 'earned_celebration',

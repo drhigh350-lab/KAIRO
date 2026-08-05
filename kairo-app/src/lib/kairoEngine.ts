@@ -114,31 +114,46 @@ export async function restoreSession(): Promise<boolean> {
     return false;
   }
 
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) return false;
+  // A single flaky request on a weak mobile connection used to end the
+  // whole restore attempt permanently — one dropped packet during either
+  // getSession()'s own token-refresh round trip or connectSupabase()'s
+  // profile fetch, and the student looked "signed out" for that entire
+  // page load, with the only recovery being to sign in again by hand.
+  // Retries the whole sequence a few times with backoff before giving up,
+  // but never retries a genuine auth rejection (an account that's really
+  // gone isn't going to start existing on the next attempt) and never
+  // retries simply having no session at all (nothing to restore, not a
+  // failure).
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) return false;
 
-  const kairo = createEngine('');
-  await kairo.init();
-  try {
-    // No email/password — connectSupabase() reuses the session getSession() already restored.
-    await kairo.connectSupabase(supabase, {});
-    await kairo.sync.sync();
-    return true;
-  } catch (err) {
-    // Only clear the session when the failure actually means the session
-    // is bad (e.g. the account behind it no longer exists — a genuine 401/
-    // 403 or JWT rejection from Supabase). A plain network failure
-    // reconnecting — very real on the mobile connections this app is
-    // actually tested on — says nothing about whether the session itself
-    // is still good, and signing out on every such blip turned "the
-    // network hiccuped for a moment" into "you're signed out, sign in
-    // again" on every single page load.
-    if (isAuthRejection(err)) {
-      await clearStaleSession(supabase);
+      const kairo = createEngine('');
+      await kairo.init();
+      // No email/password — connectSupabase() reuses the session getSession() already restored.
+      await kairo.connectSupabase(supabase, {});
+      // The profile is already hydrated at this point — a sync hiccup
+      // right after a successful reconnect shouldn't undo it, so this
+      // runs in the background rather than gating the restore's result.
+      kairo.sync.sync().catch(() => {});
+      return true;
+    } catch (err) {
+      if (isAuthRejection(err)) {
+        await clearStaleSession(supabase);
+        engine = null;
+        return false;
+      }
+      if (attempt === maxAttempts) {
+        engine = null;
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, attempt * 800));
     }
-    engine = null;
-    return false;
   }
+  engine = null;
+  return false;
 }
 
 function isAuthRejection(err: unknown): boolean {
@@ -651,6 +666,7 @@ export interface CbtQuestionResult {
   studentAnswer: string | null;
   correctOption: string;
   isCorrect: boolean;
+  explanation?: string | null;
 }
 
 export function submitCbtAnswer(globalIndex: number, selectedOption: string, timeSpentMs: number): void {

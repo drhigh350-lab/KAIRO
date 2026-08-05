@@ -380,6 +380,13 @@ export class CBTExamMode {
         conceptId: q.conceptId,
         studentAnswer: q.studentAnswer,
         correctOption: q.correctOption,
+        // q is the full flattened question (buildPaper() spreads it in) —
+        // it already carries the real explanation, just never propagated
+        // this far. Withheld from the paper/question shown *during* the
+        // exam (correct, that's Section 2.3/5.2/5.4's rule) — but this
+        // runs only after finish(), when the review is exactly where the
+        // explanation belongs (Section 6.5).
+        explanation: q.explanation || null,
         isCorrect,
         timeSpentMs: q.timeSpentMs,
         difficulty: q.difficulty || 2,
