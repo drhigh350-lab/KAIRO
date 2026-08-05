@@ -2,6 +2,15 @@ import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { FlowHeader, SkipLink } from './shared';
 import { courses, allSubjects, type Course, type OnboardingData } from './data';
+import { hasSeededContent } from '../../lib/kairoEngine';
+
+function ComingSoonTag() {
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--dark-text-muted)', background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-pill)', padding: '3px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+      Coming soon
+    </span>
+  );
+}
 
 export interface AboutYouProps {
   step: number;
@@ -73,6 +82,7 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
             {filtered.map((c) => {
               const cs = courseStyle[c.name] || defaultCourseStyle;
               const active = data.course?.name === c.name;
+              const readyCount = c.subjects.filter(hasSeededContent).length;
               return (
                 <button type="button" key={c.name} onClick={() => pickCourse(c)} style={{
                   display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 16px', fontSize: 14, fontWeight: 600, color: 'var(--dark-text-heading)', cursor: 'pointer',
@@ -81,8 +91,15 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
                   <span style={{ width: 30, height: 30, borderRadius: '50%', background: `${cs.color}26`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={cs.color} strokeWidth="2"><path d={cs.icon} /></svg>
                   </span>
-                  {c.name}
-                  {active && <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ marginLeft: 'auto' }}><circle cx="12" cy="12" r="10" /><path d="M8 12l3 3 5-5" fill="none" stroke="#fff" strokeWidth="2" /></svg>}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    {c.name}
+                    {readyCount < c.subjects.length && (
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dark-text-muted)', marginTop: 2 }}>
+                        {readyCount} of {c.subjects.length} subjects ready now
+                      </div>
+                    )}
+                  </span>
+                  {active && <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ marginLeft: 'auto', flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M8 12l3 3 5-5" fill="none" stroke="#fff" strokeWidth="2" /></svg>}
                 </button>
               );
             })}
@@ -109,6 +126,7 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--dark-success)" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z" /></svg>
                 </span>
                 <span style={{ flex: 1 }}>{s}</span>
+                {!hasSeededContent(s) && <ComingSoonTag />}
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--dark-success)"><circle cx="12" cy="12" r="10" /><path d="M8 12l3 3 5-5" fill="none" stroke="var(--dark-bg-canvas)" strokeWidth="2" /></svg>
               </button>
             ))}
@@ -123,7 +141,8 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
                 width: '100%', padding: '12px 16px', fontSize: 14, color: 'var(--dark-text-heading)', cursor: 'pointer', minHeight: 'var(--touch-min)',
                 border: 'none', borderBottom: '1px solid var(--dark-border)', display: 'flex', justifyContent: 'space-between', background: 'none', fontFamily: 'inherit',
               }}>
-                {s} <span style={{ color: 'var(--dark-accent-blue)', fontWeight: 600 }}>+ Add</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{s} {!hasSeededContent(s) && <ComingSoonTag />}</span>
+                <span style={{ color: 'var(--dark-accent-blue)', fontWeight: 600 }}>+ Add</span>
               </button>
             ))}
             {subjectMatches.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--dark-text-muted)' }}>No matching subject.</div>}

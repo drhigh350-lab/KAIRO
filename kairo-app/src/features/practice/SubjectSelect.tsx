@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '../../components';
 import { ScreenHeader, SearchIcon } from '../learning/shared';
 import { subjects, type Subject } from './data';
+import { hasSeededContent } from '../../lib/kairoEngine';
 
 export interface SubjectSelectProps {
   onBack?: () => void;
@@ -18,15 +19,24 @@ interface RowProps {
 }
 
 function Row({ s, active, favourite, onClick, onToggleFav }: RowProps) {
+  const ready = hasSeededContent(s.label);
   return (
     <div style={{
       padding: '2px 4px 2px 16px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-bg-elevated)' : 'var(--dark-bg-surface)', marginBottom: 8,
+      opacity: ready ? 1 : 0.55,
     }}>
-      <button type="button" onClick={onClick} aria-pressed={active} style={{
-        flex: 1, textAlign: 'left', fontSize: 15, fontWeight: 600, color: 'var(--dark-text-heading)', background: 'none', border: 'none',
-        padding: '12px 0', minHeight: 'var(--touch-min)', fontFamily: 'inherit', cursor: 'pointer',
-      }}>{s.label}</button>
+      <button type="button" onClick={onClick} disabled={!ready} aria-pressed={active} style={{
+        flex: 1, textAlign: 'left', fontSize: 15, fontWeight: 600, color: 'var(--dark-text-heading)', background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '12px 0', minHeight: 'var(--touch-min)', fontFamily: 'inherit', cursor: ready ? 'pointer' : 'default',
+      }}>
+        {s.label}
+        {!ready && (
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--dark-text-muted)', background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-pill)', padding: '3px 8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            Coming soon
+          </span>
+        )}
+      </button>
       <button type="button" onClick={onToggleFav} aria-label={favourite ? `Remove ${s.label} from favourites` : `Add ${s.label} to favourites`} aria-pressed={favourite} style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'var(--touch-min)', height: 'var(--touch-min)',
         background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
