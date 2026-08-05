@@ -7,8 +7,25 @@ import { CbtSummary, type CbtResults } from './CbtSummary';
 import { CbtReview } from './CbtReview';
 import { CbtHistory } from './CbtHistory';
 import { startCbtExam, finishCbtExam, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
+import { useBackIntercept } from '../../lib/useBackIntercept';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
+
+// CBT's screens all share one route (/cbt/*), so the physical back button
+// only ever sees one browser history entry for the whole flow — without
+// this, pressing it (instead of a screen's own back arrow) skips straight
+// past setup/instructions/history/review to wherever /cbt was entered from.
+// 'exam' intentionally has nowhere to go (Section 5.11/2.3 — no casual way
+// out of a live attempt); 'starting' is a transient load, also swallowed.
+const SCREEN_DEPTH: Record<Screen, number> = {
+  setup: 0,
+  history: 1,
+  instructions: 1,
+  starting: 1,
+  exam: 1,
+  summary: 1,
+  review: 2,
+};
 
 /** Controller for CBT Exam Mode: setup -> instructions -> exam -> summary -> review, driven by the real kairo.cbt (CBTExamMode) instance. */
 export function CbtFlow() {
@@ -29,6 +46,13 @@ export function CbtFlow() {
   }
 
   const toHome = () => navigate('/home');
+
+  useBackIntercept(SCREEN_DEPTH[screen], () => {
+    if (screen === 'history' || screen === 'instructions') { setScreen('setup'); return; }
+    if (screen === 'review') { setScreen('summary'); return; }
+    if (screen === 'summary') { toHome(); return; }
+    // 'exam' / 'starting': swallowed, no navigation — protects a live attempt from an accidental exit.
+  });
 
   async function handleBegin() {
     setStartError(null);

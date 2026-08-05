@@ -11,6 +11,7 @@ import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
+import { useBackIntercept } from '../../lib/useBackIntercept';
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
@@ -151,6 +152,12 @@ export function PracticeFlow() {
   function toHome() {
     navigate('/home');
   }
+
+  // Makes the phone/browser back button step through Practice's own screens
+  // one at a time (subject -> hub -> question -> ...), the same as tapping
+  // the in-screen back arrow (which already calls back() above) — without
+  // this, the physical back button skips the whole flow in one tap.
+  useBackIntercept(history.length, back);
 
   /** Fires immediately when the answer is graded (before the student advances) — records the real attempt right away so "Understand this before moving on" has a real errorTag to hand Learn. */
   function handleAnswered({ correct, selectedIndex, responseTimeMs }: { correct: boolean; selectedIndex: number | null; responseTimeMs: number }) {
