@@ -24,6 +24,8 @@ export interface PracticeQuestionProps {
   onAnswered?: (result: { correct: boolean; selectedIndex: number | null; responseTimeMs: number }) => void;
   /** Only rendered when the answer was wrong and a caller passes this — routes to the real Learn Module lesson for the concept just missed. */
   onLearnThis?: () => void;
+  /** Kai's real, context-aware response to this specific attempt (from submitAnswer()'s kaiResponse, optionally upgraded by generateKaiText()) — falls back to question.kai if not provided. */
+  kaiNote?: string | null;
 }
 
 export function CloseIconSmall() {
@@ -33,7 +35,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
@@ -133,7 +135,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
               </button>
             )}
 
-            <KaiPanel note={question.kai} tone="dark" />
+            <KaiPanel note={kaiNote ?? question.kai} tone="dark" />
 
             <ConfidenceRating value={confidence} onChange={setConfidence} tone="dark" />
           </div>

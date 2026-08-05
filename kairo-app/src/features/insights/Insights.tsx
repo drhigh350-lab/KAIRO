@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Card, ProgressBar, ScoreBadge } from '../../components';
 import { getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped } from '../../lib/kairoEngine';
+import { generateKaiText } from '../../lib/kaiAi';
 
 const trendCopy: Record<string, string> = {
   rising: "Your score moved up mostly because you're getting harder questions right more often, not just more questions overall.",
@@ -16,6 +18,48 @@ export function Insights() {
   const subjectHealth = insights?.strengths ?? [];
   const reinforcedNames: string[] = weekly?.reinforced?.map((c: { name: string }) => c.name) ?? [];
   const hasMonthlyStory = !!monthly && (monthly.reinforcedCount > 0 || monthly.biggestTurnaround || monthly.totalSessions > 0);
+
+  // Both reflections already have a real, template-generated Kai note
+  // (weekly.kaiNote) or no note at all (monthly has none yet) — this
+  // quietly upgrades to a freshly-generated version in Kai's voice once
+  // Gemini responds, using only the same already-computed facts. Nothing
+  // on screen ever depends on this call succeeding.
+  const [weeklyKaiNote, setWeeklyKaiNote] = useState<string | null>(weekly?.kaiNote ?? null);
+  const [monthlyKaiNote, setMonthlyKaiNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    setWeeklyKaiNote(weekly?.kaiNote ?? null);
+    if (!weekly || !weekly.sessionCount) return;
+    let cancelled = false;
+    generateKaiText('weekly_reflection', {
+      reinforced: (weekly.reinforced ?? []).map((c: { name: string; subject?: string }) => ({ name: c.name, subject: c.subject })),
+      fading: (weekly.fading ?? []).map((c: { name: string; subject?: string }) => ({ name: c.name, subject: c.subject })),
+      patternObservation: weekly.patternObservation ?? null,
+      sessionCount: weekly.sessionCount,
+    }).then((text) => {
+      if (!cancelled && text) setWeeklyKaiNote(text);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekly?.timestamp]);
+
+  useEffect(() => {
+    setMonthlyKaiNote(null);
+    if (!hasMonthlyStory) return;
+    let cancelled = false;
+    generateKaiText('monthly_wrapped', {
+      totalSessions: monthly.totalSessions,
+      totalQuestions: monthly.totalQuestions,
+      reinforcedCount: monthly.reinforcedCount,
+      reinforcedNames: monthly.reinforcedNames ?? [],
+      biggestTurnaround: monthly.biggestTurnaround ?? null,
+      scoreTrend: monthly.scoreTrend ?? null,
+    }).then((text) => {
+      if (!cancelled && text) setMonthlyKaiNote(text);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMonthlyStory, monthly?.timestamp]);
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
@@ -52,8 +96,8 @@ export function Insights() {
         {reinforcedNames.length > 0 && (
           <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 12 }}>Including {reinforcedNames.slice(0, 3).join(', ')} — that's the hardest thing to fake.</div>
         )}
-        {weekly?.kaiNote && (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-body)', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--dark-border)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{weekly.kaiNote}</div>
+        {weeklyKaiNote && (
+          <div style={{ fontSize: 13, color: 'var(--dark-text-body)', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--dark-border)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{weeklyKaiNote}</div>
         )}
       </Card>
 
@@ -90,6 +134,9 @@ export function Insights() {
             <div style={{ fontSize: 13, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
               Biggest turnaround this month: <strong>{monthly.biggestTurnaround.name}</strong> ({monthly.biggestTurnaround.subject}).
             </div>
+          )}
+          {monthlyKaiNote && (
+            <div style={{ fontSize: 13, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.25)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{monthlyKaiNote}</div>
           )}
         </Card>
       )}

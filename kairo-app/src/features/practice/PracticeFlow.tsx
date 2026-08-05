@@ -12,6 +12,7 @@ import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
+import { generateKaiText } from '../../lib/kaiAi';
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
@@ -82,7 +83,10 @@ export function PracticeFlow() {
   const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
   const [lastErrorTag, setLastErrorTag] = useState<string | null>(null);
   const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
+  const [kaiNote, setKaiNote] = useState<string | null>(null);
   const startedSuggested = useRef(false);
+  const qIndexRef = useRef(qIndex);
+  qIndexRef.current = qIndex;
 
   /** Recommended-by-Kairo session (Practice Module §2.2) — zero-input, real DDE-style queue. Shared by the initial-mount auto-start (arriving via entry:'suggested') and Practice Home's own "Start Session" tap. */
   function startSuggested() {
@@ -165,7 +169,13 @@ export function PracticeFlow() {
     const kairo = getEngine();
     const eq = engineQuestions[qIndex];
     if (!kairo || !eq) return;
-    const { attempt } = kairo.submitAnswer({
+    // submitAnswer()'s full return also carries kaiResponse (KaiBehavior's
+    // real, context-aware reaction — milestone/error-type/correct-state,
+    // never a generic string) and conceptState — both were previously
+    // discarded here, which is why the Kai panel always showed a flat
+    // duplicate of the explanation instead of Kai's actual computed
+    // response to this specific attempt.
+    const { attempt, kaiResponse, conceptState } = kairo.submitAnswer({
       conceptId: eq.conceptId ?? null,
       correct,
       responseTimeMs,
@@ -176,6 +186,25 @@ export function PracticeFlow() {
     });
     setLastErrorTag(attempt?.errorTag ?? null);
     setLastResponseTimeMs(responseTimeMs);
+    setKaiNote(kaiResponse?.text ?? null);
+
+    // Progressive enhancement: show the real template text instantly above,
+    // then quietly upgrade to a freshly-generated version in Kai's voice if
+    // Gemini responds before the student moves on. Never invents anything
+    // beyond what KaiBehavior itself already computed for this attempt.
+    const askedAtQIndex = qIndex;
+    generateKaiText('coaching_note', {
+      correct,
+      subject: eq.subject,
+      topic: eq.topic,
+      errorTag: attempt?.errorTag ?? null,
+      conceptState: conceptState ?? null,
+      macroState: kairo.profile?.macroState ?? null,
+      isMilestone: !!kaiResponse?.triggerWisdomSpark,
+      responseTimeMs,
+    }).then((aiText) => {
+      if (aiText && qIndexRef.current === askedAtQIndex) setKaiNote(aiText);
+    });
   }
 
   function handleLearnThis() {
@@ -205,6 +234,7 @@ export function PracticeFlow() {
     }];
     setResults(newResults);
     setLastErrorTag(null);
+    setKaiNote(null);
 
     if (!engineQuestions) return;
     if (qIndex + 1 >= engineQuestions.length) {
@@ -377,6 +407,7 @@ export function PracticeFlow() {
         onExit={toHome}
         onAnswered={handleAnswered}
         onLearnThis={engineQuestions[qIndex].conceptId ? handleLearnThis : undefined}
+        kaiNote={kaiNote}
       />
     );
   }
