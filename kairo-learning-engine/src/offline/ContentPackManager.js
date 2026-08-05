@@ -103,7 +103,18 @@ export class ContentPackManager {
     if (subject) pool = pool.filter(q => q.subject === subject);
     if (topic) pool = pool.filter(q => q.topic === topic);
 
-    // Shuffle and return
-    return pool.sort(() => Math.random() - 0.5).slice(0, count);
+    // `pool.sort(() => Math.random() - 0.5)` is a well-known broken shuffle —
+    // sort() assumes a consistent comparator, and most engines' sort
+    // algorithms (merge/timsort for larger arrays) produce systematically
+    // biased or barely-permuted results when fed a random one instead of a
+    // real shuffle. A real CBT paper (60-200 candidates per subject here)
+    // is exactly the size where that bias is most visible as "questions
+    // don't shuffle / keep repeating" across attempts.
+    const shuffled = pool.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled.slice(0, count);
   }
 }

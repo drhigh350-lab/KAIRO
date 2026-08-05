@@ -4,7 +4,7 @@ import { MissionCard, Card, KairoWordmark } from '../../components';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress } from '../../lib/kairoEngine';
 
 interface HomeDashboardState {
   name?: string;
@@ -44,6 +44,8 @@ export function HomeDashboard() {
   const firstName = (data.name || '').split(' ')[0] || 'there';
   const subjects = data.subjects ?? [];
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
+  const todayProgress = getTodayProgress();
+  const hasTodayProgress = todayProgress.questionsToday > 0;
 
   const [liveChallenge, setLiveChallenge] = useState<Challenge | null>(null);
   useEffect(() => {
@@ -94,13 +96,15 @@ export function HomeDashboard() {
             <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Today's Progress</span>
           </div>
           <div style={{ width: 56, height: 56, borderRadius: '50%', border: '5px solid var(--dark-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>0%</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{todayProgress.accuracyPct != null ? `${todayProgress.accuracyPct}%` : '—'}</span>
           </div>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>Your progress will appear here after you complete a practice session.</div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>
+          {hasTodayProgress ? "Today's accuracy across everything you've completed so far." : 'Your progress will appear here after you complete a practice session.'}
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--dark-border)' }}>
-          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>—</span></div>
-          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Study Time<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>—</span></div>
+          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? todayProgress.questionsToday : '—'}</span></div>
+          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Study Time<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? `${todayProgress.studyMinutesToday}m` : '—'}</span></div>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Daily Goal<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>—/—</span></div>
         </div>
       </div>

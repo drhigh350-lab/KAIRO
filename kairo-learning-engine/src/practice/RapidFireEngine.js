@@ -118,7 +118,21 @@ export class RapidFireEngine {
     // (its own queue/streak logic, per this module's own design), so unlike
     // standard Practice's endSession(), nothing else queues a kairo.sessions
     // row for it — do that here, matching the 'rapid_fire' value already
-    // reserved in the mode CHECK constraint.
+    // reserved in the mode CHECK constraint. Also record it onto the local
+    // profile directly — endSession() is the only other place that calls
+    // recordSession(), so without this a Rapid Fire session never counted
+    // toward totalQuestionsAnswered/totalCorrect/lastSessionAt (locally or,
+    // since those only sync as part of a profile push, remotely either),
+    // and never showed up in "today's" activity.
+    this.engine.profile.recordSession({
+      sessionId: `rapidfire_${this.sessionData.startTime}`,
+      mode: 'rapid_fire',
+      startedAt: this.sessionData.startTime,
+      completedAt: this.sessionData.endTime,
+      questionsAnswered: this.sessionData.answers.length,
+      correctCount: correct
+    });
+
     this.engine.sync.queue({
       type: 'session',
       data: {

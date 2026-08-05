@@ -1,4 +1,4 @@
-import { KairoEngine, SupabaseSyncAdapter } from 'kairo-learning-engine';
+import { KairoEngine, SupabaseSyncAdapter, CBTExamMode } from 'kairo-learning-engine';
 import { getSupabase } from './supabaseClient';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -180,6 +180,19 @@ export async function connectGoogleAccount(): Promise<GoogleSignInResult> {
 /** Signs the current student out of Supabase and drops the in-memory engine, so the app returns to a guest state. */
 export async function signOutAndDisconnect(): Promise<void> {
   try {
+    // A completed session already syncs itself (KairoEngine.endSession()),
+    // but that runs in the background right after the summary screen
+    // navigates away — a student who signs out immediately afterward could
+    // otherwise race it: signOut() invalidates the auth token an in-flight
+    // sync request hasn't sent yet, and the whole session is lost with
+    // nothing to retry it once `engine` is dropped below. One last flush
+    // here closes that window; failures are swallowed since sign-out must
+    // still proceed either way.
+    if (engine) await engine.sync.sync();
+  } catch {
+    // best-effort
+  }
+  try {
     const supabase = getSupabase();
     await supabase.auth.signOut();
   } catch {
@@ -344,6 +357,46 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
   return { questions };
 }
 
+export interface TodayProgress {
+  questionsToday: number;
+  studyMinutesToday: number;
+  /** null when nothing's been answered today yet — there's no real accuracy to show. */
+  accuracyPct: number | null;
+}
+
+/**
+ * Real "today" slice of this session's completed sessions (Practice/CBT/
+ * Rapid Fire all queue through KairoEngine.endSession() or CBTExamMode's
+ * own kairo.sessions push, both of which land in profile.sessions) — Home's
+ * "Today's Progress" card used to be entirely hardcoded (0%, em-dashes)
+ * regardless of what the student actually did. There's no "daily goal"
+ * concept anywhere in the schema to compute a real percentage against, so
+ * this deliberately doesn't invent one — the card shows real counts and
+ * real accuracy instead.
+ *
+ * profile.sessions only holds what this engine instance has completed
+ * since connecting (a page reload has no way to pull historical
+ * kairo.sessions rows back down yet), so a same-day session from before a
+ * reload won't be reflected here — honestly partial, never fabricated.
+ */
+export function getTodayProgress(): TodayProgress {
+  const kairo = getEngine();
+  const sessions: Engine[] = kairo?.profile?.sessions || [];
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todays = sessions.filter((s) => (s.completedAt || 0) >= startOfToday.getTime());
+
+  const questionsToday = todays.reduce((sum, s) => sum + (s.questionsAnswered || 0), 0);
+  const correctToday = todays.reduce((sum, s) => sum + (s.correctCount || 0), 0);
+  const studyMs = todays.reduce((sum, s) => sum + Math.max(0, (s.completedAt || 0) - (s.startedAt || 0)), 0);
+
+  return {
+    questionsToday,
+    studyMinutesToday: Math.round(studyMs / 60000),
+    accuracyPct: questionsToday > 0 ? Math.round((correctToday / questionsToday) * 100) : null,
+  };
+}
+
 /** Real profile + stats for the Profile screen. null when nothing is signed in yet. */
 export function getProfileSummary(): Engine | null {
   const kairo = getEngine();
@@ -353,6 +406,7 @@ export function getProfileSummary(): Engine | null {
 export interface ProfileEditDetails {
   name: string;
   targetCourse: string | null;
+  targetUniversity: string | null;
   targetSubjects: string[];
   /** ISO date string (e.g. "2027-05-15"), or null to clear it. */
   examDate: string | null;
@@ -369,6 +423,7 @@ export async function updateProfileDetails(details: ProfileEditDetails): Promise
   if (!kairo) throw new Error('No active engine — sign in first.');
   kairo.profile.name = details.name;
   kairo.profile.targetCourse = details.targetCourse;
+  kairo.profile.targetUniversity = details.targetUniversity;
   kairo.profile.targetSubjects = details.targetSubjects;
   kairo.profile.examDate = details.examDate ? new Date(details.examDate).getTime() : null;
   await kairo.sync.sync();
@@ -426,6 +481,19 @@ export interface CbtPaperQuestion {
 
 /** The one real, fully-seeded JAMB combination available today (Science/Medicine track). */
 export const CBT_DEFAULT_SUBJECTS = ['Use of English', 'Biology', 'Chemistry', 'Physics'];
+
+/**
+ * Real JAMB CBT timing/question-count, sourced from CBTExamMode's own
+ * constants instead of being recomputed here separately — the exam setup
+ * preview screen used to do its own `subjects.length * 26` arithmetic
+ * independent of the real engine, which is how it kept showing 104 minutes
+ * even after CBTExamMode.setup() itself was fixed to return 120.
+ */
+export const CBT_TOTAL_TIME_MIN = CBTExamMode.JAMB_TOTAL_TIME_MIN;
+export const CBT_TOTAL_QUESTIONS = CBT_DEFAULT_SUBJECTS.reduce(
+  (sum, s) => sum + (CBTExamMode.JAMB_QUESTION_COUNT[s] ?? CBTExamMode.JAMB_QUESTION_COUNT.default),
+  0,
+);
 
 export async function startCbtExam(subjects: string[] = CBT_DEFAULT_SUBJECTS): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[] }> {
   const kairo = getEngine();

@@ -11,6 +11,7 @@ export function EditProfile() {
 
   const [name, setName] = useState(profile?.name || '');
   const [course, setCourse] = useState(profile?.targetCourse || '');
+  const [university, setUniversity] = useState(profile?.targetUniversity || '');
   const [examDate, setExamDate] = useState(profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : '');
   const [subjects, setSubjects] = useState<string[]>(profile?.targetSubjects || []);
   const [subjectQuery, setSubjectQuery] = useState('');
@@ -36,6 +37,7 @@ export function EditProfile() {
       await updateProfileDetails({
         name: name.trim(),
         targetCourse: course.trim() || null,
+        targetUniversity: university.trim() || null,
         targetSubjects: subjects,
         examDate: examDate || null,
       });
@@ -56,6 +58,11 @@ export function EditProfile() {
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Target course</div>
           <Input tone="dark" placeholder="e.g. Medicine & Surgery" value={course} onChange={(e) => setCourse(e.target.value)} />
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Target university</div>
+          <Input tone="dark" placeholder="e.g. University of Lagos" value={university} onChange={(e) => setUniversity(e.target.value)} />
         </div>
 
         <div>

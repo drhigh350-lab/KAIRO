@@ -6,11 +6,12 @@ import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
+import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 
-type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary';
+type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
 type EntryKind = 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested';
 
@@ -167,9 +168,18 @@ export function PracticeFlow() {
     navigate(`/learn/${encodeURIComponent(eq.conceptId)}`, { state: { returnTo: '/practice' } });
   }
 
-  function handleNextQuestion({ correct, confidence, responseTimeMs }: PracticeQuestionResult) {
+  function handleNextQuestion({ correct, confidence, selectedIndex, responseTimeMs }: PracticeQuestionResult) {
     const eq = engineQuestions?.[qIndex];
-    const newResults = [...results, { correct, confidence, time: Math.round(responseTimeMs / 1000), subject: eq?.subject, topic: eq?.topic }];
+    const newResults = [...results, {
+      correct, confidence, time: Math.round(responseTimeMs / 1000), subject: eq?.subject, topic: eq?.topic,
+      review: eq ? {
+        questionText: eq.text,
+        options: eq.options.map((o) => ({ label: o.label, text: o.text })),
+        correctOption: eq.correctOption,
+        selectedOption: selectedOptionLabel(eq, selectedIndex) ?? null,
+        explanation: eq.explanation,
+      } : undefined,
+    }];
     setResults(newResults);
     setLastErrorTag(null);
 
@@ -202,8 +212,7 @@ export function PracticeFlow() {
     } else if (key === 'cbt') {
       navigate('/cbt');
     } else if (key === 'review') {
-      setQIndex(0);
-      go('practiceQuestion');
+      go('practiceReview');
     }
   }
 
@@ -315,6 +324,9 @@ export function PracticeFlow() {
   }
   if (screen === 'practiceSummary') {
     return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} engineSummary={sessionSummary} />;
+  }
+  if (screen === 'practiceReview') {
+    return <PracticeReview results={results} onBack={back} />;
   }
 
   return null;

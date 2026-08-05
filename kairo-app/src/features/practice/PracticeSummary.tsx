@@ -8,6 +8,14 @@ export interface PracticeResult {
   time?: number;
   subject?: string;
   topic?: string;
+  /** Full question + answers, for real review-with-corrections after the session ends. */
+  review?: {
+    questionText: string;
+    options: { label: string; text: string }[];
+    correctOption: string;
+    selectedOption: string | null;
+    explanation?: string | null;
+  };
 }
 
 export type PracticeSummaryAction = 'weak' | 'retry' | 'challenge' | 'cbt' | 'review';

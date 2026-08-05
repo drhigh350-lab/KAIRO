@@ -193,9 +193,18 @@ export class KairoEngine {
 
     const remoteProfile = await adapter.ensureStudentRow(user.id, this.profile.toJSON());
 
-    // Merge remote identity into the local profile without discarding
-    // any local-only progress that hasn't synced yet.
-    this.profile.studentId = remoteProfile.studentId;
+    // Hydrate the full remote profile onto this profile instance. Every
+    // caller of connectSupabase() (sign-up, sign-in, restoreSession,
+    // Google) starts from a brand-new StudentProfile with nothing local to
+    // protect yet, so this previously only copying studentId/authUserId
+    // over meant every other real field — name, targetSubjects,
+    // targetCourse, targetUniversity, exam date, streak/elite-score
+    // history, question totals — silently stayed at StudentProfile's
+    // blank defaults after every single sign-in, no matter what was
+    // actually saved server-side. That's what surfaced as "my progress is
+    // gone" on sign-out/sign-in even though the row itself was intact.
+    const { _isNewStudent, ...remoteProfileFields } = remoteProfile;
+    Object.assign(this.profile, remoteProfileFields);
     this.profile.authUserId = user.id;
 
     this.sync.attachRemote(adapter, this);

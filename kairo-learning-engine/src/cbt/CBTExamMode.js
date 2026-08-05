@@ -263,7 +263,21 @@ export class CBTExamMode {
     // live attempt at all), so unlike standard Practice's endSession(),
     // nothing else queues a kairo.sessions row for a completed mock —
     // do that here, matching the 'cbt_exam' value already reserved in the
-    // mode CHECK constraint.
+    // mode CHECK constraint. Also record it onto the local profile
+    // directly — endSession() is the only other place that calls
+    // recordSession(), so without this a finished CBT mock never counted
+    // toward totalQuestionsAnswered/totalCorrect/lastSessionAt (locally or,
+    // since those only sync as part of a profile push, remotely either),
+    // and never showed up in "today's" activity.
+    this.engine.profile.recordSession({
+      sessionId: `cbt_${this.examData.startTime}`,
+      mode: 'cbt_exam',
+      startedAt: this.examData.startTime,
+      completedAt: this.examData.endTime,
+      questionsAnswered: results.answered,
+      correctCount: results.correct
+    });
+
     this.engine.sync.queue({
       type: 'session',
       data: {
