@@ -5,6 +5,7 @@ import {
   InlineToast, Modal, OverflowMenu, MiniCalculator, type ConfidenceLevel,
 } from '../learning/shared';
 import type { PracticeQuestion as PracticeQuestionData } from './data';
+import { generateKaiText } from '../../lib/kaiAi';
 
 export interface PracticeQuestionResult {
   correct: boolean;
@@ -56,6 +57,19 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   function report() { setReported(true); flashToast("Thanks — we'll take a look at this question."); }
   function toggleFlag() { setFlagged((f) => !f); flashToast(!flagged ? 'Flagged for review.' : 'Flag removed.'); }
   function sendFeedback() { flashToast('Feedback sent — thanks for helping Kai improve.'); }
+
+  /** KaiPanel's "Ask Kai for more" row (Explain again / Give another example / Simplify / Teach from scratch / Show formula / Show memory trick) — previously had no onAction handler at all, so tapping any of them did nothing. */
+  function handleKaiFollowupAction(action: string): Promise<string | null> {
+    return generateKaiText('explain_followup', {
+      action,
+      subject: question.subject,
+      topic: question.topic,
+      questionText: question.stem,
+      options: question.options.map((text, i) => ({ label: String.fromCharCode(65 + i), text })),
+      correctOption: String.fromCharCode(65 + question.correct),
+      explanation: question.why,
+    });
+  }
 
   const isCorrect = selected === question.correct;
 
@@ -135,7 +149,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
               </button>
             )}
 
-            <KaiPanel note={kaiNote ?? question.kai} tone="dark" />
+            <KaiPanel note={kaiNote ?? question.kai} tone="dark" onAction={handleKaiFollowupAction} />
 
             <ConfidenceRating value={confidence} onChange={setConfidence} tone="dark" />
           </div>

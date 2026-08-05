@@ -1,6 +1,6 @@
 import { getSupabase } from './supabaseClient';
 
-export type KaiGenerateKind = 'coaching_note' | 'weekly_reflection' | 'monthly_wrapped';
+export type KaiGenerateKind = 'coaching_note' | 'weekly_reflection' | 'monthly_wrapped' | 'explain_followup';
 
 /**
  * Calls the kai-generate Supabase Edge Function to turn already-computed

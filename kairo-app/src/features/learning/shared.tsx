@@ -94,13 +94,36 @@ export function OptionRow({ label, selected, onClick, subtitle, tone = 'light' }
 
 export interface KaiPanelProps {
   note: ReactNode;
-  onAction?: (action: string) => void;
+  /** Real, async — resolves to Kai's generated response for that specific action, or null on failure. Omitting this leaves the action buttons hidden entirely (no dead buttons with no effect). */
+  onAction?: (action: string) => Promise<string | null>;
   tone?: 'light' | 'dark';
 }
 export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
   const dark = tone === 'dark';
   const [expanded, setExpanded] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const actions = ['Explain again', 'Give another example', 'Simplify', 'Teach from scratch', 'Show formula', 'Show memory trick'];
+
+  async function handleActionClick(a: string) {
+    if (!onAction || loading) return;
+    setActiveAction(a);
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const text = await onAction(a);
+      if (text) setResult(text);
+      else setError("Kai couldn't get to that just now — try again.");
+    } catch {
+      setError("Kai couldn't get to that just now — try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div style={{ background: dark ? 'var(--dark-bg-elevated)' : 'var(--kairo-blue-100)', borderRadius: 'var(--radius-lg)', padding: 16, fontFamily: 'var(--font-body)' }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -109,22 +132,34 @@ export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
         </div>
         <div style={{ fontSize: 13, color: dark ? 'var(--dark-text-body)' : 'var(--text-body)', lineHeight: 1.55 }}>{note}</div>
       </div>
-      <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} style={{
-        marginTop: 12, fontSize: 12, fontWeight: 700, color: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-        background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
-      }}>
-        Ask Kai for more
-        <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-base)' }}><ChevronRight /></span>
-      </button>
-      {expanded && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-          {actions.map((a) => (
-            <button type="button" key={a} onClick={() => onAction && onAction(a)} style={{
-              fontSize: 12, fontWeight: 600, color: dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)', background: dark ? 'var(--dark-bg-surface)' : '#fff', border: `1px solid ${dark ? 'var(--dark-border)' : 'var(--color-border-subtle)'}`,
-              padding: '8px 12px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-            }}>{a}</button>
-          ))}
-        </div>
+      {onAction && (
+        <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} style={{
+          marginTop: 12, fontSize: 12, fontWeight: 700, color: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
+        }}>
+          Ask Kai for more
+          <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-base)' }}><ChevronRight /></span>
+        </button>
+      )}
+      {onAction && expanded && (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            {actions.map((a) => (
+              <button type="button" key={a} disabled={loading} onClick={() => handleActionClick(a)} style={{
+                fontSize: 12, fontWeight: 600, color: dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)', background: dark ? 'var(--dark-bg-surface)' : '#fff', border: `1px solid ${activeAction === a ? (dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)') : (dark ? 'var(--dark-border)' : 'var(--color-border-subtle)')}`,
+                padding: '8px 12px', borderRadius: 'var(--radius-pill)', cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+                opacity: loading && activeAction !== a ? 0.5 : 1,
+              }}>{loading && activeAction === a ? 'Thinking…' : a}</button>
+            ))}
+          </div>
+          {(result || error) && (
+            <div style={{
+              marginTop: 12, padding: 12, borderRadius: 'var(--radius-md)', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-line',
+              background: dark ? 'var(--dark-bg-surface)' : '#fff', border: `1px solid ${dark ? 'var(--dark-border)' : 'var(--color-border-subtle)'}`,
+              color: error ? 'var(--dark-danger, #e5484d)' : (dark ? 'var(--dark-text-body)' : 'var(--text-body)'),
+            }}>{error || result}</div>
+          )}
+        </>
       )}
     </div>
   );
