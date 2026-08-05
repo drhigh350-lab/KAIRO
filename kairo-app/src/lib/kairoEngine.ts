@@ -437,6 +437,11 @@ export interface ProfileEditDetails {
   targetSubjects: string[];
   /** ISO date string (e.g. "2027-05-15"), or null to clear it. */
   examDate: string | null;
+  /** Student's own definition of "ready" — never edited or blocked by Kairo based on current performance (Student Intelligence Model §1, §11.3). */
+  targetUTMEScore: number | null;
+  /** Session-length default in minutes (e.g. 20/45/60). */
+  preferredStudyDurationMin: number | null;
+  preferredStudyPeriod: 'morning' | 'evening' | 'late_night' | null;
 }
 
 /**
@@ -453,6 +458,9 @@ export async function updateProfileDetails(details: ProfileEditDetails): Promise
   kairo.profile.targetUniversity = details.targetUniversity;
   kairo.profile.targetSubjects = details.targetSubjects;
   kairo.profile.examDate = details.examDate ? new Date(details.examDate).getTime() : null;
+  kairo.profile.targetUTMEScore = details.targetUTMEScore;
+  kairo.profile.preferredStudyDurationMin = details.preferredStudyDurationMin;
+  kairo.profile.preferredStudyPeriod = details.preferredStudyPeriod;
   await kairo.sync.sync();
 }
 
@@ -462,10 +470,18 @@ export function getInsightsSummary(): Engine | null {
   return kairo ? kairo.insights.getDashboardInsights() : null;
 }
 
-/** Real "sessions this week" + reinforced/fading counts for Insights' weekly card. */
+/** Real "sessions this week" + reinforced/fading concepts and Kai's own reflective narrative for Insights' weekly card. */
 export function getWeeklyReviewSummary(): Engine | null {
   const kairo = getEngine();
-  return kairo ? kairo.getWeeklyReflection().data : null;
+  if (!kairo) return null;
+  const { data, kaiNote } = kairo.getWeeklyReflection();
+  return { ...data, kaiNote: kaiNote?.text || null };
+}
+
+/** Real month-in-review ("Kairo Wrapped") — reinforced concepts, biggest turnaround, score trend, session/question totals. All computed by MonthlyWrapped; Insights only renders it. */
+export function getMonthlyWrapped(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.getMonthlyWrapped() : null;
 }
 
 /**

@@ -15,6 +15,9 @@ export function EditProfile() {
   const [examDate, setExamDate] = useState(profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : '');
   const [subjects, setSubjects] = useState<string[]>(profile?.targetSubjects || []);
   const [subjectQuery, setSubjectQuery] = useState('');
+  const [targetScore, setTargetScore] = useState(profile?.targetUTMEScore != null ? String(profile.targetUTMEScore) : '');
+  const [studyDuration, setStudyDuration] = useState(profile?.preferredStudyDurationMin != null ? String(profile.preferredStudyDurationMin) : '');
+  const [studyPeriod, setStudyPeriod] = useState(profile?.preferredStudyPeriod || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -34,12 +37,17 @@ export function EditProfile() {
     setSaving(true);
     setError('');
     try {
+      const parsedScore = parseInt(targetScore, 10);
+      const parsedDuration = parseInt(studyDuration, 10);
       await updateProfileDetails({
         name: name.trim(),
         targetCourse: course.trim() || null,
         targetUniversity: university.trim() || null,
         targetSubjects: subjects,
         examDate: examDate || null,
+        targetUTMEScore: Number.isFinite(parsedScore) && parsedScore > 0 ? parsedScore : null,
+        preferredStudyDurationMin: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null,
+        preferredStudyPeriod: (studyPeriod as 'morning' | 'evening' | 'late_night') || null,
       });
       navigate(-1);
     } catch (err) {
@@ -68,6 +76,43 @@ export function EditProfile() {
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Exam date</div>
           <Input tone="dark" type="date" min={today} value={examDate} onChange={(e) => setExamDate(e.target.value)} />
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Target UTME score</div>
+          <Input tone="dark" type="number" min="0" max="400" placeholder="e.g. 320" value={targetScore} onChange={(e) => setTargetScore(e.target.value)} />
+          <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', marginTop: 6 }}>Your own definition of "ready" — applies from today forward, past reports won't change.</div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Preferred study duration</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[20, 45, 60].map((n) => {
+              const active = studyDuration === String(n);
+              return (
+                <button type="button" key={n} aria-pressed={active} onClick={() => setStudyDuration(String(n))} style={{
+                  flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+                  border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: active ? '#fff' : 'var(--dark-text-body)',
+                }}>{n} min</button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Preferred study period</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[{ key: 'morning', label: 'Morning' }, { key: 'evening', label: 'Evening' }, { key: 'late_night', label: 'Late night' }].map((p) => {
+              const active = studyPeriod === p.key;
+              return (
+                <button type="button" key={p.key} aria-pressed={active} onClick={() => setStudyPeriod(p.key)} style={{
+                  flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+                  border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: active ? '#fff' : 'var(--dark-text-body)',
+                }}>{p.label}</button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', marginTop: 6 }}>Used only for notification timing — never a hard constraint.</div>
         </div>
 
         <div style={{ position: 'relative' }}>

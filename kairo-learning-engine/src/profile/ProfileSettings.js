@@ -59,6 +59,9 @@ export class ProfileSettings {
       targetUniversity: p.targetUniversity,
       targetSubjects: p.targetSubjects,
       examDate: p.examDate,
+      targetUTMEScore: p.targetUTMEScore,
+      preferredStudyDurationMin: p.preferredStudyDurationMin,
+      preferredStudyPeriod: p.preferredStudyPeriod,
       dailyQuestionGoal: p.dailyQuestionGoal,
       macroState: p.macroState,
       joinedAt: p.createdAt,
@@ -79,7 +82,7 @@ export class ProfileSettings {
   }
 
   updateProfile(updates) {
-    const allowed = ['name', 'email', 'targetCourse', 'targetUniversity', 'targetSubjects', 'examDate', 'avatar', 'dailyQuestionGoal'];
+    const allowed = ['name', 'email', 'targetCourse', 'targetUniversity', 'targetSubjects', 'examDate', 'avatar', 'dailyQuestionGoal', 'targetUTMEScore', 'preferredStudyDurationMin', 'preferredStudyPeriod'];
     for (const key of allowed) {
       if (updates[key] !== undefined) {
         this.engine.profile[key] = updates[key];

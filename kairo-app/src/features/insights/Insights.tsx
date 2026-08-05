@@ -1,5 +1,5 @@
 import { Card, ProgressBar, ScoreBadge } from '../../components';
-import { getInsightsSummary, getWeeklyReviewSummary } from '../../lib/kairoEngine';
+import { getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped } from '../../lib/kairoEngine';
 
 const trendCopy: Record<string, string> = {
   rising: "Your score moved up mostly because you're getting harder questions right more often, not just more questions overall.",
@@ -11,8 +11,11 @@ const trendCopy: Record<string, string> = {
 export function Insights() {
   const insights = getInsightsSummary();
   const weekly = getWeeklyReviewSummary();
+  const monthly = getMonthlyWrapped();
   const hasScore = !!insights?.eliteScore;
   const subjectHealth = insights?.strengths ?? [];
+  const reinforcedNames: string[] = weekly?.reinforced?.map((c: { name: string }) => c.name) ?? [];
+  const hasMonthlyStory = !!monthly && (monthly.reinforcedCount > 0 || monthly.biggestTurnaround || monthly.totalSessions > 0);
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
@@ -39,13 +42,19 @@ export function Insights() {
         <div style={{ display: 'flex', gap: 14, marginTop: 14 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Reinforced</div>
-            <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)' }}>{weekly?.reinforced.length ?? 0}</div>
+            <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)' }}>{weekly?.reinforced?.length ?? 0}</div>
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Score trend</div>
             <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-success)', textTransform: 'capitalize' }}>{insights?.scoreTrend?.replace('_', ' ') ?? 'Not enough data'}</div>
           </div>
         </div>
+        {reinforcedNames.length > 0 && (
+          <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 12 }}>Including {reinforcedNames.slice(0, 3).join(', ')} — that's the hardest thing to fake.</div>
+        )}
+        {weekly?.kaiNote && (
+          <div style={{ fontSize: 13, color: 'var(--dark-text-body)', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--dark-border)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{weekly.kaiNote}</div>
+        )}
       </Card>
 
       {subjectHealth.length > 0 && (
@@ -57,6 +66,31 @@ export function Insights() {
               <ProgressBar value={masteryPct} tone={masteryPct < 60 ? 'gold' : 'dark'} />
             </div>
           ))}
+        </Card>
+      )}
+
+      {hasMonthlyStory && (
+        <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>THIS MONTH — KAIRO WRAPPED</div>
+          <div style={{ display: 'flex', gap: 18, marginTop: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Sessions</div>
+              <div style={{ fontWeight: 800, fontSize: 20, marginTop: 2 }}>{monthly.totalSessions}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Questions</div>
+              <div style={{ fontWeight: 800, fontSize: 20, marginTop: 2 }}>{monthly.totalQuestions}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Reinforced</div>
+              <div style={{ fontWeight: 800, fontSize: 20, marginTop: 2 }}>{monthly.reinforcedCount}</div>
+            </div>
+          </div>
+          {monthly.biggestTurnaround && (
+            <div style={{ fontSize: 13, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
+              Biggest turnaround this month: <strong>{monthly.biggestTurnaround.name}</strong> ({monthly.biggestTurnaround.subject}).
+            </div>
+          )}
         </Card>
       )}
     </div>
