@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { PracticeHome } from './PracticeHome';
 import { SubjectSelect } from './SubjectSelect';
 import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
@@ -11,9 +12,9 @@ import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 
-type Screen = 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
+type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
-type EntryKind = 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested';
+type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested';
 
 interface InitialState {
   screen: Screen;
@@ -36,6 +37,9 @@ function computeInitial(entry: string): InitialState {
     qIndex: 0,
     results: [],
   };
+  if (kind === 'home') {
+    return { ...base, screen: 'practiceHome' };
+  }
   if (kind === 'mixed') {
     return { ...base, subject: { key: 'mixed', label: 'All Subjects' }, screen: 'practiceHub' };
   }
@@ -52,7 +56,12 @@ function computeInitial(entry: string): InitialState {
 export function PracticeFlow() {
   const navigate = useNavigate();
   const location = useLocation();
-  const entry = (location.state as { entry?: string } | null)?.entry ?? 'subject';
+  // Tapping the Practice tab directly (no entry state) lands on Practice Home,
+  // never a bare subject picker — a student should never have to choose from
+  // a menu to begin (Practice Module Spec §2.1). Explicit entry kinds (from
+  // Home's own quick actions, or Practice Home's own actions below) still
+  // route straight to their specific flow.
+  const entry = (location.state as { entry?: string } | null)?.entry ?? 'home';
 
   const [init] = useState(() => computeInitial(entry));
   const [screen, setScreen] = useState<Screen>(init.screen);
@@ -74,9 +83,10 @@ export function PracticeFlow() {
   const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
   const startedSuggested = useRef(false);
 
-  useEffect(() => {
-    if (entryFlow !== 'suggested' || startedSuggested.current) return;
-    startedSuggested.current = true;
+  /** Recommended-by-Kairo session (Practice Module §2.2) — zero-input, real DDE-style queue. Shared by the initial-mount auto-start (arriving via entry:'suggested') and Practice Home's own "Start Session" tap. */
+  function startSuggested() {
+    setEngineQuestions(null);
+    setEngineLoadError(null);
     startSuggestedSession(5)
       .then(({ questions }) => {
         if (questions.length === 0) {
@@ -86,6 +96,12 @@ export function PracticeFlow() {
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+  }
+
+  useEffect(() => {
+    if (entryFlow !== 'suggested' || startedSuggested.current) return;
+    startedSuggested.current = true;
+    startSuggested();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -219,6 +235,41 @@ export function PracticeFlow() {
   const activeSubject = subject ?? { key: 'mixed', label: 'All Subjects' };
   const lockedType = entryFlow === 'mixed' ? 'mixed' : entryFlow === 'weak' ? 'weak' : undefined;
 
+  if (screen === 'practiceHome') {
+    return (
+      <PracticeHome
+        onBack={toHome}
+        onStartSuggested={() => {
+          setSubject(subjects[0]);
+          setDifficulty('adaptive');
+          setLength(5);
+          setQIndex(0);
+          setResults([]);
+          setEntryFlow('suggested');
+          startSuggested();
+          go('practiceQuestion');
+        }}
+        onBySubject={() => {
+          setEntryFlow('subject');
+          go('subject');
+        }}
+        onByTopic={() => {
+          setEntryFlow('topic');
+          go('subject');
+        }}
+        onMixed={() => {
+          setSubject({ key: 'mixed', label: 'All Subjects' });
+          setEntryFlow('mixed');
+          go('practiceHub');
+        }}
+        onWeak={() => {
+          setSubject({ key: 'weak', label: 'Weak Areas' });
+          setEntryFlow('weak');
+          go('practiceHub');
+        }}
+      />
+    );
+  }
   if (screen === 'subject') {
     return (
       <SubjectSelect
