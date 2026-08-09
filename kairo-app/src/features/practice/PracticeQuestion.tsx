@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { ProgressBar, AnswerFeedback, Button, IconButton } from '../../components';
+import { useRef, useState, type ReactNode } from 'react';
+import { ProgressBar, AnswerFeedback, Button, IconButton, Badge } from '../../components';
 import {
   BookmarkIcon, ReportIcon, FlagIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
   InlineToast, Modal, OverflowMenu, MiniCalculator, type ConfidenceLevel,
@@ -15,6 +15,37 @@ export interface PracticeQuestionResult {
   responseTimeMs: number;
 }
 
+/** Shape of ExplanationEngine.generate()'s output (kairo-learning-engine's
+ * qim/ExplanationEngine.js) — the same structure LearnModule already
+ * consumes, now also returned from submitAnswer() for Practice. Loosely
+ * typed on purpose: the engine ships as plain JS with no declared types
+ * (see kairo-learning-engine.d.ts), so this models only the fields this
+ * component actually reads rather than the engine's full internal shape. */
+export interface PracticeExplanationDistractor {
+  label: string;
+  text: string;
+  whyWrong: string;
+  misconception: { id: string; name: string; description: string } | null;
+}
+export interface PracticeExplanationPart {
+  type: string;
+  title: string;
+  content: string | PracticeExplanationDistractor[];
+}
+export interface PracticeExplanation {
+  questionId: string;
+  parts: PracticeExplanationPart[];
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 8 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
 export interface PracticeQuestionProps {
   question: PracticeQuestionData;
   index: number;
@@ -27,6 +58,8 @@ export interface PracticeQuestionProps {
   onLearnThis?: () => void;
   /** Kai's real, context-aware response to this specific attempt (from submitAnswer()'s kaiResponse, optionally upgraded by generateKaiText()) — falls back to question.kai if not provided. */
   kaiNote?: string | null;
+  /** The same ExplanationEngine output Learn already renders (distractor breakdown, misconception diagnosis, exam tip) — from submitAnswer()'s explanation field. Absent for older engine builds or a question missing from questionGraph; every render below degrades cleanly when it's null. */
+  explanation?: PracticeExplanation | null;
 }
 
 export function CloseIconSmall() {
@@ -36,7 +69,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote, explanation }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
@@ -81,6 +114,16 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   }
 
   const isCorrect = selected === question.correct;
+
+  // ExplanationEngine only includes distractor_breakdown/common_mistake
+  // when the attempt was wrong (see qim/ExplanationEngine.js's generate())
+  // — exam_tip is included either way, so it's read independently below.
+  const distractorPart = explanation?.parts.find((p) => p.type === 'distractor_breakdown');
+  const distractors = Array.isArray(distractorPart?.content) ? distractorPart.content : [];
+  const examTipPart = explanation?.parts.find((p) => p.type === 'exam_tip');
+  const examTip = typeof examTipPart?.content === 'string' ? examTipPart.content : null;
+  const selectedLabel = selected !== null ? String.fromCharCode(65 + selected) : null;
+  const yourMisconception = distractors.find((d) => d.label === selectedLabel)?.misconception ?? null;
 
   const overflowItems = [
     { label: flagged ? 'Unflag question' : 'Flag question', icon: <FlagIcon filled={flagged} />, onClick: toggleFlag },
@@ -146,6 +189,38 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
         {submitted && (
           <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
             <AnswerFeedback dark correct={isCorrect} title={isCorrect ? "That's correct" : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} detail={question.why} />
+
+            {!isCorrect && yourMisconception && (
+              <Section title="What likely happened">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <Badge tone="danger">Your mistake</Badge>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{yourMisconception.name}</span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{yourMisconception.description}</div>
+              </Section>
+            )}
+
+            {!isCorrect && distractors.length > 0 && (
+              <Section title="Why each option is wrong">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {distractors.map((d) => (
+                    <div key={d.label}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        {d.label === selectedLabel && <Badge tone="danger">Your answer</Badge>}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{d.label}. {d.text}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{d.whyWrong}</div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {examTip && (
+              <Section title="Exam strategy">
+                <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6 }}>{examTip}</div>
+              </Section>
+            )}
 
             {!isCorrect && onLearnThis && (
               <button type="button" onClick={onLearnThis} style={{

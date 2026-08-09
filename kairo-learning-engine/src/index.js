@@ -484,6 +484,33 @@ export class KairoEngine {
       ? this.recommendation.shouldEndSession()
       : { end: false, reason: null };
 
+    // The same ExplanationEngine LearnModule already uses (Question
+    // Experience spec's "same trusted explanation structure everywhere") —
+    // Practice was the one mode still building its own flat question.why
+    // text instead of the real distractor breakdown / misconception
+    // diagnosis / exam tip this.explanations already knows how to produce.
+    // Looked up from questionGraph rather than trusting a caller-passed
+    // shape, so it's a real Question instance with getDistractorExplanation()
+    // available, not the flattened object the UI works with. Never allowed
+    // to break answer submission — a missing/unloaded question degrades to
+    // no explanation, not a thrown error.
+    let explanation = null;
+    if (questionId) {
+      try {
+        const questionObj = this.questionGraph.getQuestion(questionId);
+        if (questionObj) {
+          explanation = this.explanations.generate({
+            question: questionObj,
+            attempt,
+            concept,
+            macroState: this.profile.macroState
+          });
+        }
+      } catch {
+        explanation = null;
+      }
+    }
+
     return {
       decision,
       kaiResponse,
@@ -494,7 +521,8 @@ export class KairoEngine {
       confidenceScore: concept.confidenceScore,
       decayEstimate: concept.decayEstimate,
       genuineConfidence: genuine,
-      attempt
+      attempt,
+      explanation
     };
   }
 

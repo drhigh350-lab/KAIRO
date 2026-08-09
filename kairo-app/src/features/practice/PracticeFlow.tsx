@@ -5,7 +5,7 @@ import { SubjectSelect } from './SubjectSelect';
 import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub } from './PracticeHub';
-import { PracticeQuestion, type PracticeQuestionResult } from './PracticeQuestion';
+import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
@@ -84,6 +84,7 @@ export function PracticeFlow() {
   const [lastErrorTag, setLastErrorTag] = useState<string | null>(null);
   const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
   const [kaiNote, setKaiNote] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState<PracticeExplanation | null>(null);
   const startedSuggested = useRef(false);
   const qIndexRef = useRef(qIndex);
   qIndexRef.current = qIndex;
@@ -175,7 +176,7 @@ export function PracticeFlow() {
     // discarded here, which is why the Kai panel always showed a flat
     // duplicate of the explanation instead of Kai's actual computed
     // response to this specific attempt.
-    const { attempt, kaiResponse, conceptState } = kairo.submitAnswer({
+    const { attempt, kaiResponse, conceptState, explanation: newExplanation } = kairo.submitAnswer({
       conceptId: eq.conceptId ?? null,
       correct,
       responseTimeMs,
@@ -187,6 +188,7 @@ export function PracticeFlow() {
     setLastErrorTag(attempt?.errorTag ?? null);
     setLastResponseTimeMs(responseTimeMs);
     setKaiNote(kaiResponse?.text ?? null);
+    setExplanation(newExplanation ?? null);
 
     // Progressive enhancement: show the real template text instantly above,
     // then quietly upgrade to a freshly-generated version in Kai's voice if
@@ -235,6 +237,7 @@ export function PracticeFlow() {
     setResults(newResults);
     setLastErrorTag(null);
     setKaiNote(null);
+    setExplanation(null);
 
     if (!engineQuestions) return;
     if (qIndex + 1 >= engineQuestions.length) {
@@ -408,6 +411,7 @@ export function PracticeFlow() {
         onAnswered={handleAnswered}
         onLearnThis={engineQuestions[qIndex].conceptId ? handleLearnThis : undefined}
         kaiNote={kaiNote}
+        explanation={explanation}
       />
     );
   }
