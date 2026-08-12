@@ -3,7 +3,8 @@
  * Run with: node tests/engine.test.js
  */
 
-import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode } from "../src/index.js";
+import { readFileSync } from "node:fs";
+import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem, BadgeSystem } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag, Channel } from "../src/utils/constants.js";
 import { OneSignalTransport } from "../src/comms/transport/OneSignalTransport.js";
@@ -230,6 +231,23 @@ test('Decay model computes next review in future', () => {
   assert(c.nextReviewEstimate === next, 'Should update concept nextReview');
 });
 
+test('DecayModel.getDueConcepts() no longer throws a ReferenceError on a concept with no nextReviewEstimate (RetentionState was used without being imported)', () => {
+  const graph = new KnowledgeGraph();
+  const fresh = new ConceptNode({ id: 'decay_due_unseen', name: 'Due Test', subject: 'Chemistry', topic: 'Regression', subtopic: 'Test' });
+  graph.addConcept(fresh);
+
+  const profile = new StudentProfile({ studentId: 'decay_due_test', name: 'Decay Tester' });
+  const decay = new DecayModel(profile);
+
+  const due = decay.getDueConcepts(graph);
+  assert(Array.isArray(due), 'getDueConcepts() should return an array without throwing');
+  assert(!due.includes(fresh), 'A fresh Unseen concept with no nextReviewEstimate should not be considered due');
+
+  fresh.retentionState = RetentionState.FADING;
+  const dueAfter = decay.getDueConcepts(graph);
+  assert(dueAfter.includes(fresh), 'A non-Unseen concept with no nextReviewEstimate should be considered due');
+});
+
 test('Export/import preserves state', () => {
   const exported = engine.exportState();
   assert(exported.profile, 'Should export profile');
@@ -302,11 +320,52 @@ test('Level system calculates XP and progress', () => {
   assert(progress.level >= 1, 'Should be at least level 1');
 });
 
+test('LevelSystem.calculateXP() awards the topic-completion bonus via retentionState, not a nonexistent .state field', () => {
+  const graph = new KnowledgeGraph();
+  const c1 = new ConceptNode({ id: 'xp_topic_c1', name: 'Kinematics Basics', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
+  const c2 = new ConceptNode({ id: 'xp_topic_c2', name: 'Kinematics Graphs', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
+  c1.retentionState = RetentionState.HELD;
+  c2.retentionState = RetentionState.REINFORCED;
+  graph.addConcept(c1);
+  graph.addConcept(c2);
+
+  const profile = new StudentProfile({ studentId: 'xp_topic_test', name: 'XP Tester' });
+  const level = new LevelSystem(profile);
+  const xp = level.calculateXP(graph, []);
+
+  // held (20) + reinforced (50) + topic-completion bonus (100, since both
+  // concepts in Physics:Motion are Held/Reinforced = 100% >= the 80%
+  // threshold) = 170. Before the fix, the topic-completion filter read
+  // ConceptNode's nonexistent `.state` field (always undefined), so
+  // `mastered` was always 0 and this bonus never fired — the total would
+  // have been 70.
+  assertEqual(xp, 170, 'calculateXP() should include the 100-XP topic-completion bonus once every concept in a topic is Held/Reinforced');
+});
+
 test('Badge system has catalog and checks', () => {
   const badges = engine.getBadges();
   assert(Array.isArray(badges.earned), 'Should have earned badges array');
   assert(Array.isArray(badges.available), 'Should have available badges array');
   assert(badges.available.length > 0, 'Should have available badges');
+});
+
+test('Edge Function BADGE_CATALOG (send-lifecycle-emails) stays in sync with BadgeSystem.getBadgeCatalog() — Deno cannot import the Node engine directly, so this guards the manually-kept-in-sync copy against silent drift', () => {
+  const edgeFnSource = readFileSync(new URL('../supabase/functions/send-lifecycle-emails/index.ts', import.meta.url), 'utf8');
+  const match = edgeFnSource.match(/BADGE_CATALOG[^=]*=\s*(\{[\s\S]*?\n\})\s*;/);
+  assert(match, 'Could not locate the BADGE_CATALOG object literal in the Edge Function source — has it been renamed or restructured?');
+
+  const edgeCatalog = new Function(`return (${match[1]})`)();
+  const engineCatalog = BadgeSystem.getBadgeCatalog();
+  const edgeIds = Object.keys(edgeCatalog);
+
+  assertEqual(edgeIds.length, engineCatalog.length, 'BADGE_CATALOG should have the same number of entries as BadgeSystem.getBadgeCatalog()');
+
+  for (const badge of engineCatalog) {
+    const edgeBadge = edgeCatalog[badge.id];
+    assert(edgeBadge, `BadgeSystem badge "${badge.id}" is missing from the Edge Function's BADGE_CATALOG — a newly earned badge of this type would silently never trigger an achievement email`);
+    assertEqual(edgeBadge.name, badge.name, `BADGE_CATALOG["${badge.id}"].name has drifted from BadgeSystem's copy`);
+    assertEqual(edgeBadge.desc, badge.desc, `BADGE_CATALOG["${badge.id}"].desc has drifted from BadgeSystem's copy`);
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -834,7 +893,7 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
     targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery', targetUniversity: 'UNILAG',
     authUserId: 'auth-uuid-1', dateOfBirth: Date.now() - 17 * 365 * 24 * 60 * 60 * 1000,
     examType: 'UTME', examYear: 2027, targetUTMEScore: 300,
-    preferredStudyDurationMin: 30, preferredStudyPeriod: 'evening',
+    preferredStudyDurationMin: 30, preferredStudyPeriod: 'evening', dailyQuestionGoal: 25,
     device: { os: 'android' }, referralSource: 'whatsapp',
     parentGuardianContact: { phone: '0800' }, languageRegion: 'yoruba'
   });
@@ -899,6 +958,7 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   assertEqual(restored.badges.length, 2, 'badges should round-trip exactly — without this, every earned badge would be silently lost on reload and immediately re-awarded (and re-notified) the next time its condition was checked');
   assertEqual(restored.preferences.notifications.dailyRecap, false, 'preferences should round-trip exactly — without this, a student\'s notification/practice/accessibility/privacy/offline settings would silently reset to defaults on every fresh load');
   assertEqual(restored.onboarding.step, 4, 'onboarding should round-trip exactly — previously never snapshotted at all (unlike reEngagement/crossModuleMilestones/continuation/comms/learn, which all follow this pattern), so a student closing the app mid-onboarding always restarted from step 0');
+  assertEqual(restored.dailyQuestionGoal, 25, 'dailyQuestionGoal should round-trip exactly — kairo.students.daily_question_goal existed on the live table with no StudentProfile field and no adapter mapping at all, so a student\'s daily goal preference had nowhere to be read from or written to');
 });
 
 test('SyncManager applies a genuinely newer remote concept state onto the live graph', () => {
@@ -1542,6 +1602,12 @@ test('ProfileSettings.updateProfile() accepts pushExternalId — the client-regi
   const settingsEngine = new (engine.constructor)({ studentId: 'push_ext_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
   settingsEngine.settings.updateProfile({ pushExternalId: 'onesignal_ext_xyz' });
   assertEqual(settingsEngine.profile.pushExternalId, 'onesignal_ext_xyz', 'updateProfile should set pushExternalId, the same way it already sets avatar/email — this is how a client hands the engine the device mapping OneSignalTransport needs');
+});
+
+test('ProfileSettings.updateProfile() accepts dailyQuestionGoal — kairo.students.daily_question_goal previously had no field or write path anywhere in the engine', () => {
+  const settingsEngine = new (engine.constructor)({ studentId: 'daily_goal_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  settingsEngine.settings.updateProfile({ dailyQuestionGoal: 20 });
+  assertEqual(settingsEngine.profile.dailyQuestionGoal, 20, 'updateProfile should set dailyQuestionGoal so a student can set/change their own daily goal through the same generic path as name/avatar/pushExternalId');
 });
 
 await test('KairoEngine.sendNotifications(): skips delivery (with a clear reason) when no pushExternalId is set, even with a real deliverable candidate', async () => {

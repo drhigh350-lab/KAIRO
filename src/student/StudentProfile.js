@@ -24,6 +24,7 @@ export class StudentProfile {
     registrationDate = null,      // anchors "days until exam" + cohort analysis; set once, never changes
     preferredStudyDurationMin = null,  // session-length default, e.g. 20 or 45
     preferredStudyPeriod = null,       // 'morning' | 'evening' | 'late_night' — notification timing only
+    dailyQuestionGoal = null,          // student-set daily question target (kairo.students.daily_question_goal)
     device = null,                     // { os, connectivityQuality, appVersion } — diagnostics only, never personalizes content
     referralSource = null,             // marketing-layer only — must never leak into Kai's tone or recommendations
     parentGuardianContact = null,      // optional, dormant — reserved for future Parent Dashboard
@@ -50,6 +51,7 @@ export class StudentProfile {
     this.registrationDate = registrationDate ?? Date.now();
     this.preferredStudyDurationMin = preferredStudyDurationMin;
     this.preferredStudyPeriod = preferredStudyPeriod;
+    this.dailyQuestionGoal = dailyQuestionGoal;
     this.device = device;
     this.referralSource = referralSource;
     this.parentGuardianContact = parentGuardianContact;
@@ -252,6 +254,7 @@ export class StudentProfile {
       registrationDate: this.registrationDate,
       preferredStudyDurationMin: this.preferredStudyDurationMin,
       preferredStudyPeriod: this.preferredStudyPeriod,
+      dailyQuestionGoal: this.dailyQuestionGoal,
       device: this.device,
       referralSource: this.referralSource,
       parentGuardianContact: this.parentGuardianContact,

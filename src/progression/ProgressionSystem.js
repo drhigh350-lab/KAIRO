@@ -58,7 +58,7 @@ export class LevelSystem {
     const completedTopics = Array.from(topics).filter(topicKey => {
       const [subject, topic] = topicKey.split(':');
       const topicConcepts = concepts.filter(c => c.subject === subject && c.topic === topic);
-      const mastered = topicConcepts.filter(c => c.state === 'held' || c.state === 'reinforced').length;
+      const mastered = topicConcepts.filter(c => c.retentionState === 'held' || c.retentionState === 'reinforced').length;
       return mastered / topicConcepts.length >= 0.8;
     }).length;
     xp += completedTopics * 100;

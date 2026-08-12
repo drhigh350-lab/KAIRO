@@ -78,7 +78,7 @@ export class ProfileSettings {
   }
 
   updateProfile(updates) {
-    const allowed = ['name', 'email', 'targetCourse', 'targetUniversity', 'targetSubjects', 'examDate', 'avatar', 'pushExternalId'];
+    const allowed = ['name', 'email', 'targetCourse', 'targetUniversity', 'targetSubjects', 'examDate', 'avatar', 'pushExternalId', 'dailyQuestionGoal'];
     for (const key of allowed) {
       if (updates[key] !== undefined) {
         this.engine.profile[key] = updates[key];
