@@ -3,7 +3,7 @@
  * Personalized forgetting curves per concept and per student.
  */
 
-import { DecayConstants } from "../utils/constants.js";
+import { DecayConstants, RetentionState } from "../utils/constants.js";
 import { clamp, daysBetween, isExamProximity } from "../utils/helpers.js";
 
 export class DecayModel {

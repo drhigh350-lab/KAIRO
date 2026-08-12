@@ -116,6 +116,36 @@ export class KairoEngine {
   }
 
   /**
+   * Every subsystem constructed with `this.profile` directly (not `this`,
+   * the engine) captures a reference to that exact profile object — if
+   * `this.profile` is later replaced wholesale without also rebuilding
+   * these, they keep reading/writing the orphaned old profile forever.
+   * ProfileSettings.deleteAllData() resets this.profile/this.graph but has
+   * no reason to know the other ~18 subsystems below exist, let alone
+   * reconstruct them one by one — it calls this instead.
+   */
+  _rebuildProfileBoundSubsystems() {
+    this.decayModel = new DecayModel(this.profile);
+    this.classifier = new ErrorPatternClassifier(this.profile);
+    this.eliteScore = new EliteScore(this.profile);
+    this.difficulty = new AdaptiveDifficulty(this.profile);
+    this.kai = new KaiBehavior(this.profile);
+    this.scheduler = new RevisionScheduler(this.decayModel, this.profile.examDate);
+    this.streak = new MomentumStreak(this.profile);
+    this.emotionalProfile = new EmotionalProfile(this.profile);
+    this.learningState = new LearningStateTracker(this.profile);
+    this.journeyStage = new JourneyStageTracker(this.profile);
+    this.notificationOrchestrator = new NotificationOrchestrator(this.profile);
+    this.reEngagement = new ReEngagementEngine(this.profile);
+    this.crossModuleMilestones = new CrossModuleMilestones(this.profile);
+    this.continuation = new ContinuationEngine(this.profile);
+    this.comms = new CommsService(this.profile);
+    this.levelSystem = new LevelSystem(this.profile);
+    this.badgeSystem = new BadgeSystem(this.profile);
+    this.settings = new ProfileSettings(this);
+  }
+
+  /**
    * Snapshot ReEngagementEngine, CrossModuleMilestones, and LearnModule
    * state onto the profile so it round-trips through
    * StudentProfile.toJSON() — these hold structured records that don't
@@ -154,6 +184,15 @@ export class KairoEngine {
       this.learn = LearnModule.fromJSON(this, savedProfile.learn);
       this.levelSystem = new LevelSystem(this.profile);
       this.badgeSystem = new BadgeSystem(this.profile);
+      // engine.settings was the one subsystem this block never rebuilt —
+      // ProfileSettings.preferences is computed once, at construction time,
+      // from whatever profile existed then (the fresh default one built
+      // above, before this block replaces it with the real saved one).
+      // Without this, a returning student's saved preferences were
+      // silently ignored by engine.settings.getPreferences() forever after
+      // the first reload, even though they were correctly saved and loaded
+      // onto this.profile.
+      this.settings = new ProfileSettings(this);
     }
 
     const savedGraph = await this.store.loadGraph();
