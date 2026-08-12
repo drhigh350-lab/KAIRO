@@ -1,0 +1,121 @@
+/*
+ * Kairo V1 — design tokens.
+ * Values carried over verbatim from design-system/tokens/*.css (the
+ * approved brand system) — this file does not invent a new palette, it
+ * just gives the V1 shell its own copy so app/ has no dependency on the
+ * disconnected Figma-Make prototype directory.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Brand primitives */
+  --kairo-navy-900: #012748;
+  --kairo-navy-800: #043156;
+  --kairo-blue-700: #09476E;
+  --kairo-blue-500: #2E6E95;
+  --kairo-blue-300: #98B0C4;
+  --kairo-blue-200: #C3D2DE;
+  --kairo-blue-100: #E4ECF2;
+  --kairo-white: #F8F9FA;
+  --kairo-paper: #FFFFFF;
+  --kairo-gold-600: #B9812F;
+  --kairo-gold-500: #D9A94C;
+  --kairo-gold-200: #F3DFB3;
+  --kairo-gold-100: #FBF1DD;
+  --kairo-ink-900: #0B1720;
+  --kairo-ink-700: #3A4A56;
+  --kairo-ink-500: #5C6F7C;
+  --kairo-ink-300: #94A5B0;
+  --kairo-ink-100: #D6DEE3;
+  --kairo-success-600: #1E8A5F;
+  --kairo-success-100: #E1F4EB;
+  --kairo-caution-600: #B9812F;
+  --kairo-caution-100: #FBF1DD;
+  /* Kept for form-field/system errors only — never for ordinary academic
+     weakness (Fading concepts, low accuracy). See lib/copy.js. */
+  --kairo-danger-600: #C24242;
+  --kairo-danger-100: #FBE7E7;
+
+  /* Semantic aliases */
+  --color-bg-canvas: var(--kairo-white);
+  --color-bg-surface: var(--kairo-paper);
+  --color-bg-sunken: var(--kairo-blue-100);
+  --color-bg-primary: var(--kairo-navy-900);
+  --color-bg-primary-hover: var(--kairo-navy-800);
+  --color-bg-secondary: var(--kairo-blue-700);
+  --color-border-subtle: var(--kairo-blue-200);
+  --color-border-default: var(--kairo-ink-100);
+  --color-divider: var(--kairo-blue-300);
+
+  --text-heading: var(--kairo-navy-900);
+  --text-body: var(--kairo-ink-900);
+  --text-muted: var(--kairo-ink-500);
+  --text-faint: var(--kairo-ink-300);
+  --text-on-primary: var(--kairo-white);
+  --text-link: var(--kairo-blue-700);
+
+  --accent-gold: var(--kairo-gold-500);
+  --accent-gold-bg: var(--kairo-gold-100);
+  --accent-gold-border: var(--kairo-gold-200);
+
+  --state-success: var(--kairo-success-600);
+  --state-success-bg: var(--kairo-success-100);
+  --state-caution: var(--kairo-caution-600);
+  --state-caution-bg: var(--kairo-caution-100);
+
+  --focus-ring: 0 0 0 3px rgba(9, 71, 110, 0.28);
+
+  /* Type */
+  --font-display: 'Poppins', 'Montserrat', sans-serif;
+  --font-heading: 'Montserrat', 'Poppins', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --fs-display: 30px;
+  --fs-h1: 24px;
+  --fs-h2: 20px;
+  --fs-h3: 17px;
+  --fs-body-lg: 16px;
+  --fs-body: 15px;
+  --fs-body-sm: 13px;
+  --fs-caption: 12px;
+
+  --lh-tight: 1.2;
+  --lh-heading: 1.3;
+  --lh-body: 1.55;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  /* Space + shape */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  --touch-min: 48px;
+  --container-max: 460px;
+
+  --shadow-xs: 0 1px 2px rgba(1, 39, 72, 0.06);
+  --shadow-sm: 0 2px 8px rgba(1, 39, 72, 0.08);
+  --shadow-md: 0 8px 24px rgba(1, 39, 72, 0.10);
+  --shadow-lg: 0 16px 40px rgba(1, 39, 72, 0.14);
+
+  --ease-standard: cubic-bezier(.4, 0, .2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+}

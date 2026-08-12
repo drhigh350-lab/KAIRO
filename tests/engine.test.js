@@ -192,6 +192,38 @@ test('Error classifier detects guessing', () => {
   assertEqual(tag, ErrorTag.GUESSED, 'Very fast wrong should be guessed');
 });
 
+test('KaiBehavior.respondToAnswer() names the real concept, not "undefined" (context.result.conceptName, not context.conceptName)', () => {
+  const concept = engine.graph.getConcept(periodicId);
+  const baseContext = (overrides) => ({
+    result: { correct: false, errorTag: ErrorTag.CONCEPTUAL_GAP, conceptName: concept.name, responseTimeMs: 9000 },
+    conceptState: concept.retentionState,
+    macroState: engine.profile.macroState,
+    isMilestone: false,
+    ...overrides
+  });
+
+  // Error path — every ErrorTag branch interpolates conceptName the same way.
+  for (const tag of Object.values(ErrorTag)) {
+    const response = engine.kai.respondToAnswer(baseContext({ result: { correct: false, errorTag: tag, conceptName: concept.name, responseTimeMs: 9000 } }));
+    assert(response.text.includes(concept.name), `Error response for "${tag}" should name "${concept.name}", got: ${response.text}`);
+    assert(!response.text.includes('undefined'), `Error response for "${tag}" should never say "undefined": ${response.text}`);
+  }
+
+  // Correct-answer path.
+  const correctResponse = engine.kai.respondToAnswer(baseContext({ result: { correct: true, errorTag: null, conceptName: concept.name, responseTimeMs: 4000 } }));
+  assert(correctResponse.text.includes(concept.name), `Correct-answer response should name "${concept.name}", got: ${correctResponse.text}`);
+  assert(!correctResponse.text.includes('undefined'), `Correct-answer response should never say "undefined": ${correctResponse.text}`);
+
+  // Milestone (Reinforced transition) path.
+  const milestoneResponse = engine.kai.respondToAnswer(baseContext({
+    result: { correct: true, errorTag: null, conceptName: concept.name, responseTimeMs: 3000 },
+    conceptState: 'reinforced',
+    isMilestone: true
+  }));
+  assert(milestoneResponse.text.includes(concept.name), `Milestone response should name "${concept.name}", got: ${milestoneResponse.text}`);
+  assert(!milestoneResponse.text.includes('undefined'), `Milestone response should never say "undefined": ${milestoneResponse.text}`);
+});
+
 test('Adaptive difficulty respects macro-state ceiling', () => {
   engine.profile.macroState = 'recovering';
   const tier = engine.difficulty.selectDifficulty(

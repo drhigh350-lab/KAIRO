@@ -1,0 +1,209 @@
+@import './tokens.css';
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--kairo-blue-100);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+a { color: var(--text-link); text-decoration: none; }
+
+/* ─── App shell: a single mobile-width column, centered on wider viewports.
+   Real device widths only need the inner column — the outer canvas is a
+   dev-convenience for viewing this on a desktop browser. ─── */
+.app-shell {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--color-bg-canvas);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: var(--shadow-lg);
+}
+
+.screen {
+  flex: 1;
+  padding: var(--space-2) var(--space-5) var(--space-9);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.screen-narrow {
+  padding-left: var(--space-5);
+  padding-right: var(--space-5);
+}
+
+/* ─── Top bar ─── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5) var(--space-2);
+}
+.topbar__mark {
+  font-family: var(--font-heading);
+  font-weight: var(--fw-extrabold);
+  font-size: 18px;
+  color: var(--text-heading);
+  letter-spacing: -0.01em;
+}
+.topbar__profile {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--kairo-blue-100);
+  border: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kairo-navy-900);
+  font-weight: var(--fw-semibold);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ─── Bottom nav ─── */
+.bottomnav {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  background: var(--color-bg-surface);
+  border-top: 1px solid var(--color-border-default);
+  padding: var(--space-2) var(--space-2) max(var(--space-2), env(safe-area-inset-bottom));
+}
+.bottomnav__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-2) 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  min-height: var(--touch-min);
+}
+.bottomnav__item[aria-current="page"] {
+  color: var(--kairo-navy-900);
+}
+.bottomnav__item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Type helpers ─── */
+.eyebrow {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.h1 { font-family: var(--font-heading); font-weight: var(--fw-extrabold); font-size: var(--fs-h1); color: var(--text-heading); line-height: var(--lh-heading); margin: 0; }
+.h2 { font-family: var(--font-heading); font-weight: var(--fw-bold); font-size: var(--fs-h2); color: var(--text-heading); line-height: var(--lh-heading); margin: 0; }
+.h3 { font-family: var(--font-heading); font-weight: var(--fw-semibold); font-size: var(--fs-h3); color: var(--text-heading); margin: 0; }
+.muted { color: var(--text-muted); }
+.faint { color: var(--text-faint); }
+
+/* ─── Card ─── */
+.card {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+}
+.card--sunken {
+  background: var(--color-bg-sunken);
+  box-shadow: none;
+}
+.card--primary {
+  background: var(--color-bg-primary);
+  color: var(--text-on-primary);
+}
+.card--primary .muted { color: var(--kairo-blue-200); }
+
+/* ─── Buttons ─── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-body);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-6);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.btn:active { transform: scale(0.98); }
+.btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.btn--primary { background: var(--kairo-gold-500); color: var(--kairo-navy-900); }
+.btn--primary:hover { background: var(--kairo-gold-600); }
+.btn--secondary { background: var(--kairo-navy-900); color: #fff; }
+.btn--secondary:hover { background: var(--kairo-navy-800); }
+.btn--ghost { background: transparent; color: var(--text-link); padding: 0 var(--space-3); }
+.btn--outline { background: transparent; color: var(--text-heading); border: 1.5px solid var(--color-border-subtle); }
+.btn--full { width: 100%; }
+.btn--sm { min-height: 40px; font-size: var(--fs-body-sm); padding: 0 var(--space-4); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── Pills / tags ─── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--kairo-blue-100);
+  color: var(--kairo-blue-700);
+}
+.pill--gold { background: var(--accent-gold-bg); color: var(--kairo-gold-600); }
+.pill--calm { background: var(--kairo-blue-100); color: var(--kairo-blue-700); }
+.pill--quiet { background: transparent; color: var(--text-muted); border: 1px solid var(--color-border-default); }
+
+/* ─── Loading / empty ─── */
+.spinner {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid var(--kairo-blue-200);
+  border-top-color: var(--kairo-navy-900);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.center-fill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
