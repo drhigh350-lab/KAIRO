@@ -3,7 +3,7 @@
  * Run with: node tests/engine.test.js
  */
 
-import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode } from "../src/index.js";
+import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag } from "../src/utils/constants.js";
 
@@ -226,6 +226,23 @@ test('Decay model computes next review in future', () => {
   assert(c.nextReviewEstimate === next, 'Should update concept nextReview');
 });
 
+test('DecayModel.getDueConcepts() no longer throws a ReferenceError on a concept with no nextReviewEstimate (RetentionState was used without being imported)', () => {
+  const graph = new KnowledgeGraph();
+  const fresh = new ConceptNode({ id: 'decay_due_unseen', name: 'Due Test', subject: 'Chemistry', topic: 'Regression', subtopic: 'Test' });
+  graph.addConcept(fresh);
+
+  const profile = new StudentProfile({ studentId: 'decay_due_test', name: 'Decay Tester' });
+  const decay = new DecayModel(profile);
+
+  const due = decay.getDueConcepts(graph);
+  assert(Array.isArray(due), 'getDueConcepts() should return an array without throwing');
+  assert(!due.includes(fresh), 'A fresh Unseen concept with no nextReviewEstimate should not be considered due');
+
+  fresh.retentionState = RetentionState.FADING;
+  const dueAfter = decay.getDueConcepts(graph);
+  assert(dueAfter.includes(fresh), 'A non-Unseen concept with no nextReviewEstimate should be considered due');
+});
+
 test('Export/import preserves state', () => {
   const exported = engine.exportState();
   assert(exported.profile, 'Should export profile');
@@ -296,6 +313,28 @@ test('Level system calculates XP and progress', () => {
   assert(typeof progress.xp === 'number', 'Should have XP');
   assert(typeof progress.progressPercent === 'number', 'Should have progress %');
   assert(progress.level >= 1, 'Should be at least level 1');
+});
+
+test('LevelSystem.calculateXP() awards the topic-completion bonus via retentionState, not a nonexistent .state field', () => {
+  const graph = new KnowledgeGraph();
+  const c1 = new ConceptNode({ id: 'xp_topic_c1', name: 'Kinematics Basics', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
+  const c2 = new ConceptNode({ id: 'xp_topic_c2', name: 'Kinematics Graphs', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
+  c1.retentionState = RetentionState.HELD;
+  c2.retentionState = RetentionState.REINFORCED;
+  graph.addConcept(c1);
+  graph.addConcept(c2);
+
+  const profile = new StudentProfile({ studentId: 'xp_topic_test', name: 'XP Tester' });
+  const level = new LevelSystem(profile);
+  const xp = level.calculateXP(graph, []);
+
+  // held (20) + reinforced (50) + topic-completion bonus (100, since both
+  // concepts in Physics:Motion are Held/Reinforced = 100% >= the 80%
+  // threshold) = 170. Before the fix, the topic-completion filter read
+  // ConceptNode's nonexistent `.state` field (always undefined), so
+  // `mastered` was always 0 and this bonus never fired — the total would
+  // have been 70.
+  assertEqual(xp, 170, 'calculateXP() should include the 100-XP topic-completion bonus once every concept in a topic is Held/Reinforced');
 });
 
 test('Badge system has catalog and checks', () => {
@@ -1153,6 +1192,53 @@ await test('loadContentCatalog() populates engine.graph and engine.questionGraph
   assertEqual(q.text, questionRow.stem, 'getQuestionForConcept should translate the canonical .stem field to the .text shape CBTExamMode/RapidFire consumers expect');
   assertEqual(q.conceptId, 'bio_c1', 'getQuestionForConcept should translate conceptsTested[0].conceptId to a flat singular .conceptId');
   assertEqual(q.correctOption, 'A', 'getQuestionForConcept should carry correctOption through untranslated');
+});
+
+await test('engine.settings is reconstructed on init() reload — saved preferences are not silently ignored', async () => {
+  const sessionA = new KairoEngine({ studentId: 'settings_reload_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
+  await sessionA.init();
+  sessionA.settings.updatePreferences('notifications', { dailyRecap: false });
+  await sessionA.store.saveProfile(sessionA.profile);
+
+  // A real page reload is a brand-new KairoEngine instance reading the same
+  // persisted student back from storage — simulate that here by sharing the
+  // in-memory store's backing map (standing in for real IndexedDB, which
+  // genuinely persists across reloads for the same origin/studentId, unlike
+  // two independent LocalStore instances in this test harness).
+  const sessionB = new KairoEngine({ studentId: 'settings_reload_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
+  sessionB.store.useMemory = true;
+  sessionB.store.memoryFallback = sessionA.store.memoryFallback;
+  await sessionB.init();
+
+  assertEqual(sessionB.profile.preferences.notifications.dailyRecap, false, 'sanity check: the saved preference really did reach engine.profile on reload');
+  assertEqual(sessionB.settings.getPreferences().notifications.dailyRecap, false, 'engine.settings.getPreferences() should reflect the real saved preferences after a reload — ProfileSettings.preferences was previously computed once at construction (before init() replaced this.profile with the saved one) and never recomputed, so a returning student\'s settings screen would silently show defaults forever, even though the real preferences were correctly saved');
+});
+
+await test('ProfileSettings.deleteAllData() rebuilds every profile-bound subsystem, not just engine.profile/engine.graph', async () => {
+  const engineDel = new KairoEngine({ studentId: 'delete_data_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  await engineDel.init();
+
+  // Give the pre-delete profile some real history and a custom preference,
+  // and capture references to subsystems built against THAT profile.
+  const cidBefore = engineDel.addConcept({ name: 'Old Concept', subject: 'Chemistry', topic: 'Old Topic' });
+  engineDel.submitAnswer({ conceptId: cidBefore, correct: true, responseTimeMs: 5000, selectedOption: 'A', correctOption: 'A', questionId: 'old_q1', questionDifficulty: 1 });
+  engineDel.settings.updatePreferences('accessibility', { reduceMotion: true });
+  const eliteScoreBefore = engineDel.eliteScore;
+  const kaiBefore = engineDel.kai;
+  const settingsBefore = engineDel.settings;
+
+  await engineDel.settings.deleteAllData();
+
+  assert(engineDel.eliteScore !== eliteScoreBefore, 'engine.eliteScore should be a fresh instance after deleteAllData(), not the one still bound to the deleted profile');
+  assert(engineDel.kai !== kaiBefore, 'engine.kai should be a fresh instance after deleteAllData()');
+  assert(engineDel.settings !== settingsBefore, 'engine.settings should be a fresh instance after deleteAllData()');
+  assertEqual(engineDel.settings.getPreferences().accessibility.reduceMotion, false, 'the fresh engine.settings should show real defaults, not the deleted profile\'s custom preference still sitting on the orphaned old ProfileSettings instance');
+  assertEqual(engineDel.eliteScore.profile, engineDel.profile, 'engine.eliteScore should be bound to the current (post-delete) profile object, not a detached one — otherwise every future score calculation would silently write to data nothing ever reads again');
+
+  // The new profile should behave like a genuinely fresh student, not
+  // carry over the deleted one's history.
+  const score = engineDel.eliteScore.calculate(engineDel.graph, engineDel.profile.sessions);
+  assertEqual(score.total, 0, 'a freshly reset student with no graph/sessions should score 0, confirming eliteScore is reading the new empty profile, not the deleted one\'s history');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
