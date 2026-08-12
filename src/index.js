@@ -72,22 +72,8 @@ export class KairoEngine {
   constructor({ studentId, name, examDate = null, targetSubjects = [], targetCourse = null, targetUniversity = null }) {
     this.profile = new StudentProfile({ studentId, name, examDate, targetSubjects, targetCourse, targetUniversity });
     this.graph = new KnowledgeGraph();
-    this.decayModel = new DecayModel(this.profile);
     this.recommendation = null;
-    this.classifier = new ErrorPatternClassifier(this.profile);
-    this.eliteScore = new EliteScore(this.profile);
-    this.difficulty = new AdaptiveDifficulty(this.profile);
-    this.kai = new KaiBehavior(this.profile);
-    this.scheduler = new RevisionScheduler(this.decayModel, examDate);
-    this.streak = new MomentumStreak(this.profile);
-    this.emotionalProfile = new EmotionalProfile(this.profile);
-    this.learningState = new LearningStateTracker(this.profile);
-    this.journeyStage = new JourneyStageTracker(this.profile);
-    this.notificationOrchestrator = new NotificationOrchestrator(this.profile);
-    this.reEngagement = new ReEngagementEngine(this.profile);
-    this.crossModuleMilestones = new CrossModuleMilestones(this.profile);
-    this.continuation = new ContinuationEngine(this.profile);
-    this.comms = new CommsService(this.profile);
+    this._attachFreshProfileSubsystems();
     this.store = new LocalStore();
     this.sync = new SyncManager(this.store);
 
@@ -97,8 +83,6 @@ export class KairoEngine {
     this.topicPractice = new TopicPracticeEngine(this);
     this.segmentedLeaderboard = new SegmentedLeaderboard(this);
     this.universityLeaderboard = new UniversityLeaderboard(this);
-    this.levelSystem = new LevelSystem(this.profile);
-    this.badgeSystem = new BadgeSystem(this.profile);
     this.onboarding = new OnboardingEngine(this);
     this.learn = new LearnModule(this);
     this.review = new ReviewModule(this);
@@ -107,7 +91,6 @@ export class KairoEngine {
     this.insights = new InsightsModule(this);
     this.notifications = new NotificationEngine(this);
     this.notificationPipeline = new NotificationPipeline(this);
-    this.settings = new ProfileSettings(this);
     this.questionGraph = new QuestionRelationshipGraph();
     this.misconceptions = MisconceptionLibrary.seedDefaults();
     this.explanations = new ExplanationEngine(this.kai, this.misconceptions);
@@ -116,6 +99,41 @@ export class KairoEngine {
 
     this.currentSession = null;
     this.sessionStartTime = null;
+  }
+
+  /**
+   * Every subsystem that's constructed with `this.profile` directly (not
+   * `this`, the engine) captures a reference to that exact profile object
+   * — if `this.profile` is later replaced (a real init() reload, or
+   * ProfileSettings.deleteAllData()'s reset) without also rebuilding these,
+   * they keep writing to the orphaned old profile forever. This is the one
+   * place that list is declared; both the constructor (fresh profile) and
+   * any later full profile replacement call this instead of repeating it.
+   * Submodules that need to restore prior state from saved JSON
+   * (learningState, journeyStage, reEngagement, crossModuleMilestones,
+   * continuation, comms) are intentionally re-assigned by the caller
+   * afterward — this only guarantees every one of them at least points at
+   * the current profile.
+   */
+  _attachFreshProfileSubsystems() {
+    this.decayModel = new DecayModel(this.profile);
+    this.classifier = new ErrorPatternClassifier(this.profile);
+    this.eliteScore = new EliteScore(this.profile);
+    this.difficulty = new AdaptiveDifficulty(this.profile);
+    this.kai = new KaiBehavior(this.profile);
+    this.scheduler = new RevisionScheduler(this.decayModel, this.profile.examDate);
+    this.streak = new MomentumStreak(this.profile);
+    this.emotionalProfile = new EmotionalProfile(this.profile);
+    this.learningState = new LearningStateTracker(this.profile);
+    this.journeyStage = new JourneyStageTracker(this.profile);
+    this.notificationOrchestrator = new NotificationOrchestrator(this.profile);
+    this.reEngagement = new ReEngagementEngine(this.profile);
+    this.crossModuleMilestones = new CrossModuleMilestones(this.profile);
+    this.continuation = new ContinuationEngine(this.profile);
+    this.comms = new CommsService(this.profile);
+    this.levelSystem = new LevelSystem(this.profile);
+    this.badgeSystem = new BadgeSystem(this.profile);
+    this.settings = new ProfileSettings(this);
   }
 
   /**
@@ -140,25 +158,21 @@ export class KairoEngine {
     const savedProfile = await this.store.loadProfile(this.profile.studentId);
     if (savedProfile) {
       this.profile = StudentProfile.fromJSON(savedProfile);
-      this.decayModel = new DecayModel(this.profile);
-      this.classifier = new ErrorPatternClassifier(this.profile);
-      this.eliteScore = new EliteScore(this.profile);
-      this.difficulty = new AdaptiveDifficulty(this.profile);
-      this.kai = new KaiBehavior(this.profile);
-      this.scheduler = new RevisionScheduler(this.decayModel, this.profile.examDate);
-      this.streak = new MomentumStreak(this.profile);
-      this.emotionalProfile = new EmotionalProfile(this.profile);
+      // Rebuilds every profile-bound subsystem against the just-loaded
+      // profile first (see _attachFreshProfileSubsystems's own docstring —
+      // this is exactly the gap that used to leave engine.settings showing
+      // stale defaults after every reload). The handful below that need to
+      // restore prior state from saved JSON, rather than start fresh, are
+      // re-assigned immediately after.
+      this._attachFreshProfileSubsystems();
       this.learningState = LearningStateTracker.fromJSON(this.profile);
       this.journeyStage = JourneyStageTracker.fromJSON(this.profile);
-      this.notificationOrchestrator = new NotificationOrchestrator(this.profile);
       this.reEngagement = ReEngagementEngine.fromJSON(this.profile, savedProfile.reEngagement);
       this.crossModuleMilestones = CrossModuleMilestones.fromJSON(this.profile, savedProfile.crossModuleMilestones);
       this.continuation = ContinuationEngine.fromJSON(this.profile, savedProfile.continuation);
       this.comms = CommsService.fromJSON(this.profile, savedProfile.comms);
       this.learn = LearnModule.fromJSON(this, savedProfile.learn);
       this.onboarding = OnboardingEngine.fromJSON(savedProfile.onboarding, this);
-      this.levelSystem = new LevelSystem(this.profile);
-      this.badgeSystem = new BadgeSystem(this.profile);
     }
 
     const savedGraph = await this.store.loadGraph();

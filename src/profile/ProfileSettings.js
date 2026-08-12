@@ -179,6 +179,11 @@ export class ProfileSettings {
       studentId: this.engine.profile.studentId,
       name: this.engine.profile.name
     });
+    // Every subsystem constructed with the old profile object directly
+    // (decayModel, eliteScore, kai, streak, this.engine.settings itself...)
+    // would otherwise keep writing to the now-detached old profile forever
+    // — see KairoEngine._attachFreshProfileSubsystems()'s own docstring.
+    this.engine._attachFreshProfileSubsystems();
     return { deleted: true };
   }
 }

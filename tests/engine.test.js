@@ -1524,6 +1524,53 @@ await test('OnboardingEngine state survives a save/reload cycle instead of alway
   assertEqual(resumed.data.targetCourse, 'Medicine and Surgery', 'in-progress onboarding answers (targetCourse) should also survive');
 });
 
+await test('engine.settings is reconstructed on init() reload — saved preferences are not silently ignored', async () => {
+  const sessionA = new KairoEngine({ studentId: 'settings_reload_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
+  await sessionA.init();
+  sessionA.settings.updatePreferences('notifications', { dailyRecap: false });
+  await sessionA.store.saveProfile(sessionA.profile);
+
+  // A real page reload is a brand-new KairoEngine instance reading the same
+  // persisted student back from storage — simulate that here by sharing the
+  // in-memory store's backing map (standing in for real IndexedDB, which
+  // genuinely persists across reloads for the same origin/studentId, unlike
+  // two independent LocalStore instances in this test harness).
+  const sessionB = new KairoEngine({ studentId: 'settings_reload_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
+  sessionB.store.useMemory = true;
+  sessionB.store.memoryFallback = sessionA.store.memoryFallback;
+  await sessionB.init();
+
+  assertEqual(sessionB.profile.preferences.notifications.dailyRecap, false, 'sanity check: the saved preference really did reach engine.profile on reload');
+  assertEqual(sessionB.settings.getPreferences().notifications.dailyRecap, false, 'engine.settings.getPreferences() should reflect the real saved preferences after a reload — ProfileSettings.preferences was previously computed once at construction (before init() replaced this.profile with the saved one) and never recomputed, so a returning student\'s settings screen would silently show defaults forever, even though the real preferences were correctly saved');
+});
+
+await test('ProfileSettings.deleteAllData() rebuilds every profile-bound subsystem, not just engine.profile/engine.graph', async () => {
+  const engine10 = new KairoEngine({ studentId: 'delete_data_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  await engine10.init();
+
+  // Give the pre-delete profile some real history and a custom preference,
+  // and capture references to subsystems built against THAT profile.
+  const cidBefore = engine10.addConcept({ name: 'Old Concept', subject: 'Chemistry', topic: 'Old Topic' });
+  engine10.submitAnswer({ conceptId: cidBefore, correct: true, responseTimeMs: 5000, selectedOption: 'A', correctOption: 'A', questionId: 'old_q1', questionDifficulty: 1 });
+  engine10.settings.updatePreferences('accessibility', { reduceMotion: true });
+  const eliteScoreBefore = engine10.eliteScore;
+  const kaiBefore = engine10.kai;
+  const settingsBefore = engine10.settings;
+
+  await engine10.settings.deleteAllData();
+
+  assert(engine10.eliteScore !== eliteScoreBefore, 'engine.eliteScore should be a fresh instance after deleteAllData(), not the one still bound to the deleted profile');
+  assert(engine10.kai !== kaiBefore, 'engine.kai should be a fresh instance after deleteAllData()');
+  assert(engine10.settings !== settingsBefore, 'engine.settings should be a fresh instance after deleteAllData()');
+  assertEqual(engine10.settings.getPreferences().accessibility.reduceMotion, false, 'the fresh engine.settings should show real defaults, not the deleted profile\'s custom preference still sitting on the orphaned old ProfileSettings instance');
+  assertEqual(engine10.eliteScore.profile, engine10.profile, 'engine.eliteScore should be bound to the current (post-delete) profile object, not a detached one — otherwise every future score calculation would silently write to data nothing ever reads again');
+
+  // The new profile should behave like a genuinely fresh student, not
+  // carry over the deleted one's history.
+  const score = engine10.eliteScore.calculate(engine10.graph, engine10.profile.sessions);
+  assertEqual(score.total, 0, 'a freshly reset student with no graph/sessions should score 0, confirming eliteScore is reading the new empty profile, not the deleted one\'s history');
+});
+
 // ═══════════════════════════════════════════════════════════════
 // NOTIFICATION PIPELINE TESTS
 // The reconciliation of the candidate-shape mismatch flagged in
