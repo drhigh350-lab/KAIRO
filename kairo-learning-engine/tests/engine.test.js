@@ -1014,6 +1014,125 @@ test("getQuestionForConcept: minDifficulty + maxDifficulty together select a rea
 });
 
 // ═══════════════════════════════════════════════════════════════
+// ERROR TAXONOMY WIRING TESTS (P0-7)
+// misread_question/misapplied_rule/partial_understanding were permanently
+// unreachable for two independent reasons: nothing ever populated
+// distractorTags, and the branches themselves were broken regardless —
+// misread_question's condition (`selectedOption === correctOption +
+// '_trap'`) could never match any real option label, and misapplied_rule/
+// final_step read a whole-question distractorTags array instead of the
+// tags on the option the student actually picked. Both fixed; these tests
+// use synthetic Question fixtures (not real production content — see
+// P0-7's completion note on why real content wasn't hand-tagged here).
+// ═══════════════════════════════════════════════════════════════
+
+test('Question.getDistractorTags() reads per-option tags, empty for an untagged or unknown option', () => {
+  const q = new Question({
+    id: 'tag_q1', subject: 'Biology', topic: 'T', stem: 'S',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: 'confused_similar_concepts', explanation: 'x', tags: ['misread_trap'] }],
+    lifecycleState: 'live'
+  });
+  assertEqual(JSON.stringify(q.getDistractorTags('B')), JSON.stringify(['misread_trap']), "Should return the tags authored on option B's distractor");
+  assertEqual(JSON.stringify(q.getDistractorTags('A')), '[]', 'The correct option has no distractor entry, so no tags');
+  assertEqual(JSON.stringify(q.getDistractorTags('C')), '[]', 'An option with no distractor entry at all should return [], not throw');
+});
+
+test('ErrorPatternClassifier: misread_question fires for a tagged misread-trap option, not the previous always-false condition', () => {
+  const engine = new KairoEngine({ studentId: 'tax1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  const conceptId = engine.addConcept({ name: 'Osmosis Direction', subject: 'Biology', topic: 'Transport' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q2', subject: 'Biology', topic: 'Transport', stem: 'Water moves from...',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: null, explanation: 'Answers the reversed question.', tags: ['misread_trap'] }],
+    lifecycleState: 'live'
+  });
+  const tag = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'B', correctOption: 'A', responseTimeMs: 15000,
+    question: q
+  });
+  assertEqual(tag, ErrorTag.MISREAD_QUESTION, 'A tagged misread-trap option should classify as misread_question, not conceptual_gap');
+});
+
+test('ErrorPatternClassifier: misapplied_rule fires for the actually-selected adjacent-rule option, not any tagged option on the question', () => {
+  const engine = new KairoEngine({ studentId: 'tax2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  const conceptId = engine.addConcept({ name: 'Ionic vs Covalent', subject: 'Chemistry', topic: 'Bonding' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q3', subject: 'Chemistry', topic: 'Bonding', stem: 'S',
+    options: [
+      { label: 'A', text: 'A', isCorrect: true },
+      { label: 'B', text: 'B', isCorrect: false },
+      { label: 'C', text: 'C', isCorrect: false }
+    ],
+    correctOption: 'A',
+    distractors: [
+      { option: 'B', misconceptionId: null, explanation: 'Correct for covalent bonding, not ionic.', tags: ['adjacent_rule'] },
+      { option: 'C', misconceptionId: null, explanation: 'Unrelated slip.', tags: [] }
+    ],
+    lifecycleState: 'live'
+  });
+  const pickedTagged = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'B', correctOption: 'A', responseTimeMs: 15000, question: q
+  });
+  assertEqual(pickedTagged, ErrorTag.MISAPPLIED_RULE, 'Picking the tagged adjacent-rule option should classify as misapplied_rule');
+
+  const pickedUntagged = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'C', correctOption: 'A', responseTimeMs: 15000, question: q
+  });
+  assert(pickedUntagged !== ErrorTag.MISAPPLIED_RULE, "Picking a different, untagged option shouldn't inherit another option's adjacent_rule tag");
+});
+
+test('ErrorPatternClassifier: partial_understanding fires for a tagged final-step slip on a calculation-heavy question', () => {
+  const engine = new KairoEngine({ studentId: 'tax3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  const conceptId = engine.addConcept({ name: 'Mole Ratio Calculations', subject: 'Chemistry', topic: 'Stoichiometry' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q4', subject: 'Chemistry', topic: 'Stoichiometry', stem: 'S',
+    calculationLoad: 'heavy',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: 'arithmetic_slip', explanation: 'Right setup, wrong final division.', tags: ['final_step'] }],
+    lifecycleState: 'live'
+  });
+  const tag = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'B', correctOption: 'A', responseTimeMs: 15000, question: q
+  });
+  assertEqual(tag, ErrorTag.PARTIAL_UNDERSTANDING, 'A calculation-heavy question with a tagged final-step slip should classify as partial_understanding');
+});
+
+await test('KairoEngine.submitAnswer(): resolves the real Question from questionGraph for classification, not an always-empty caller-supplied distractorTags param', async () => {
+  const engine = new KairoEngine({ studentId: 'tax4', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Enzyme Specificity', subject: 'Biology', topic: 'Enzymes' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q5', subject: 'Biology', topic: 'Enzymes', stem: 'S',
+    conceptsTested: [{ conceptId, weight: 'primary' }],
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: null, explanation: 'Answers the reversed question.', tags: ['misread_trap'] }],
+    lifecycleState: 'live'
+  });
+  engine.questionGraph.addQuestion(q);
+
+  // Deliberately not passing questionDistractorTags — proving the real
+  // fix is questionGraph resolution, not the caller having to supply it.
+  const result = engine.submitAnswer({
+    conceptId, correct: false, responseTimeMs: 15000,
+    selectedOption: 'B', correctOption: 'A', questionId: 'tag_q5', questionDifficulty: 2
+  });
+  assertEqual(result.attempt.errorTag, ErrorTag.MISREAD_QUESTION, "submitAnswer() should classify via the real Question's own tagged distractor data");
+});
+
+// ═══════════════════════════════════════════════════════════════
 // TODAY'S FOCUS / RECOMMENDATION REASONING TESTS
 // Home's "why this session" sentence was static, client-authored copy,
 // identical regardless of student state, even though the engine already

@@ -489,12 +489,20 @@ export class KairoEngine {
 
     let errorTag = null;
     if (!correct) {
+      // The real Question (with its own distractors[].tags, authored
+      // per-option) is what actually powers misread_question/
+      // misapplied_rule/partial_understanding — the caller-supplied
+      // questionDistractorTags below was always [] in practice, since
+      // nothing ever sent it. Falls back to the caller-supplied shape when
+      // the question isn't resolvable (e.g. content not loaded yet), same
+      // degrade-gracefully pattern as the explanation lookup further down.
+      const questionObj = questionId ? this.questionGraph.getQuestion(questionId) : null;
       errorTag = this.classifier.classify({
         concept,
         selectedOption,
         correctOption,
         responseTimeMs,
-        question: {
+        question: questionObj || {
           id: questionId,
           distractorTags: questionDistractorTags,
           difficulty: questionDifficulty,

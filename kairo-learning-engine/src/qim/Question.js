@@ -112,6 +112,21 @@ export class Question {
   }
 
   /**
+   * Tags on a specific wrong option — e.g. 'misread_trap' (the option a
+   * student picks if they misread the question, not a subject error),
+   * 'adjacent_rule' (a real rule from a neighboring concept applied
+   * incorrectly here), 'final_step' (reachable only by getting everything
+   * right except the last step of a calculation). Optional per-distractor
+   * metadata (distractors[].tags), same shape as misconceptionId — powers
+   * ErrorPatternClassifier's misread_question/misapplied_rule/
+   * partial_understanding branches.
+   */
+  getDistractorTags(optionLabel) {
+    const d = this.distractors.find(dist => dist.option === optionLabel);
+    return d?.tags || [];
+  }
+
+  /**
    * Update empirical stats after an attempt.
    */
   recordAttempt({ correct, responseTimeMs, selectedOption }) {
