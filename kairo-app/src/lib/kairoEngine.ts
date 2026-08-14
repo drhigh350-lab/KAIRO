@@ -456,6 +456,30 @@ export function getTodayProgress(): TodayProgress {
   };
 }
 
+export interface TodayFocus {
+  macroState: string | null;
+  conceptId: string | null;
+  conceptName: string | null;
+  subject: string | null;
+  topic: string | null;
+  reason: string | null;
+}
+
+/**
+ * Home's "why this session" reasoning — previously a static, client-authored
+ * sentence identical for every student. This calls straight through to
+ * RecommendationEngine's own real scoring (decay urgency, exam proximity,
+ * macro-state), the same signals that decide the actual session queue, via
+ * a non-committal preview that doesn't start or consume a real session.
+ * Null conceptId/reason (no concepts yet) is a real, honest state — callers
+ * should fall back to a generic sentence rather than treat it as an error.
+ */
+export function getTodayFocus(): TodayFocus | null {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.getTodayFocus();
+}
+
 /** Sets (or clears, with null) the student's own daily-question-count goal — a real, student-declared target, never a system-invented default. */
 export async function setDailyGoal(goal: number | null): Promise<void> {
   const kairo = getEngine();
@@ -603,10 +627,10 @@ export function getReviewReinforcementQuestion(conceptId: string, excludeId?: st
  * never reached the student and the next question was whatever was
  * already sitting in the pre-fetched batch instead.
  */
-export function getRecommendedNextQuestion(conceptId: string, excludeIds: string[] = []): EngineFlatQuestion | null {
+export function getRecommendedNextQuestion(conceptId: string, excludeIds: string[] = [], maxDifficulty?: number | null): EngineFlatQuestion | null {
   const kairo = getEngine();
   if (!kairo) return null;
-  return kairo.getQuestionForConcept(conceptId, { excludeIds });
+  return kairo.getQuestionForConcept(conceptId, { excludeIds, maxDifficulty: maxDifficulty ?? null });
 }
 
 /** A concept's current retention state, read directly (not recomputed) so a genuine Reinforced transition during a Review session (Review Module §5.9) can be told apart from routine completion. */

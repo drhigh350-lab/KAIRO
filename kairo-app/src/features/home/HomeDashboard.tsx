@@ -5,7 +5,7 @@ import { Modal } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, setDailyGoal } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getTodayFocus, setDailyGoal } from '../../lib/kairoEngine';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -53,6 +53,10 @@ export function HomeDashboard() {
   const earnedBadges: EarnedBadge[] = getEngine()?.getBadges()?.earned ?? [];
   const latestBadge = earnedBadges.length ? earnedBadges[earnedBadges.length - 1] : null;
   const [todayProgress, setTodayProgress] = useState(getTodayProgress());
+  // The engine's own real reasoning for today's recommended concept —
+  // replaces a static sentence that used to be identical for every student
+  // regardless of macro-state, decay urgency, or exam proximity.
+  const todayFocus = getTodayFocus();
   const hasTodayProgress = todayProgress.questionsToday > 0;
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalInput, setGoalInput] = useState(todayProgress.dailyGoal != null ? String(todayProgress.dailyGoal) : '');
@@ -106,7 +110,10 @@ export function HomeDashboard() {
       <MissionCard
         badge="Recommended Next Step"
         title="Start Practising"
-        reason={`Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`}
+        reason={
+          todayFocus?.reason
+            ?? `Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`
+        }
         chips={['≈5 min', 'Adaptive']}
         ctaLabel="Start Session"
         onStart={() => navigate('/practice', { state: { entry: 'suggested' } })}

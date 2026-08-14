@@ -894,6 +894,121 @@ test("Learn: commonMisconceptions come from the question's own distractor data, 
 });
 
 // ═══════════════════════════════════════════════════════════════
+// ADAPTIVE DIFFICULTY / FATIGUE PULLBACK WIRING TESTS
+// RecommendationEngine's fatigue interrupt only ever set
+// profile._tempSoftening, a flag nothing read. AdaptiveDifficulty checks
+// its own separate this.sessionSoftening, only ever set by its own
+// softenSession(), which nothing called — so a 'difficulty_pullback'
+// decision had zero effect on the difficulty of the next question served.
+// ═══════════════════════════════════════════════════════════════
+
+await test('AdaptiveDifficulty: a difficulty_pullback decision actually softens future difficulty selection, not just an unread profile flag', async () => {
+  const engine = new KairoEngine({
+    studentId: 'diff1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry']
+  });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Fatigue Concept', subject: 'Chemistry', topic: 'Reaction Rates' });
+  const concept = engine.graph.getConcept(conceptId);
+  concept.confidenceScore = 1; // push the Held tier toward the top of its band so a pullback is visible
+
+  engine.startSession({ mode: 'standard', plan: [] });
+  assertEqual(engine.difficulty.sessionSoftening, false, 'A fresh session should not start already softened');
+
+  concept.retentionState = 'held';
+  const tierBefore = engine.difficulty.selectDifficulty(concept, engine.profile.macroState);
+
+  // Three careless slips in a row: fast-but-not-instant wrong answers on a
+  // concept classify() sees as Held/Reinforced (ratio 6000/20000 = 0.3,
+  // satisfying isStrongHistory && ratio < 0.6 && responseTimeMs > 3000).
+  // A wrong answer flips Held -> Fading (ConceptNode._updateState), which
+  // would break isStrongHistory on the next loop iteration, so it's reset
+  // between submissions — this test is isolating the fatigue/difficulty
+  // wiring, not exercising retention-state transition rules.
+  let lastDecision = null;
+  for (let i = 0; i < 3; i++) {
+    concept.retentionState = 'held';
+    const result = engine.submitAnswer({
+      conceptId, correct: false, responseTimeMs: 6000,
+      selectedOption: 'B', correctOption: 'A', questionId: `dq${i}`, questionDifficulty: 3
+    });
+    lastDecision = result.decision;
+  }
+
+  assertEqual(lastDecision.action, 'difficulty_pullback', 'Three careless slips in a row should trigger the fatigue interrupt');
+  assertEqual(engine.difficulty.sessionSoftening, true, "AdaptiveDifficulty's own sessionSoftening flag should now be set by the fatigue interrupt");
+  const tierAfter = engine.difficulty.selectDifficulty(concept, engine.profile.macroState);
+  assert(tierAfter < tierBefore, `Difficulty tier should genuinely drop after a pullback (was ${tierBefore}, now ${tierAfter})`);
+
+  // A new session should not inherit softening from a previous one — it's
+  // meant to be temporary and session-scoped, not sticky forever.
+  engine.startSession({ mode: 'standard', plan: [] });
+  assertEqual(engine.difficulty.sessionSoftening, false, 'Starting a new session should reset temporary softening from a previous one');
+});
+
+test('getQuestionForConcept: maxDifficulty narrows the pool but never returns nothing when real questions exist above it', () => {
+  const engine = new KairoEngine({
+    studentId: 'diff2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Physics']
+  });
+  const conceptId = engine.addConcept({ name: 'Difficulty Pool Concept', subject: 'Physics', topic: 'Mechanics' });
+  for (const [id, difficultyRating] of [['dp_easy', 1], ['dp_hard1', 4], ['dp_hard2', 5]]) {
+    engine.questionGraph.addQuestion(new Question({
+      id, subject: 'Physics', topic: 'Mechanics',
+      conceptsTested: [{ conceptId, weight: 'primary' }],
+      difficultyRating, stem: `Q ${id}`,
+      options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+      correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+
+  const capped = engine.getQuestionForConcept(conceptId, { maxDifficulty: 2 });
+  assertEqual(capped.id, 'dp_easy', 'With a ceiling of 2, only the difficulty-1 question qualifies');
+
+  const noneQualify = engine.getQuestionForConcept(conceptId, { excludeIds: ['dp_hard1', 'dp_hard2'], maxDifficulty: 2 });
+  assertEqual(noneQualify.id, 'dp_easy', 'Still returns the one real question left, even excluding the harder ones');
+
+  const tooStrict = engine.getQuestionForConcept(conceptId, { excludeIds: ['dp_easy'], maxDifficulty: 2 });
+  assert(['dp_hard1', 'dp_hard2'].includes(tooStrict.id), 'When nothing meets the ceiling, falls back to the full remaining pool rather than returning null');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TODAY'S FOCUS / RECOMMENDATION REASONING TESTS
+// Home's "why this session" sentence was static, client-authored copy,
+// identical regardless of student state, even though the engine already
+// computes macroState/decay/exam-proximity every session. getTodayFocus()
+// surfaces the engine's own real reasoning instead.
+// ═══════════════════════════════════════════════════════════════
+
+test("KairoEngine.getTodayFocus(): picks the Fading concept and explains why in concept-specific, non-generic language", () => {
+  const engine = new KairoEngine({ studentId: 'focus1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  const fadingId = engine.addConcept({ name: 'Enzyme Action', subject: 'Biology', topic: 'Metabolism' });
+  engine.graph.getConcept(fadingId).retentionState = 'fading';
+  engine.graph.getConcept(fadingId).decayEstimate = 0.9;
+
+  const focus = engine.getTodayFocus();
+  assertEqual(focus.conceptId, fadingId, 'The Fading concept should be picked as the highest-priority concept');
+  assert(focus.reason.includes('Enzyme Action'), 'Reason should name the actual concept, not a placeholder');
+  assert(focus.reason.toLowerCase().includes('forget'), 'A Fading concept should be explained in terms of forgetting, not a generic sentence');
+});
+
+test("KairoEngine.getTodayFocus(): two students in genuinely different states get different reasoning, not the same static sentence", () => {
+  const soonExam = Date.now() + 20 * 24 * 60 * 60 * 1000; // inside the 6-week exam-proximity window
+  const engineA = new KairoEngine({ studentId: 'focusA', name: 'A', examDate: soonExam, targetSubjects: ['Physics'] });
+  const heldId = engineA.addConcept({ name: 'Projectile Motion', subject: 'Physics', topic: 'Mechanics' });
+  engineA.graph.getConcept(heldId).retentionState = 'held';
+  engineA.graph.getConcept(heldId).confidenceScore = 0.9;
+  engineA.graph.getConcept(heldId).decayEstimate = 0.5;
+  const focusA = engineA.getTodayFocus();
+
+  const engineB = new KairoEngine({ studentId: 'focusB', name: 'B', examDate: Date.now() + 300 * 24 * 60 * 60 * 1000, targetSubjects: ['Physics'] });
+  engineB.addConcept({ name: 'Simple Harmonic Motion', subject: 'Physics', topic: 'Mechanics' });
+  const focusB = engineB.getTodayFocus();
+
+  assert(focusA.reason !== focusB.reason, 'Two students with genuinely different concept states should not see identical recommendation reasoning');
+  assert(focusA.reason.includes('exam approaching'), 'A Held concept close to exam should mention exam proximity');
+  assert(focusB.reason.includes("hasn't come up yet"), 'An Unseen concept should be explained as a fresh starting point, not a review');
+});
+
+// ═══════════════════════════════════════════════════════════════
 // SUPABASE SYNC TESTS
 // No live network calls — SupabaseSyncAdapter's row-mapping and
 // SyncManager's merge logic are pure functions over plain objects, so

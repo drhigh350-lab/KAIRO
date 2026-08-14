@@ -8,7 +8,7 @@
  */
 
 import { RetentionState, SessionConstants, ErrorTag } from "../utils/constants.js";
-import { clamp, seededShuffle, daysBetween } from "../utils/helpers.js";
+import { clamp, seededShuffle, daysBetween, isExamProximity } from "../utils/helpers.js";
 
 export class RecommendationEngine {
   constructor({ knowledgeGraph, studentProfile, decayModel, examDate = null }) {
@@ -216,6 +216,38 @@ export class RecommendationEngine {
       action: nextId ? 'continue' : 'end_session',
       reason: nextId ? 'Proceeding to next queued concept.' : 'Session queue complete.'
     };
+  }
+
+  /**
+   * Human-readable reason the top-priority concept was chosen — the same
+   * signals _sessionPriorityScore() already scores on, translated into a
+   * sentence a student can actually read. For preview surfaces (Home) that
+   * need to explain today's recommendation before committing to a real
+   * session via buildSessionPlan().
+   */
+  explainTopPick(concept, macroState, examDate = null) {
+    if (concept.retentionState === RetentionState.FADING) {
+      return `You're starting to forget "${concept.name}" — a quick review now will lock it back in before it slips further.`;
+    }
+    if (concept.retentionState === RetentionState.FORMING) {
+      const blocksOthers = Array.from(this.graph.nodes.values())
+        .some(n => n.dependencyIds.includes(concept.id) && n.retentionState !== RetentionState.UNSEEN);
+      return blocksOthers
+        ? `"${concept.name}" is still forming, and other topics build on it — worth strengthening first.`
+        : `"${concept.name}" is still forming — a bit more practice will make it stick.`;
+    }
+    if (examDate && isExamProximity(examDate) && concept.retentionState === RetentionState.HELD) {
+      return `"${concept.name}" is solid, but with your exam approaching, it's worth a pressure-test to make sure it holds under pressure.`;
+    }
+    if (concept.retentionState === RetentionState.UNSEEN) {
+      return `"${concept.name}" hasn't come up yet — a good place to start building real signal.`;
+    }
+    const macroFraming = {
+      at_risk: `It's been a while — starting with "${concept.name}" is a gentle way back in.`,
+      recovering: `Good to see you back — "${concept.name}" is a solid place to pick things up again.`,
+      wavering: `"${concept.name}" is one of the steadier things to build confidence on right now.`
+    };
+    return macroFraming[macroState] || `Kairo picked "${concept.name}" as the most useful thing to practise right now.`;
   }
 
   _peekQueue() {

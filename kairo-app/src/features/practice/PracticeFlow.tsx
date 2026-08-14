@@ -178,7 +178,7 @@ export function PracticeFlow() {
     // discarded here, which is why the Kai panel always showed a flat
     // duplicate of the explanation instead of Kai's actual computed
     // response to this specific attempt.
-    const { attempt, kaiResponse, conceptState, explanation: newExplanation, decision } = kairo.submitAnswer({
+    const { attempt, kaiResponse, conceptState, explanation: newExplanation, decision, nextDifficulty } = kairo.submitAnswer({
       conceptId: eq.conceptId ?? null,
       correct,
       responseTimeMs,
@@ -195,16 +195,18 @@ export function PracticeFlow() {
     // RecommendationEngine's real per-answer interrupt — reroute to a weak
     // prerequisite, drop to a lower-stakes diagnostic after a guess, or ease
     // off after repeated careless slips. 'continue'/'end_session' are the
-    // ordinary case and get no interrupt moment. For the two actions that
-    // name a genuinely different concept to go to next, fetch a real
-    // question for it and splice it in right after the current one, so the
-    // very next question actually reflects what the engine just decided
-    // instead of whatever was already sitting in the pre-fetched batch.
+    // ordinary case and get no interrupt moment.
     if (decision && decision.action !== 'continue' && decision.action !== 'end_session') {
       setDecisionNote({ action: decision.action, reason: decision.reason });
+
       if ((decision.action === 'reroute_prerequisite' || decision.action === 'diagnostic') && decision.nextConceptId) {
+        // A genuinely different concept to go to next — fetch a real
+        // question for it, honoring the engine's own difficulty pick for
+        // that concept, and splice it in right after the current one so
+        // the very next question actually reflects what the engine just
+        // decided instead of whatever was already sitting in the batch.
         const seenIds = engineQuestions.map((q) => q.id);
-        const nextQ = getRecommendedNextQuestion(decision.nextConceptId, seenIds);
+        const nextQ = getRecommendedNextQuestion(decision.nextConceptId, seenIds, nextDifficulty);
         if (nextQ) {
           setEngineQuestions((prev) => {
             if (!prev) return prev;
@@ -212,6 +214,27 @@ export function PracticeFlow() {
             copy.splice(qIndex + 1, 0, nextQ);
             return copy;
           });
+        }
+      } else if (decision.action === 'difficulty_pullback') {
+        // Same concept, no reroute — the engine just eased its own
+        // difficulty pick (AdaptiveDifficulty.softenSession(), previously
+        // never actually triggered by this decision — see index.js). That
+        // has no effect on a question already sitting in the pre-fetched
+        // batch, so replace the upcoming one with a fresh pick honoring
+        // the now-softened tier, but only swap in if it's genuinely no
+        // harder than what's already queued — never silently make it worse.
+        const upcoming = engineQuestions[qIndex + 1];
+        if (upcoming?.conceptId && nextDifficulty != null && (upcoming.difficulty == null || nextDifficulty <= upcoming.difficulty)) {
+          const seenIds = engineQuestions.map((q) => q.id);
+          const easier = getRecommendedNextQuestion(upcoming.conceptId, seenIds, nextDifficulty);
+          if (easier && (easier.difficulty == null || upcoming.difficulty == null || easier.difficulty <= upcoming.difficulty)) {
+            setEngineQuestions((prev) => {
+              if (!prev) return prev;
+              const copy = [...prev];
+              copy[qIndex + 1] = easier;
+              return copy;
+            });
+          }
         }
       }
     } else {
