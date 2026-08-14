@@ -971,6 +971,49 @@ test('getQuestionForConcept: maxDifficulty narrows the pool but never returns no
 });
 
 // ═══════════════════════════════════════════════════════════════
+// PRACTICE DIFFICULTY PICKER WIRING TESTS (P0-5)
+// PracticeHub's Easy/Medium/Hard/Adaptive picker was selected in the UI
+// and never sent to the engine — every session ran at whatever the
+// adaptive engine picked regardless of the student's choice. These prove
+// getQuestionForConcept()'s minDifficulty/maxDifficulty window (the
+// mechanism kairo-app now threads the picker through) actually shifts
+// which questions get served.
+// ═══════════════════════════════════════════════════════════════
+
+test("getQuestionForConcept: minDifficulty + maxDifficulty together select a real difficulty window, and 'Easy' vs 'Hard' genuinely differ", () => {
+  const engine = new KairoEngine({
+    studentId: 'diff3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry']
+  });
+  const conceptId = engine.addConcept({ name: 'Difficulty Window Concept', subject: 'Chemistry', topic: 'Acids' });
+  for (const [id, difficultyRating] of [['dw1', 1], ['dw2', 2], ['dw3', 4], ['dw4', 5]]) {
+    engine.questionGraph.addQuestion(new Question({
+      id, subject: 'Chemistry', topic: 'Acids',
+      conceptsTested: [{ conceptId, weight: 'primary' }],
+      difficultyRating, stem: `Q ${id}`,
+      options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+      correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+
+  // "Hard" (min 4, max 5) should only ever serve the two hardest questions.
+  for (let i = 0; i < 10; i++) {
+    const q = engine.getQuestionForConcept(conceptId, { minDifficulty: 4, maxDifficulty: 5 });
+    assert(['dw3', 'dw4'].includes(q.id), `Hard window should only serve difficulty 4-5 questions, got ${q.id}`);
+  }
+
+  // "Easy" (min 1, max 2) should only ever serve the two easiest questions
+  // — genuinely disjoint from Hard's pool above, not overlapping.
+  for (let i = 0; i < 10; i++) {
+    const q = engine.getQuestionForConcept(conceptId, { minDifficulty: 1, maxDifficulty: 2 });
+    assert(['dw1', 'dw2'].includes(q.id), `Easy window should only serve difficulty 1-2 questions, got ${q.id}`);
+  }
+
+  // A window matching nothing real falls back to the full pool rather than null.
+  const impossible = engine.getQuestionForConcept(conceptId, { minDifficulty: 3, maxDifficulty: 3 });
+  assert(impossible !== null, 'A window matching no real question should fall back to the full pool, not return null');
+});
+
+// ═══════════════════════════════════════════════════════════════
 // TODAY'S FOCUS / RECOMMENDATION REASONING TESTS
 // Home's "why this session" sentence was static, client-authored copy,
 // identical regardless of student state, even though the engine already

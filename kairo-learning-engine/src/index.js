@@ -335,15 +335,23 @@ export class KairoEngine {
    * _flattenQuestion) so callers get the same {text, options, conceptId, ...}
    * shape regardless of which mode requested it.
    */
-  getQuestionForConcept(cid, { excludeIds = [], maxDifficulty = null } = {}) {
+  getQuestionForConcept(cid, { excludeIds = [], maxDifficulty = null, minDifficulty = null } = {}) {
     let candidates = this.questionGraph.getQuestionsForConcept(cid)
       .filter(q => !excludeIds.includes(q.id));
-    // Never let a difficulty ceiling produce an honest "no questions" when
-    // real ones exist at a higher tier — narrow the pool when it helps,
-    // fall back to the full pool rather than returning nothing.
+    // Never let a difficulty window produce an honest "no questions" when
+    // real ones exist outside it — narrow the pool when it helps, fall
+    // back to the full pool rather than returning nothing. Ceiling and
+    // floor are applied as two independent narrowing passes (each with
+    // its own fallback), not a single combined filter, so a floor with
+    // nothing above it doesn't wipe out a ceiling that already found
+    // real matches.
     if (maxDifficulty != null) {
       const easier = candidates.filter(q => q.difficultyRating <= maxDifficulty);
       if (easier.length > 0) candidates = easier;
+    }
+    if (minDifficulty != null) {
+      const harder = candidates.filter(q => q.difficultyRating >= minDifficulty);
+      if (harder.length > 0) candidates = harder;
     }
     if (candidates.length === 0) return null;
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];

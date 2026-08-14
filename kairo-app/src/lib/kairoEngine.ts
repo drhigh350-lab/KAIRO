@@ -293,6 +293,28 @@ export interface CustomSessionArgs {
   subjects?: string[];
   includeFading?: boolean;
   limit?: number;
+  /** PracticeHub's difficulty picker ('adaptive' | 'easy' | 'medium' | 'hard') — see difficultyWindow(). */
+  difficulty?: string;
+}
+
+/**
+ * Maps PracticeHub's difficulty picker to a real difficultyRating window
+ * (1–5, the same scale AdaptiveDifficulty's own tiers use) — previously
+ * selected in the UI and never sent to the engine at all, so every
+ * session ran at whatever the adaptive engine's own per-answer logic
+ * picked regardless of what the student chose. 'adaptive' applies no
+ * override on purpose: the adaptive engine already adjusts difficulty
+ * per answer during the session (see submitAnswer()'s nextDifficulty /
+ * difficulty_pullback handling) — that's what "Adaptive" means here, not
+ * a fixed window.
+ */
+function difficultyWindow(level?: string | null): { minDifficulty: number | null; maxDifficulty: number | null } {
+  switch (level) {
+    case 'easy': return { minDifficulty: 1, maxDifficulty: 2 };
+    case 'medium': return { minDifficulty: 2, maxDifficulty: 4 };
+    case 'hard': return { minDifficulty: 4, maxDifficulty: 5 };
+    default: return { minDifficulty: null, maxDifficulty: null };
+  }
 }
 
 /**
@@ -316,7 +338,7 @@ export interface CustomSessionArgs {
  * "couldn't find any questions" message is accurate instead of masked by
  * a wrong-subject substitution.
  */
-export async function startCustomSession({ subjects = [], includeFading = true, limit = 10 }: CustomSessionArgs): Promise<SuggestedSessionResult> {
+export async function startCustomSession({ subjects = [], includeFading = true, limit = 10, difficulty }: CustomSessionArgs): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(subjects.length ? subjects : kairo.profile.targetSubjects || []);
@@ -327,11 +349,12 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
     return { questions: [] };
   }
   const { queue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];
   const seenIds: string[] = [];
   for (const conceptId of queue) {
     if (questions.length >= limit) break;
-    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds, minDifficulty, maxDifficulty });
     if (q) {
       questions.push(q);
       seenIds.push(q.id);
@@ -383,7 +406,7 @@ export async function getRealSubtopics(subjectLabel: string, topic: string): Pro
  * (the SubtopicSelect screen's "practise all of this topic" skip) pulls
  * from every subtopic under the topic instead of one.
  */
-export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10): Promise<SuggestedSessionResult> {
+export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10, difficulty?: string): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const subject = normalizeSubjectName(subjectLabel);
@@ -400,11 +423,12 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
 
   kairo.startSession({ mode: 'topic_practice', plan: queue });
 
+  const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];
   const seenIds: string[] = [];
   for (const conceptId of queue) {
     if (questions.length >= limit) break;
-    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds, minDifficulty, maxDifficulty });
     if (q) {
       questions.push(q);
       seenIds.push(q.id);

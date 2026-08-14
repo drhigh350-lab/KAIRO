@@ -113,11 +113,18 @@ export function PracticeFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Mixed Practice / Weak Areas from PracticeHub — same real session lifecycle as "suggested". */
-  function startEngineCustomSession(subjectFilter: string[], includeFading: boolean, limit: number) {
+  /**
+   * Mixed Practice / Weak Areas from PracticeHub — same real session
+   * lifecycle as "suggested". Takes difficulty as an explicit argument
+   * (the value PracticeHub's onStart just handed us), not read from the
+   * difficulty state var — setDifficulty() below hasn't committed by the
+   * time this same handler calls this function, so reading state here
+   * would see the previous selection, not the one just picked.
+   */
+  function startEngineCustomSession(subjectFilter: string[], includeFading: boolean, limit: number, difficultyChoice?: string) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    startCustomSession({ subjects: subjectFilter, includeFading, limit: limit || 10 })
+    startCustomSession({ subjects: subjectFilter, includeFading, limit: limit || 10, difficulty: difficultyChoice })
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
@@ -132,7 +139,7 @@ export function PracticeFlow() {
   function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    startTopicPracticeSession(subjectLabel, topicName, subtopicName, length || 10)
+    startTopicPracticeSession(subjectLabel, topicName, subtopicName, length || 10, difficulty ?? undefined)
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions for this topic yet.");
@@ -395,7 +402,7 @@ export function PracticeFlow() {
             setResults([]);
             const isGenericSubject = activeSubject.key === 'mixed' || activeSubject.key === 'weak';
             const subjectFilter = isGenericSubject ? [] : [activeSubject.label];
-            startEngineCustomSession(subjectFilter, type === 'weak', len);
+            startEngineCustomSession(subjectFilter, type === 'weak', len, d);
             go('practiceQuestion');
           }
         }}
