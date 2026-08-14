@@ -1251,11 +1251,17 @@ await test('Notifications: pull and mark-read only, matching the real RLS shape 
   assert(markCall && markCall.row.read_at, 'markNotificationRead should UPDATE read_at — the only write kairo.notifications RLS actually permits');
 });
 
-test('CBT: setup uses JAMB-accurate per-subject question counts (English 60, others 40)', () => {
+test('CBT: setup uses JAMB-accurate per-subject question counts (Use of English 60, others 40)', () => {
+  // Was 'English' — CBTExamMode.JAMB_QUESTION_COUNT is keyed on 'Use of
+  // English' (the real seeded subject name; JAMB itself calls the subject
+  // "English", but Kairo's content doesn't), so this test was silently
+  // exercising the default-40 fallback instead of the 60-question branch
+  // it's actually meant to prove exists. Not a product bug — CBTExamMode.js
+  // has its own comment explaining exactly this naming choice.
   const fakeEngine = { contentPacks: {}, submitAnswer: () => {} };
   const cbt = new CBTExamMode(fakeEngine);
-  const result = cbt.setup({ subjects: ['English', 'Mathematics', 'Physics', 'Chemistry'] });
-  assertEqual(result.totalQuestions, 180, 'English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160');
+  const result = cbt.setup({ subjects: ['Use of English', 'Mathematics', 'Physics', 'Chemistry'] });
+  assertEqual(result.totalQuestions, 180, 'Use of English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160');
 });
 
 await test('CBT: submitAnswer withholds correctness feedback during a live attempt (CBT Exam Mode Spec §2.3/§5.2/§5.4)', async () => {
@@ -1266,7 +1272,13 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
   const fakeEngine = {
     contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
     submitAnswer: () => {},
-    sync: { queue: () => {} }
+    sync: { queue: () => {} },
+    // finish() calls this.engine.profile.recordSession() — every real
+    // KairoEngine has one, so this was missing only because this fake is
+    // deliberately minimal for testing the mid-exam withholding behavior
+    // below, not because finish() is broken (a real-engine test covers
+    // finish() itself further down this file).
+    profile: { recordSession: () => {} }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
