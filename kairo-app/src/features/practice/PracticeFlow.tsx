@@ -9,7 +9,7 @@ import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { generateKaiText } from '../../lib/kaiAi';
@@ -85,6 +85,8 @@ export function PracticeFlow() {
   const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
   const [kaiNote, setKaiNote] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<PracticeExplanation | null>(null);
+  /** RecommendationEngine.processAnswer()'s per-answer interrupt (Practice Module's real "recommend + explain why" moment) — computed every answer, previously discarded. */
+  const [decisionNote, setDecisionNote] = useState<{ action: string; reason: string } | null>(null);
   const startedSuggested = useRef(false);
   const qIndexRef = useRef(qIndex);
   qIndexRef.current = qIndex;
@@ -176,7 +178,7 @@ export function PracticeFlow() {
     // discarded here, which is why the Kai panel always showed a flat
     // duplicate of the explanation instead of Kai's actual computed
     // response to this specific attempt.
-    const { attempt, kaiResponse, conceptState, explanation: newExplanation } = kairo.submitAnswer({
+    const { attempt, kaiResponse, conceptState, explanation: newExplanation, decision } = kairo.submitAnswer({
       conceptId: eq.conceptId ?? null,
       correct,
       responseTimeMs,
@@ -189,6 +191,32 @@ export function PracticeFlow() {
     setLastResponseTimeMs(responseTimeMs);
     setKaiNote(kaiResponse?.text ?? null);
     setExplanation(newExplanation ?? null);
+
+    // RecommendationEngine's real per-answer interrupt — reroute to a weak
+    // prerequisite, drop to a lower-stakes diagnostic after a guess, or ease
+    // off after repeated careless slips. 'continue'/'end_session' are the
+    // ordinary case and get no interrupt moment. For the two actions that
+    // name a genuinely different concept to go to next, fetch a real
+    // question for it and splice it in right after the current one, so the
+    // very next question actually reflects what the engine just decided
+    // instead of whatever was already sitting in the pre-fetched batch.
+    if (decision && decision.action !== 'continue' && decision.action !== 'end_session') {
+      setDecisionNote({ action: decision.action, reason: decision.reason });
+      if ((decision.action === 'reroute_prerequisite' || decision.action === 'diagnostic') && decision.nextConceptId) {
+        const seenIds = engineQuestions.map((q) => q.id);
+        const nextQ = getRecommendedNextQuestion(decision.nextConceptId, seenIds);
+        if (nextQ) {
+          setEngineQuestions((prev) => {
+            if (!prev) return prev;
+            const copy = [...prev];
+            copy.splice(qIndex + 1, 0, nextQ);
+            return copy;
+          });
+        }
+      }
+    } else {
+      setDecisionNote(null);
+    }
 
     // Progressive enhancement: show the real template text instantly above,
     // then quietly upgrade to a freshly-generated version in Kai's voice if
@@ -238,6 +266,7 @@ export function PracticeFlow() {
     setLastErrorTag(null);
     setKaiNote(null);
     setExplanation(null);
+    setDecisionNote(null);
 
     if (!engineQuestions) return;
     if (qIndex + 1 >= engineQuestions.length) {
@@ -412,6 +441,7 @@ export function PracticeFlow() {
         onLearnThis={engineQuestions[qIndex].conceptId ? handleLearnThis : undefined}
         kaiNote={kaiNote}
         explanation={explanation}
+        nextStepNote={decisionNote}
       />
     );
   }

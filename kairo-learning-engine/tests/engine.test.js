@@ -826,6 +826,74 @@ test('Learn Module state round-trips through toJSON/fromJSON', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// MISCONCEPTION WIRING TESTS
+// ExplanationEngine/LearnModule previously diagnosed misconceptions via
+// MisconceptionLibrary.diagnose(), which reads distractorMappings — a
+// side-table only ever populated by mapDistractor(), which nothing in
+// production calls. Real content authors misconceptionId directly on a
+// question's own distractors (Question §2.4); these tests exercise that
+// path with no mapDistractor() call anywhere in sight, matching the real
+// shape of live seeded content.
+// ═══════════════════════════════════════════════════════════════
+
+test("MisconceptionLibrary: ExplanationEngine diagnoses straight from the question's own distractor data (no mapDistractor() call)", () => {
+  const q = new Question({
+    id: 'mc_wire_1',
+    subject: 'Biology', topic: 'Cell Biology', subtopic: 'Organelles',
+    stem: 'Which organelle is the site of aerobic respiration?',
+    options: [
+      { label: 'A', text: 'Mitochondrion', isCorrect: true },
+      { label: 'B', text: 'Nucleus', isCorrect: false }
+    ],
+    correctOption: 'A',
+    explanation: 'The mitochondrion is the site of aerobic respiration.',
+    distractors: [
+      { option: 'B', misconceptionId: 'confused_similar_concepts', explanation: 'The nucleus stores genetic material; it does not generate ATP.' }
+    ],
+    lifecycleState: 'live'
+  });
+
+  const explanation = learnEngine.explanations.generate({
+    question: q,
+    attempt: { correct: false, selectedOption: 'B', errorTag: ErrorTag.CONCEPTUAL_GAP },
+    concept: null,
+    macroState: 'building'
+  });
+  const distractorPart = explanation.parts.find(p => p.type === 'distractor_breakdown');
+  const bOption = distractorPart.content.find(d => d.label === 'B');
+  assert(bOption.misconception, 'A question with a real misconceptionId on its distractor should produce a non-null misconception diagnosis without mapDistractor() ever being called');
+  assertEqual(bOption.misconception.id, 'confused_similar_concepts', 'The diagnosed misconception should match the id authored on the question itself');
+});
+
+test("Learn: commonMisconceptions come from the question's own distractor data, not the legacy mapDistractor() table", () => {
+  const freshConceptId = learnEngine.addConcept({ name: 'Osmosis', subject: 'Biology', topic: 'Cell Biology', subtopic: 'Transport' });
+  const freshQuestion = new Question({
+    id: 'mc_wire_2',
+    subject: 'Biology', topic: 'Cell Biology', subtopic: 'Transport',
+    conceptsTested: [{ conceptId: freshConceptId, weight: 'primary' }],
+    stem: 'Water moves from a region of...',
+    options: [
+      { label: 'A', text: 'Low solute concentration to high solute concentration', isCorrect: true },
+      { label: 'B', text: 'High solute concentration to low solute concentration', isCorrect: false }
+    ],
+    correctOption: 'A',
+    explanation: 'Osmosis moves water toward the higher solute concentration.',
+    distractors: [
+      { option: 'B', misconceptionId: 'overgeneralized_rule', explanation: 'This reverses the direction of osmotic flow.' }
+    ],
+    lifecycleState: 'live'
+  });
+  learnEngine.questionGraph.addQuestion(freshQuestion);
+
+  const lesson = learnEngine.learn.fromIncorrectAnswer({
+    questionId: 'mc_wire_2', conceptId: freshConceptId, selectedOption: 'B', errorTag: ErrorTag.CONCEPTUAL_GAP
+  });
+  assert(lesson.steps.commonMisconceptions.length > 0, "Common misconceptions should be populated from the question's own distractor data");
+  assert(lesson.steps.commonMisconceptions[0].ownMistake === true, "Student's own mistake should still be named first");
+  assertEqual(lesson.steps.commonMisconceptions[0].id, 'overgeneralized_rule', 'Should resolve the exact misconceptionId authored on the question, without mapDistractor() ever being called for it');
+});
+
+// ═══════════════════════════════════════════════════════════════
 // SUPABASE SYNC TESTS
 // No live network calls — SupabaseSyncAdapter's row-mapping and
 // SyncManager's merge logic are pure functions over plain objects, so

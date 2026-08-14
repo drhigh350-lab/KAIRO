@@ -594,6 +594,21 @@ export function getReviewReinforcementQuestion(conceptId: string, excludeId?: st
   return kairo.getQuestionForConcept(conceptId, { excludeIds: excludeId ? [excludeId] : [] });
 }
 
+/**
+ * A fresh question for the concept RecommendationEngine.processAnswer()
+ * decided the student should see next — a prerequisite reroute after a
+ * conceptual-gap answer, or a lower-stakes diagnostic question after a
+ * guess. submitAnswer() has always computed this decision on every single
+ * answer; Practice previously discarded it entirely, so the interrupt
+ * never reached the student and the next question was whatever was
+ * already sitting in the pre-fetched batch instead.
+ */
+export function getRecommendedNextQuestion(conceptId: string, excludeIds: string[] = []): EngineFlatQuestion | null {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.getQuestionForConcept(conceptId, { excludeIds });
+}
+
 /** A concept's current retention state, read directly (not recomputed) so a genuine Reinforced transition during a Review session (Review Module §5.9) can be told apart from routine completion. */
 export function getConceptRetentionState(conceptId: string): string | null {
   const kairo = getEngine();

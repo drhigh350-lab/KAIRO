@@ -422,7 +422,8 @@ export class LearnModule {
 
     // §8.2 — the student's own error becomes the lesson's entry point, named first.
     if (questionId && selectedOption) {
-      const own = this.engine.misconceptions.diagnose(questionId, selectedOption);
+      const questionObj = this.engine.questionGraph.getQuestion(questionId);
+      const own = this.engine.misconceptions.diagnoseQuestion(questionObj, selectedOption);
       if (own) {
         results.push({ ...own, ownMistake: true });
         seen.add(own.id);
@@ -430,7 +431,7 @@ export class LearnModule {
     }
 
     for (const q of this.engine.questionGraph.getQuestionsForConcept(concept.id)) {
-      for (const entry of this.engine.misconceptions.getQuestionMisconceptions(q.id)) {
+      for (const entry of this.engine.misconceptions.misconceptionsForQuestion(q)) {
         if (entry.misconception && !seen.has(entry.misconception.id)) {
           seen.add(entry.misconception.id);
           results.push({ ...entry.misconception, ownMistake: false });

@@ -34,7 +34,7 @@ export class ExplanationEngine {
         label: o.label,
         text: o.text,
         whyWrong: question.getDistractorExplanation(o.label) || this._genericWhyWrong(o.label, question),
-        misconception: this.lib.diagnose(question.id, o.label)
+        misconception: this.lib.diagnoseQuestion(question, o.label)
       }));
 
       parts.push({
