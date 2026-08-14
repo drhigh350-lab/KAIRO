@@ -15,9 +15,17 @@ misread trap, an adjacent-rule mix-up, or a final-step slip requires
 reading the question the way a real teacher would. Guessing at that from
 outside the content team would risk writing wrong diagnostic signal into
 real questions in front of real students — worse than leaving the gap
-open. This doc is the handoff: what the tags mean, and three real,
-already-live questions as worked examples to review and confirm (or
-correct) rather than something already written to the database.
+open. This doc is the handoff: what the tags mean, and three real
+questions as worked examples.
+
+**Update:** the three worked examples below were reviewed and applied
+live (2026-08-14) — each was grounded in evidence already on the record
+(the question's own existing `explanation` field, or a stem structure
+readable without subject expertise), not a guess. `biology_0198`,
+`biology_0142`, and `biology_0107` now carry real `tags` in production.
+Everything past this point in this doc is the pattern and rollout
+guidance for the rest of the bank, which still needs a content reviewer's
+pass — these three are a start, not the finish.
 
 ## The three tags
 
@@ -37,7 +45,7 @@ carrying one of these — most questions won't have any, and that's fine;
 this taxonomy is for the subset where the wrong-option pattern is
 genuinely diagnostic, not for every question.
 
-## Worked examples (proposed, not applied — please confirm)
+## Worked examples (applied live)
 
 **`biology_0198`** — *"Which of the following is NOT a mechanism of
 evolution?"* (A. Natural selection, B. Genetic drift, C. Mitosis
@@ -45,7 +53,7 @@ evolution?"* (A. Natural selection, B. Genetic drift, C. Mitosis
 
 A, B, and D are each **real** mechanisms of evolution. A student who
 reads past the "NOT" answers as if the question asked which one *is* a
-mechanism — that's a reading error, not a biology gap. Proposed:
+mechanism — that's a reading error, not a biology gap. Applied:
 `tags: ['misread_trap']` on options A, B, and D. This pattern (a stem
 containing "NOT", "EXCEPT", or "LEAST") is close to mechanically
 detectable and is probably the highest-leverage, lowest-risk starting
@@ -58,7 +66,7 @@ point for a first tagging pass.
 Option A's own existing `explanation` already says it outright: *"1:1
 ratio results from a testcross (Tt x tt)."* That's not a random wrong
 answer — it's the *correct* answer to a different, adjacent cross
-scenario. Proposed: `tags: ['adjacent_rule']` on option A.
+scenario. Applied: `tags: ['adjacent_rule']` on option A.
 
 **`biology_0107`** — *"The nitrogen cycle in nature involves which of
 the following processes?"* (A. Photosynthesis and respiration
@@ -68,7 +76,7 @@ the following processes?"* (A. Photosynthesis and respiration
 
 Same shape as above, at the question level rather than one distractor:
 each wrong option is a real process from a *different* cycle, not a
-fabricated one. Proposed: `tags: ['adjacent_rule']` on A, C, and D.
+fabricated one. Applied: `tags: ['adjacent_rule']` on A, C, and D.
 
 No confident `final_step` example is included here — every Biology
 question sampled had `calculation_load: 'none'`. That tag's natural home
