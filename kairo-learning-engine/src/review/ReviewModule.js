@@ -96,25 +96,6 @@ export class ReviewModule {
   }
 
   /**
-   * Spaced Repetition Review: concepts due based on nextReviewEstimate.
-   */
-  buildSpacedReview() {
-    const due = this.engine.scheduler.getDueForRevision(this.engine.graph);
-    return {
-      mode: 'spaced_review',
-      dueConcepts: due.slice(0, 20).map(c => ({
-        id: c.id,
-        name: c.name,
-        state: c.retentionState,
-        daysOverdue: c.nextReviewEstimate
-          ? Math.max(0, Math.floor((Date.now() - c.nextReviewEstimate) / (24 * 60 * 60 * 1000)))
-          : 0
-      })),
-      totalDue: due.length
-    };
-  }
-
-  /**
    * Builds a real Review Session plan — Review Module Spec §5.3's flow
    * (Session Framing -> Reflection Moment -> Resolution -> Pattern
    * Surfacing -> Reinforcement Attempt -> Consolidation Summary) needs a
