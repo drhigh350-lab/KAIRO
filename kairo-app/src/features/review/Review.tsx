@@ -1,16 +1,46 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
-import { getReviewSummary, getWeaknessReview } from '../../lib/kairoEngine';
+import {
+  getReviewSummary, getWeaknessReview, getMonthlyWrapped,
+  getBookmarkedQuestions, removeBookmark, getSessionHistory,
+  type BookmarkedQuestion, type SessionHistoryEntry,
+} from '../../lib/kairoEngine';
 
 interface QueueItem { id: string; name: string; reason: string; priority: string }
 interface WeaknessItem { concept: { id: string; name: string; subject: string; topic: string }; count: number }
+
+function relativeDay(ts: number): string {
+  const days = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Date(ts).toLocaleDateString();
+}
 
 export function Review() {
   const navigate = useNavigate();
   const recap = getReviewSummary();
   const weakness = getWeaknessReview();
+  const monthly = getMonthlyWrapped();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
+  const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
+
+  useEffect(() => {
+    getBookmarkedQuestions(20).then(setBookmarks).catch(() => setBookmarks([]));
+    getSessionHistory(20).then(setHistory).catch(() => setHistory([]));
+  }, []);
+
+  async function handleRemoveBookmark(questionId: string) {
+    setBookmarks((prev) => prev?.filter((b) => b.id !== questionId) ?? prev);
+    try {
+      await removeBookmark(questionId);
+    } catch {
+      // Re-fetch on failure rather than leaving the list silently wrong.
+      getBookmarkedQuestions(20).then(setBookmarks).catch(() => {});
+    }
+  }
 
   const recentlyMissed: QueueItem[] = (recap?.recap.queue || []).filter((q: QueueItem) => q.reason === 'recently_missed');
   const stale: QueueItem[] = (recap?.recap.queue || []).filter((q: QueueItem) => q.reason === 'stale');
@@ -34,6 +64,7 @@ export function Review() {
   }
 
   const totalWaiting = (recap?.fadingCount ?? 0) + categories.reduce((s, c) => s + c.count, 0);
+  const hasReinforcedStory = !!monthly && monthly.reinforcedCount > 0;
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
@@ -88,6 +119,96 @@ export function Review() {
           </Card>
         );
       })}
+
+      {/* Bookmarks — the student's own self-flagged questions (Review Module §4.3 item 6), distinct from the engine-detected categories above. */}
+      {bookmarks && bookmarks.length > 0 && (
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
+          <button type="button" onClick={() => setExpanded(expanded === 'bookmarks' ? null : 'bookmarks')} style={{
+            width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
+            background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Bookmarks</div>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>Questions you marked as worth revisiting.</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Badge tone="darkNeutral">{bookmarks.length}</Badge>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: expanded === 'bookmarks' ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
+            </div>
+          </button>
+          {expanded === 'bookmarks' && (
+            <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--dark-border)' }}>
+              {bookmarks.map((b) => (
+                <div key={b.id} style={{ paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: 'var(--dark-text-body)', lineHeight: 1.4 }}>{b.stem}</div>
+                    <div style={{ fontSize: 11, color: 'var(--dark-text-muted)', marginTop: 2 }}>{b.subject} · {b.topic}</div>
+                  </div>
+                  <button type="button" onClick={() => handleRemoveBookmark(b.id)} style={{
+                    background: 'none', border: 'none', color: 'var(--dark-text-faint)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, minHeight: 'var(--touch-min)',
+                  }}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Reinforced This Month — quiet, collapsed by default (Review Module §4.3 item 8). */}
+      {hasReinforcedStory && (
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
+          <button type="button" onClick={() => setExpanded(expanded === 'reinforced' ? null : 'reinforced')} style={{
+            width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
+            background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Reinforced This Month</div>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>Concepts that held up after a Fading scare.</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Badge tone="darkNeutral">{monthly.reinforcedCount}</Badge>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: expanded === 'reinforced' ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
+            </div>
+          </button>
+          {expanded === 'reinforced' && (
+            <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--dark-border)' }}>
+              {(monthly.reinforcedNames || []).length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No specific concepts to list yet.</div>}
+              {(monthly.reinforcedNames || []).map((name: string) => (
+                <div key={name} style={{ paddingTop: 10, fontSize: 13, color: 'var(--dark-text-body)' }}>{name}</div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Session History — reverse-chronological, kept visually quiet (Review Module §4.3 item 7). */}
+      {history && history.length > 0 && (
+        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
+          <button type="button" onClick={() => setExpanded(expanded === 'history' ? null : 'history')} style={{
+            width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
+            background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Session History</div>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>A look back at your past sessions.</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: expanded === 'history' ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {expanded === 'history' && (
+            <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--dark-border)' }}>
+              {history.map((s) => (
+                <div key={s.id} style={{ paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <div>
+                    <span style={{ color: 'var(--dark-text-body)', fontWeight: 600 }}>{s.modeLabel}</span>
+                    <span style={{ color: 'var(--dark-text-muted)', marginLeft: 8 }}>{s.questionsAnswered} question{s.questionsAnswered === 1 ? '' : 's'}{s.questionsAnswered > 0 ? `, ${s.correctCount} correct` : ''}</span>
+                  </div>
+                  <span style={{ color: 'var(--dark-text-faint)', flexShrink: 0 }}>{relativeDay(s.startedAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

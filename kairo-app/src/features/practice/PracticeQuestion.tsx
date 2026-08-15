@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton, Badge } from '../../components';
 import {
   BookmarkIcon, ReportIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
@@ -6,7 +6,7 @@ import {
 } from '../learning/shared';
 import type { PracticeQuestion as PracticeQuestionData } from './data';
 import { generateKaiTextWithDiagnostics } from '../../lib/kaiAi';
-import { reportQuestion } from '../../lib/kairoEngine';
+import { reportQuestion, isQuestionBookmarked, toggleBookmark } from '../../lib/kairoEngine';
 
 export interface PracticeQuestionResult {
   correct: boolean;
@@ -81,7 +81,7 @@ export function FeedbackIconSmall() {
 export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote, explanation, nextStepNote }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarked, setBookmarked] = useState(() => isQuestionBookmarked(question.id));
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [reported, setReported] = useState(false);
   const [hideElim, setHideElim] = useState(false);
@@ -90,11 +90,29 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const questionStartedAt = useRef(Date.now());
 
+  // Re-syncs against the real bookmark set in case loadBookmarks() (called
+  // once when Practice starts) hadn't resolved yet when this question's
+  // initial state was computed.
+  useEffect(() => {
+    setBookmarked(isQuestionBookmarked(question.id));
+  }, [question.id]);
+
   function submit() {
     setSubmitted(true);
     onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current });
   }
   function flashToast(msg: string) { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2200); }
+  async function handleBookmarkToggle() {
+    const prev = bookmarked;
+    setBookmarked(!prev);
+    try {
+      const newState = await toggleBookmark(question.id);
+      setBookmarked(newState);
+    } catch {
+      setBookmarked(prev);
+      flashToast("Couldn't update bookmark — try again.");
+    }
+  }
   async function report() {
     if (reported) return;
     setReported(true);
@@ -163,7 +181,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
           <IconButton dark onClick={onExit}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>Question {index + 1} of {total}</div>
           <div style={{ display: 'flex', gap: 4 }}>
-            <IconButton dark active={bookmarked} onClick={() => setBookmarked(!bookmarked)}><BookmarkIcon filled={bookmarked} /></IconButton>
+            <IconButton dark active={bookmarked} onClick={handleBookmarkToggle}><BookmarkIcon filled={bookmarked} /></IconButton>
             <IconButton dark onClick={() => setShowCalc(true)}><CalcIcon /></IconButton>
             <IconButton dark onClick={() => setShowOverflow(true)}><OverflowIcon /></IconButton>
           </div>
