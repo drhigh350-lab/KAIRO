@@ -1,15 +1,28 @@
 /**
  * Kairo — EliteScore
  * Replaces generic XP. Rewards learning quality, not volume.
- * 
+ *
+ * Monotonic by design — the score only ever rises, never falls. Each of
+ * the three components accrues points from signals that are themselves
+ * append-only or sticky (a correct attempt once made, a concept once
+ * reaching Held, a Fading→Reinforced cycle once survived, a calendar day
+ * once practiced on — none of these can later un-happen), so recomputing
+ * from scratch every time is naturally stable and non-decreasing. A raw
+ * point total is then run through an asymptotic curve (approaches but
+ * never reaches 100) to keep the displayed score in the same 0–100 range
+ * the rest of the app already expects, while growth naturally slows as a
+ * student's genuine mastery accumulates rather than being an unbounded
+ * counter.
+ *
  * Components:
- *   Accuracy (45%)   — weighted by difficulty and recency
- *   Retention (35%)  — successful Reinforced transitions
- *   Consistency (20%) — sustainable rhythm across rolling window
+ *   Accuracy (45%)   — correct attempts, weighted by difficulty and
+ *                       discounted for suspected gaming (genuineConfidence)
+ *   Retention (35%)  — Held reached (once) + Reinforced cycles survived
+ *   Consistency (20%) — distinct calendar days ever practiced
  */
 
-import { EliteScoreWeights, SessionConstants } from "../utils/constants.js";
-import { weightedRecencyAverage, inRollingWindow, clamp } from "../utils/helpers.js";
+import { EliteScoreWeights, EliteScorePointScale, EliteScorePoints } from "../utils/constants.js";
+import { clamp } from "../utils/helpers.js";
 
 export class EliteScore {
   constructor(studentProfile) {
@@ -18,13 +31,14 @@ export class EliteScore {
   }
 
   /**
-   * Recalculate the full Elite Score from scratch.
-   * Call this after each session or periodically.
+   * Recalculate the full Elite Score from scratch. Call this after each
+   * session. Always produces a total >= the previous entry in history,
+   * since every input is append-only/sticky.
    */
   calculate(knowledgeGraph, sessions) {
-    const accuracy = this._accuracyComponent(knowledgeGraph);
-    const retention = this._retentionComponent(knowledgeGraph);
-    const consistency = this._consistencyComponent(sessions);
+    const accuracy = this._curve(this._accuracyPoints(knowledgeGraph), EliteScorePointScale.ACCURACY);
+    const retention = this._curve(this._retentionPoints(knowledgeGraph), EliteScorePointScale.RETENTION);
+    const consistency = this._curve(this._consistencyPoints(sessions), EliteScorePointScale.CONSISTENCY);
 
     const total = clamp(
       accuracy * EliteScoreWeights.ACCURACY +
@@ -46,125 +60,84 @@ export class EliteScore {
     return snapshot;
   }
 
-  _accuracyComponent(graph) {
-    const concepts = Array.from(graph.nodes.values()).filter(n => n.attemptHistory.length > 0);
-    if (concepts.length === 0) return 0;
+  /** Asymptotic 0–100 curve: monotonically increasing in `points`, approaches 100 but never reaches it. */
+  _curve(points, scale) {
+    if (points <= 0) return 0;
+    return 100 * (1 - Math.exp(-points / scale));
+  }
 
-    let weightedSum = 0;
-    let totalWeight = 0;
-
-    for (const c of concepts) {
+  _accuracyPoints(graph) {
+    let points = 0;
+    for (const c of graph.nodes.values()) {
       for (const attempt of c.attemptHistory) {
+        if (!attempt.correct) continue;
         const difficulty = attempt.difficulty || 1;
-        const recencyWeight = this._recencyWeight(attempt.timestamp);
-        const isHardRecall = (c.retentionState === 'fading' || c.retentionState === 'reinforced');
-        const difficultyMultiplier = isHardRecall ? difficulty * 1.5 : difficulty;
-
-        const value = attempt.correct ? 1 : 0;
-        weightedSum += value * recencyWeight * difficultyMultiplier;
-        totalWeight += recencyWeight * difficultyMultiplier;
+        // genuineConfidence (ErrorPatternClassifier.detectGaming) is fixed
+        // at attempt time and never changes afterward, so using it here
+        // keeps this attempt's contribution stable forever — unlike the
+        // concept's current retentionState, which can change later and
+        // would otherwise let an old attempt's point value drift.
+        const confidence = attempt.genuineConfidence ?? 1.0;
+        points += difficulty * confidence;
       }
     }
-
-    return totalWeight > 0 ? (weightedSum / totalWeight) * 100 : 0;
+    return points;
   }
 
-  _retentionComponent(graph) {
-    const concepts = Array.from(graph.nodes.values());
-    if (concepts.length === 0) return 0;
-
-    // Reward Reinforced concepts heavily
-    const reinforced = concepts.filter(c => c.retentionState === 'reinforced').length;
-    const held = concepts.filter(c => c.retentionState === 'held').length;
-    const total = concepts.filter(c => c.attemptHistory.length > 0).length || 1;
-
-    // Retention score: reinforced = full, held = partial, fading/forming = none
-    const raw = ((reinforced * 1.0) + (held * 0.4)) / total;
-
-    // Speed bonus: quick correct recalls on Reinforced concepts
-    let speedBonus = 0;
-    for (const c of concepts) {
-      if (c.retentionState === 'reinforced') {
-        const recentCorrect = c.attemptHistory
-          .slice(-3)
-          .filter(a => a.correct);
-        const avgTime = recentCorrect.reduce((s, a) => s + (a.responseTimeMs || 20000), 0)
-          / (recentCorrect.length || 1);
-        if (avgTime < 10000) speedBonus += 0.5; // small bonus for fast, accurate recall
-      }
+  _retentionPoints(graph) {
+    let points = 0;
+    for (const c of graph.nodes.values()) {
+      if (c.everReachedHeld) points += EliteScorePoints.HELD_BONUS;
+      points += (c.reinforcedCycles || 0) * EliteScorePoints.REINFORCED_CYCLE_BONUS;
     }
-
-    return clamp((raw * 100) + Math.min(speedBonus, 5), 0, 100);
+    return points;
   }
 
-  _consistencyComponent(sessions) {
+  _consistencyPoints(sessions) {
     if (!sessions || sessions.length === 0) return 0;
-
-    const windowDays = SessionConstants.CONSISTENCY_ROLLING_WINDOW_DAYS;
-    const recent = inRollingWindow(
-      sessions.map(s => ({ timestamp: s.completedAt, value: 1 })),
-      windowDays
+    const uniqueDays = new Set(
+      sessions.filter(s => s.completedAt).map(s => {
+        const d = new Date(s.completedAt);
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      })
     );
-
-    if (recent.length === 0) return 0;
-
-    // Ideal: frequent short sessions across the window
-    const uniqueDays = new Set(recent.map(r => {
-      const d = new Date(r.timestamp);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    })).size;
-
-    const totalDays = windowDays;
-    const density = uniqueDays / totalDays;
-
-    // Reward distributed practice over cramming
-    const sessionCountsPerDay = {};
-    for (const r of recent) {
-      const d = new Date(r.timestamp);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      sessionCountsPerDay[key] = (sessionCountsPerDay[key] || 0) + 1;
-    }
-    const maxPerDay = Math.max(...Object.values(sessionCountsPerDay));
-    const crammingPenalty = maxPerDay > 3 ? 0.7 : 1.0;
-
-    return clamp(density * 100 * crammingPenalty, 0, 100);
-  }
-
-  _recencyWeight(timestamp, halfLifeDays = 7) {
-    const ageDays = (Date.now() - timestamp) / (1000 * 60 * 60 * 24);
-    return Math.exp(-(Math.log(2) / halfLifeDays) * ageDays);
+    return uniqueDays.size * EliteScorePoints.CONSISTENCY_DAY_BONUS;
   }
 
   /**
    * Generate a human-readable explanation of why the score changed.
+   * Always a rise or a hold — the score never falls.
    */
   explainChange(previous, current) {
     const diff = current.total - previous.total;
-    const direction = diff >= 0 ? 'up' : 'down';
-    const absDiff = Math.abs(diff).toFixed(1);
+
+    if (diff <= 0) {
+      return {
+        direction: 'steady',
+        delta: '0.0',
+        text: "Your Elite Score held steady — keep practicing to move it further.",
+        components: { accuracy: current.accuracy, retention: current.retention, consistency: current.consistency }
+      };
+    }
 
     const reasons = [];
     if (current.accuracy > previous.accuracy + 2) {
-      reasons.push('your accuracy on harder concepts improved');
+      reasons.push('you answered more correctly, including on harder questions');
     }
     if (current.retention > previous.retention + 2) {
-      reasons.push('you successfully remembered concepts after time had passed');
+      reasons.push('you reached or re-earned real retention on concepts');
     }
     if (current.consistency > previous.consistency + 2) {
-      reasons.push('your study rhythm became more distributed');
+      reasons.push('you practiced on a new day, building your rhythm');
     }
-    if (current.accuracy < previous.accuracy - 2) {
-      reasons.push('recent accuracy dropped on practiced material');
-    }
-
     if (reasons.length === 0) {
-      reasons.push('small shifts across multiple components');
+      reasons.push('small gains across multiple components');
     }
 
     return {
-      direction,
-      delta: absDiff,
-      text: `Your Elite Score went ${direction} by ${absDiff} because ${reasons.join(' and ')}.`,
+      direction: 'up',
+      delta: diff.toFixed(1),
+      text: `Your Elite Score went up by ${diff.toFixed(1)} because ${reasons.join(' and ')}.`,
       components: {
         accuracy: current.accuracy,
         retention: current.retention,
@@ -173,13 +146,12 @@ export class EliteScore {
     };
   }
 
+  /** The score is monotonic, so this only ever distinguishes genuine growth from a plateau — never a fall. */
   getTrend(windowEntries = 7) {
     const recent = this.history.slice(-windowEntries);
     if (recent.length < 2) return 'insufficient_data';
     const first = recent[0].total;
     const last = recent[recent.length - 1].total;
-    if (last > first + 3) return 'rising';
-    if (last < first - 3) return 'falling';
-    return 'stable';
+    return last > first + 1 ? 'rising' : 'stable';
   }
 }

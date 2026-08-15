@@ -63,6 +63,12 @@ export function HomeDashboard() {
   // regardless of macro-state, decay urgency, or exam proximity.
   const todayFocus = getTodayFocus();
   const hasTodayProgress = todayProgress.questionsToday > 0;
+  // Goal-completion %, not accuracy — the ring used to show accuracyPct
+  // (e.g. "90%" from one lucky question) inside a shape that visually reads
+  // as "90% done", even when the student was nowhere near their daily goal.
+  const goalPct = todayProgress.dailyGoal ? Math.min(100, Math.round((todayProgress.questionsToday / todayProgress.dailyGoal) * 100)) : null;
+  const ringPct = hasTodayProgress ? (goalPct ?? todayProgress.accuracyPct ?? 0) : 0;
+  const ringLabel = hasTodayProgress ? `${goalPct ?? todayProgress.accuracyPct}%` : '—';
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalInput, setGoalInput] = useState(todayProgress.dailyGoal != null ? String(todayProgress.dailyGoal) : '');
   const [savingGoal, setSavingGoal] = useState(false);
@@ -121,7 +127,7 @@ export function HomeDashboard() {
         }
         chips={['≈5 min', 'Adaptive']}
         ctaLabel="Start Session"
-        onStart={() => navigate('/practice', { state: { entry: 'suggested' } })}
+        onStart={() => navigate('/practice', { state: { entry: 'suggested', anchorConceptId: todayFocus?.conceptId ?? null } })}
       />
 
       <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18 }}>
@@ -130,12 +136,27 @@ export function HomeDashboard() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M4 20V10M11 20V4M18 20v-7" /></svg>
             <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Today's Progress</span>
           </div>
-          <div style={{ width: 56, height: 56, borderRadius: '50%', border: '5px solid var(--dark-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{todayProgress.accuracyPct != null ? `${todayProgress.accuracyPct}%` : '—'}</span>
+          {/* When a daily goal is set, this ring is real goal-completion progress
+              (questionsToday/dailyGoal) — a conic-gradient arc, not just a static
+              border with a number in it, which used to visually imply completion
+              regardless of the number shown. Without a goal there's nothing to
+              show completion against, so it falls back to today's accuracy, same
+              as before. */}
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%', flexShrink: 0, padding: 5,
+            background: hasTodayProgress ? `conic-gradient(var(--dark-accent-blue) ${ringPct * 3.6}deg, var(--dark-border) 0deg)` : 'var(--dark-border)',
+          }}>
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: 'var(--dark-bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{ringLabel}</span>
+            </div>
           </div>
         </div>
         <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>
-          {hasTodayProgress ? "Today's accuracy across everything you've completed so far." : 'Your progress will appear here after you complete a practice session.'}
+          {hasTodayProgress
+            ? (goalPct != null
+                ? `${goalPct}% of today's ${todayProgress.dailyGoal}-question goal · ${todayProgress.accuracyPct}% accuracy so far.`
+                : "Today's accuracy across everything you've completed so far.")
+            : 'Your progress will appear here after you complete a practice session.'}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--dark-border)' }}>
           <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? todayProgress.questionsToday : '—'}</span></div>

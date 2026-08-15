@@ -35,7 +35,7 @@ export function TopicSelect({ subject, onBack, onPick }: TopicSelectProps) {
           <OptionRow
             key={t.topic}
             label={t.topic}
-            subtitle={`${t.total} concept${t.total === 1 ? '' : 's'} · ${t.masteryPct}% mastered`}
+            subtitle={`${t.questionCount} question${t.questionCount === 1 ? '' : 's'} · ${t.masteryPct}% mastered`}
             onClick={() => onPick(t.topic)}
             tone="dark"
           />

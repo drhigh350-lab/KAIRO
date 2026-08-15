@@ -246,6 +246,19 @@ export class KairoEngine {
     Object.assign(this.profile, remoteProfileFields);
     this.profile.authUserId = user.id;
 
+    // profile.sessions has no column of its own on kairo.students (it lives
+    // in the separate kairo.sessions table), so the Object.assign above
+    // never touches it — without this, it silently reset to empty on every
+    // single connect/reload, feeding wrong data into Today's Progress,
+    // EliteScore's consistency component, Macro State, and Level/XP. A
+    // failure here (e.g. offline) shouldn't block sign-in — same session
+    // just stays empty until the next successful connect, same as before.
+    try {
+      this.profile.sessions = await adapter.fetchSessions(remoteProfile.studentId);
+    } catch {
+      // best-effort
+    }
+
     this.sync.attachRemote(adapter, this);
     this._snapshotSjeeState();
     await this.store.saveProfile(this.profile);

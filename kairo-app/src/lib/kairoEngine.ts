@@ -268,8 +268,17 @@ export interface SuggestedSessionResult {
  * constraint doesn't have a 'suggested' value) across whichever of the
  * student's subjects have real content, then resolves up to `limit` live
  * questions for the concepts the RecommendationEngine actually queued.
+ *
+ * `anchorConceptId` — Home's MissionCard names one specific concept via
+ * getTodayFocus() and explains *why* it's recommended, but this function
+ * used to rerun RecommendationEngine.buildSessionPlan() from scratch with
+ * no guarantee that concept was even in the resulting queue (different
+ * instance, can legitimately rank a different concept top). Fetching it
+ * first — before the normal adaptive loop — makes the session the student
+ * actually gets match the reasoning they were just shown. Deduplicated by
+ * concept id (not just question id) so the anchor isn't asked about twice.
  */
-export async function startSuggestedSession(limit = 5): Promise<SuggestedSessionResult> {
+export async function startSuggestedSession(limit = 5, anchorConceptId?: string | null): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(kairo.profile.targetSubjects || []);
@@ -277,12 +286,25 @@ export async function startSuggestedSession(limit = 5): Promise<SuggestedSession
   const { queue, kaiMessage } = kairo.startSession({ mode: 'standard' });
   const questions: Engine[] = [];
   const seenIds: string[] = [];
+  const seenConceptIds = new Set<string>();
+
+  if (anchorConceptId) {
+    const anchorQ = kairo.getQuestionForConcept(anchorConceptId, { excludeIds: seenIds });
+    if (anchorQ) {
+      questions.push(anchorQ);
+      seenIds.push(anchorQ.id);
+      seenConceptIds.add(anchorConceptId);
+    }
+  }
+
   for (const conceptId of queue) {
     if (questions.length >= limit) break;
+    if (seenConceptIds.has(conceptId)) continue;
     const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
     if (q) {
       questions.push(q);
       seenIds.push(q.id);
+      seenConceptIds.add(conceptId);
     }
   }
   return { questions, kaiMessage };
@@ -370,8 +392,8 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
 // SEEDED_SUBJECTS return real topics.
 // ─────────────────────────────────────────────
 
-export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number }
-export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number }
+export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number; questionCount: number }
+export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number; questionCount: number }
 
 /** The subject picker's label ("English Language") predates the seeded catalog's real name ("Use of English") — normalized here rather than touching the shared subject list every other Practice entry point also uses. */
 function normalizeSubjectName(subject: string): string {
@@ -387,7 +409,7 @@ export async function getRealTopics(subjectLabel: string): Promise<TopicInfo[]> 
   const journey = kairo.settings.getLearningJourney();
   const topics = journey[subject]?.topics || {};
   return Object.entries(topics).map(([topic, t]: [string, Engine]) => ({
-    topic, total: t.total, mastered: t.mastered, masteryPct: t.masteryPct,
+    topic, total: t.total, mastered: t.mastered, masteryPct: t.masteryPct, questionCount: t.questionCount ?? 0,
   }));
 }
 
@@ -398,7 +420,7 @@ export async function getRealSubtopics(subjectLabel: string, topic: string): Pro
   const subject = normalizeSubjectName(subjectLabel);
   await ensureContentLoaded([subject]);
   const { subtopics } = kairo.topicPractice.getTopicJourney(subject, topic);
-  return subtopics.map((s: Engine) => ({ subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct }));
+  return subtopics.map((s: Engine) => ({ subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct, questionCount: s.questionCount ?? 0 }));
 }
 
 /**
@@ -486,10 +508,10 @@ export interface TodayProgress {
  * this deliberately doesn't invent one — the card shows real counts and
  * real accuracy instead.
  *
- * profile.sessions only holds what this engine instance has completed
- * since connecting (a page reload has no way to pull historical
- * kairo.sessions rows back down yet), so a same-day session from before a
- * reload won't be reflected here — honestly partial, never fabricated.
+ * profile.sessions is restored from kairo.sessions on every connectSupabase()
+ * call (see fetchSessions()), so a same-day session from before a reload is
+ * still reflected here, not just whatever this engine instance completed
+ * since the current page load.
  */
 export function getTodayProgress(): TodayProgress {
   const kairo = getEngine();

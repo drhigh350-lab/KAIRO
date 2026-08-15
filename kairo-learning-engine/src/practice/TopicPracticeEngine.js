@@ -11,6 +11,12 @@ export class TopicPracticeEngine {
 
   /**
    * Build a topic journey: list of subtopics with their mastery status.
+   *
+   * total/mastered stay concept-based (the right unit for mastery %), but
+   * questionCount is the real, deduplicated count of live questions
+   * reachable from this subtopic's concepts — a subtopic maps to ~1
+   * concept in almost all seeded content, so "total concepts" badly
+   * understates how much a student can actually practice here.
    */
   getTopicJourney(subject, topic) {
     const concepts = this.engine.getAllConcepts({ subject, topic });
@@ -24,10 +30,13 @@ export class TopicPracticeEngine {
       // "null"), silently returning zero concepts and zero questions.
       if (c.subtopic == null) continue;
       if (!subtopics[c.subtopic]) {
-        subtopics[c.subtopic] = { concepts: [], mastered: 0, total: 0 };
+        subtopics[c.subtopic] = { concepts: [], mastered: 0, total: 0, questionIds: new Set() };
       }
       subtopics[c.subtopic].concepts.push(c);
       subtopics[c.subtopic].total++;
+      for (const q of this.engine.questionGraph.getQuestionsForConcept(c.id)) {
+        subtopics[c.subtopic].questionIds.add(q.id);
+      }
       if (c.state === 'held' || c.state === 'reinforced') {
         subtopics[c.subtopic].mastered++;
       }
@@ -35,12 +44,16 @@ export class TopicPracticeEngine {
 
     // Sort subtopics by dependency order (simplistic: by mastery %)
     const sorted = Object.entries(subtopics)
-      .map(([name, data]) => ({
-        name,
-        ...data,
-        masteryPct: Math.round((data.mastered / data.total) * 100),
-        locked: false // could add prerequisite logic here
-      }))
+      .map(([name, data]) => {
+        const { questionIds, ...rest } = data;
+        return {
+          name,
+          ...rest,
+          questionCount: questionIds.size,
+          masteryPct: Math.round((data.mastered / data.total) * 100),
+          locked: false // could add prerequisite logic here
+        };
+      })
       .sort((a, b) => b.masteryPct - a.masteryPct);
 
     return {

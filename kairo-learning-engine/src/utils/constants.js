@@ -70,6 +70,25 @@ export const EliteScoreWeights = Object.freeze({
   CONSISTENCY: 0.20
 });
 
+// Monotonic-by-design (Kairo Score only ever rises): each component
+// accrues points from append-only/sticky signals — correct attempts ever
+// made, Held/Reinforced achievements ever reached, distinct days ever
+// practiced — none of which can un-happen, so the raw point totals can
+// only grow. SCALE is the point value at which a component's curved 0–100
+// subscore reaches ~63 (1 − 1/e); tuned as a reasonable first estimate,
+// not from real usage data yet.
+export const EliteScorePointScale = Object.freeze({
+  ACCURACY: 400,
+  RETENTION: 150,
+  CONSISTENCY: 90
+});
+
+export const EliteScorePoints = Object.freeze({
+  HELD_BONUS: 8,             // one-time, first time a concept ever reaches Held
+  REINFORCED_CYCLE_BONUS: 20, // per Fading→Reinforced cycle survived (ConceptNode.reinforcedCycles)
+  CONSISTENCY_DAY_BONUS: 3    // per distinct calendar day a session was ever completed
+});
+
 // ─── Decay & Scheduling ───
 export const DecayConstants = Object.freeze({
   BASE_DECAY_HALF_LIFE_DAYS: 7,
