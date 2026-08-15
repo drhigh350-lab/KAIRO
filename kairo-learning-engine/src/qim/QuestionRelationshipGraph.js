@@ -4,6 +4,8 @@
  * This powers fast, intelligent question selection without scanning the entire bank.
  */
 
+import { isPrimaryConceptLink } from "../utils/helpers.js";
+
 export class QuestionRelationshipGraph {
   constructor() {
     this.questions = new Map(); // id -> Question
@@ -84,7 +86,7 @@ export class QuestionRelationshipGraph {
       for (const [id, question] of this.questions) {
         if (id === questionId) continue;
         const testsPrereq = question.conceptsTested.some(
-          c => c.conceptId === prereqConceptId && c.weight === 'primary'
+          c => c.conceptId === prereqConceptId && isPrimaryConceptLink(c)
         );
         if (testsPrereq && question.lifecycleState === 'live') {
           prereqQuestions.push(question);
