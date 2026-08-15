@@ -729,7 +729,10 @@ test('Learn: fromIncorrectAnswer builds a full lesson for a conceptual gap', () 
   assert(lesson.steps.coreConcept.learningObjective.includes('oxidation states'), 'Learning objective should come from the anchoring question');
   assert(lesson.steps.commonMisconceptions[0].ownMistake === true, "Student's own mistake should be named first");
   assert(lesson.steps.examInsight, 'Exam insight should be present');
-  assert(lesson.steps.keyIdea, 'Key idea (memory aid) should be present');
+  // ExplanationEngine only fabricates a memory anchor for concepts with a
+  // real, hand-authored one — none exist for this test fixture's concept,
+  // so keyIdea should be cleanly omitted (null), not filled with generic text.
+  assertEqual(lesson.steps.keyIdea, null, 'Key idea should be omitted when no genuine memory anchor exists for this concept');
 });
 
 test('Learn: careless_slip compresses to a light lesson', () => {
@@ -864,6 +867,61 @@ test("MisconceptionLibrary: ExplanationEngine diagnoses straight from the questi
   const bOption = distractorPart.content.find(d => d.label === 'B');
   assert(bOption.misconception, 'A question with a real misconceptionId on its distractor should produce a non-null misconception diagnosis without mapDistractor() ever being called');
   assertEqual(bOption.misconception.id, 'confused_similar_concepts', 'The diagnosed misconception should match the id authored on the question itself');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// EXPLANATION ENGINE — exam tip / memory anchor coverage
+// _generateExamTip() only ever indexed tips by calculationLoad, whose
+// lookup table was missing a 'light' key and never consulted readingLoad
+// at all — despite carrying a 'high' tip clearly written for it. Checked
+// directly against production: calculationLoad='light' (36 real
+// questions) and readingLoad='high' (5 real questions) both silently got
+// no exam tip. _generateMemoryAnchor()'s old 5-entry hardcoded map also
+// matched zero of the 201 real seeded concepts, so every question fell
+// through to generic filler text presented as a "memory anchor."
+// ═══════════════════════════════════════════════════════════════
+
+test('ExplanationEngine: calculationLoad="light" gets a real exam tip, not silently omitted', () => {
+  const q = new Question({
+    id: 'tip_light_1', subject: 'Physics', topic: 'Motion', subtopic: 'Speed',
+    calculationLoad: 'light', cognitiveLevel: 'application', readingLoad: 'low',
+    stem: 'A car travels 60 km in 2 hours. What is its average speed?',
+    options: [{ label: 'A', text: '30 km/h', isCorrect: true }, { label: 'B', text: '120 km/h', isCorrect: false }],
+    correctOption: 'A', explanation: 'Speed = distance / time = 60 / 2 = 30 km/h.',
+    lifecycleState: 'live'
+  });
+  const explanation = learnEngine.explanations.generate({ question: q, attempt: { correct: true }, concept: null, macroState: 'building' });
+  const examTipPart = explanation.parts.find(p => p.type === 'exam_tip');
+  assert(examTipPart, 'calculationLoad="light" should still produce an exam tip part');
+  assert(typeof examTipPart.content === 'string' && examTipPart.content.length > 0, 'The exam tip content should be a real, non-empty string');
+});
+
+test('ExplanationEngine: readingLoad="high" surfaces the stem-reading tip, even over a calculation-heavy question', () => {
+  const q = new Question({
+    id: 'tip_reading_1', subject: 'Use of English', topic: 'Comprehension & Summary', subtopic: 'Passage',
+    calculationLoad: 'heavy', cognitiveLevel: 'analysis', readingLoad: 'high',
+    stem: 'Read the long passage below and answer the question that follows...',
+    options: [{ label: 'A', text: 'Option A', isCorrect: true }, { label: 'B', text: 'Option B', isCorrect: false }],
+    correctOption: 'A', explanation: 'The passage states this directly in paragraph two.',
+    lifecycleState: 'live'
+  });
+  const explanation = learnEngine.explanations.generate({ question: q, attempt: { correct: true }, concept: null, macroState: 'building' });
+  const examTipPart = explanation.parts.find(p => p.type === 'exam_tip');
+  assert(examTipPart, 'readingLoad="high" should produce an exam tip part');
+  assert(examTipPart.content.includes('Read the stem twice'), 'A reading-heavy question should get the stem-reading tip, not the calculation tip');
+});
+
+test('ExplanationEngine: memory_anchor is omitted (not filler text) when no genuine anchor exists for the concept', () => {
+  const q = new Question({
+    id: 'anchor_none_1', subject: 'Chemistry', topic: 'Organic Chemistry', subtopic: 'Alkanes',
+    stem: 'What is the general formula for an alkane?',
+    options: [{ label: 'A', text: 'CnH2n+2', isCorrect: true }, { label: 'B', text: 'CnH2n', isCorrect: false }],
+    correctOption: 'A', explanation: 'Alkanes are saturated hydrocarbons with formula CnH2n+2.',
+    lifecycleState: 'live'
+  });
+  const explanation = learnEngine.explanations.generate({ question: q, attempt: { correct: true }, concept: null, macroState: 'building' });
+  const memoryAnchorPart = explanation.parts.find(p => p.type === 'memory_anchor');
+  assert(!memoryAnchorPart, 'No memory_anchor part should be present when nothing genuine exists for this concept');
 });
 
 test("Learn: commonMisconceptions come from the question's own distractor data, not the legacy mapDistractor() table", () => {
