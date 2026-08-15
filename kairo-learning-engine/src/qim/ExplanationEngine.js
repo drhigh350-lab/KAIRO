@@ -65,12 +65,15 @@ export class ExplanationEngine {
       });
     }
 
-    // 5. Memory anchor (for future retrieval)
-    parts.push({
-      type: 'memory_anchor',
-      title: 'Remember This',
-      content: this._generateMemoryAnchor(question, concept)
-    });
+    // 5. Memory anchor (for future retrieval) — omitted when nothing genuine exists
+    const memoryAnchor = this._generateMemoryAnchor(question, concept);
+    if (memoryAnchor) {
+      parts.push({
+        type: 'memory_anchor',
+        title: 'Remember This',
+        content: memoryAnchor
+      });
+    }
 
     // 6. Related concept (from dependency graph)
     if (concept && concept.dependencyIds.length > 0) {
@@ -125,32 +128,55 @@ export class ExplanationEngine {
     return option ? { label, text: option.text, whyWrong: question.getDistractorExplanation(label), count } : null;
   }
 
+  /**
+   * readingLoad is checked ahead of calculationLoad: the 'high' tip below
+   * is about how to read the stem, which applies regardless of how much
+   * calculation follows. calculationLoad's own tip runs only when reading
+   * load isn't the bottleneck. Every real value of both fields (checked
+   * directly against production: calculationLoad none|light|moderate|heavy,
+   * readingLoad low|medium|high) resolves to a tip here — 'light' and
+   * 'high' previously had no matching key in the old single calculationLoad-
+   * only lookup, so calculation-light and reading-heavy questions silently
+   * got no exam tip at all.
+   */
   _generateExamTip(question) {
-    const tips = {
-      'high': 'Read the stem twice before looking at options. Long questions often hide key conditions in the middle.',
+    if (question.readingLoad === 'high') {
+      return 'Read the stem twice before looking at options. Long questions often hide key conditions in the middle.';
+    }
+
+    const calcTips = {
+      'light': 'Plug in values carefully and sanity-check the answer\'s order of magnitude before selecting.',
       'moderate': 'Check your units before calculating. Many correct methods fail at the unit-conversion step.',
-      'heavy': 'Break the calculation into steps. Write down each intermediate value — one early error compounds.',
+      'heavy': 'Break the calculation into steps. Write down each intermediate value — one early error compounds.'
+    };
+    if (question.calculationLoad !== 'none' && calcTips[question.calculationLoad]) {
+      return calcTips[question.calculationLoad];
+    }
+
+    const cognitiveTips = {
       'recall': 'This is a fact-check question. If you do not know it immediately, eliminate obviously wrong options first.',
       'application': 'Identify the concept being tested before calculating. The numbers matter less than knowing which formula applies.',
       'analysis': 'Look for what the question is asking vs. what it seems to ask. The distractors often answer a different question.',
       'synthesis': 'Map out all given information first. Synthesis questions require you to connect multiple pieces before solving.'
     };
-
-    if (question.calculationLoad !== 'none') return tips[question.calculationLoad];
-    return tips[question.cognitiveLevel] || null;
+    return cognitiveTips[question.cognitiveLevel] || null;
   }
 
+  /**
+   * Real, hand-authored memory anchors require subject-matter authoring
+   * per concept — out of scope to fabricate here, and a prior hardcoded
+   * 5-entry map (keyed by concept/topic names like 'Stoichiometry',
+   * 'Mole Concept') matched zero of the 201 concepts actually seeded in
+   * production, so every question silently fell through to a generic
+   * "Key idea: {learningObjective}" filler line dressed up as a memory
+   * anchor. Returns null — omitted cleanly — until a real per-concept
+   * anchor exists, matching the contract LearnModule already documents
+   * for this field (§5.9/§6.2.3: "omitted cleanly when nothing genuine
+   * exists").
+   */
   _generateMemoryAnchor(question, concept) {
-    const anchors = {
-      'Stoichiometry': 'Mole-to-mass: multiply by molar mass. Mass-to-mole: divide by molar mass. Always.',
-      'Mole Concept': 'One mole = 6.02 × 10²³ particles. Avogadro is your constant companion.',
-      'Mechanics': 'F = ma. Force causes acceleration, not velocity. Velocity is the result.',
-      'Cell Biology': 'Prokaryote: no nucleus. Eukaryote: has nucleus. The "eu" means "true" — true nucleus.',
-      'Genetics': 'Dominant masks recessive. But recessive is still there, hiding, waiting.'
-    };
-
-    return anchors[concept?.name] || anchors[question.topic] || 
-      `Key idea: ${question.learningObjective || question.topic}. Lock this in — it will come back.`;
+    const anchors = {};
+    return anchors[concept?.name] || anchors[question.topic] || null;
   }
 
   _suggestFollowUp(question, attempt) {
