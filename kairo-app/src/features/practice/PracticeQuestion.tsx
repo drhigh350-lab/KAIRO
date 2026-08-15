@@ -60,7 +60,15 @@ export interface PracticeQuestionProps {
   kaiNote?: string | null;
   /** The same ExplanationEngine output Learn already renders (distractor breakdown, misconception diagnosis, exam tip) — from submitAnswer()'s explanation field. Absent for older engine builds or a question missing from questionGraph; every render below degrades cleanly when it's null. */
   explanation?: PracticeExplanation | null;
+  /** RecommendationEngine.processAnswer()'s per-answer interrupt — computed on every answer, previously discarded entirely. Absent (null) on the ordinary 'continue' case; present when Kairo is rerouting to a weak prerequisite, dropping to a lower-stakes diagnostic question after a guess, or easing off after repeated careless slips. `reason` is the engine's own real sentence — rendered verbatim, not paraphrased. */
+  nextStepNote?: { action: string; reason: string } | null;
 }
+
+const NEXT_STEP_TITLES: Record<string, string> = {
+  reroute_prerequisite: 'Before we continue',
+  diagnostic: "Let's check something",
+  difficulty_pullback: 'Easing up a little',
+};
 
 export function CloseIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12h16M4 6h16M4 18h10" /></svg>;
@@ -69,7 +77,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote, explanation }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote, explanation, nextStepNote }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
@@ -231,6 +239,12 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6z" /></svg>
                 Understand this before moving on
               </button>
+            )}
+
+            {nextStepNote && (
+              <Section title={NEXT_STEP_TITLES[nextStepNote.action] ?? "What's next"}>
+                <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6 }}>{nextStepNote.reason}</div>
+              </Section>
             )}
 
             <KaiPanel note={kaiNote ?? question.kai} tone="dark" onAction={handleKaiFollowupAction} />

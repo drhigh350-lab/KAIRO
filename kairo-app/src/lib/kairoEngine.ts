@@ -293,6 +293,28 @@ export interface CustomSessionArgs {
   subjects?: string[];
   includeFading?: boolean;
   limit?: number;
+  /** PracticeHub's difficulty picker ('adaptive' | 'easy' | 'medium' | 'hard') — see difficultyWindow(). */
+  difficulty?: string;
+}
+
+/**
+ * Maps PracticeHub's difficulty picker to a real difficultyRating window
+ * (1–5, the same scale AdaptiveDifficulty's own tiers use) — previously
+ * selected in the UI and never sent to the engine at all, so every
+ * session ran at whatever the adaptive engine's own per-answer logic
+ * picked regardless of what the student chose. 'adaptive' applies no
+ * override on purpose: the adaptive engine already adjusts difficulty
+ * per answer during the session (see submitAnswer()'s nextDifficulty /
+ * difficulty_pullback handling) — that's what "Adaptive" means here, not
+ * a fixed window.
+ */
+function difficultyWindow(level?: string | null): { minDifficulty: number | null; maxDifficulty: number | null } {
+  switch (level) {
+    case 'easy': return { minDifficulty: 1, maxDifficulty: 2 };
+    case 'medium': return { minDifficulty: 2, maxDifficulty: 4 };
+    case 'hard': return { minDifficulty: 4, maxDifficulty: 5 };
+    default: return { minDifficulty: null, maxDifficulty: null };
+  }
 }
 
 /**
@@ -316,7 +338,7 @@ export interface CustomSessionArgs {
  * "couldn't find any questions" message is accurate instead of masked by
  * a wrong-subject substitution.
  */
-export async function startCustomSession({ subjects = [], includeFading = true, limit = 10 }: CustomSessionArgs): Promise<SuggestedSessionResult> {
+export async function startCustomSession({ subjects = [], includeFading = true, limit = 10, difficulty }: CustomSessionArgs): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(subjects.length ? subjects : kairo.profile.targetSubjects || []);
@@ -327,11 +349,12 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
     return { questions: [] };
   }
   const { queue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];
   const seenIds: string[] = [];
   for (const conceptId of queue) {
     if (questions.length >= limit) break;
-    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds, minDifficulty, maxDifficulty });
     if (q) {
       questions.push(q);
       seenIds.push(q.id);
@@ -383,7 +406,7 @@ export async function getRealSubtopics(subjectLabel: string, topic: string): Pro
  * (the SubtopicSelect screen's "practise all of this topic" skip) pulls
  * from every subtopic under the topic instead of one.
  */
-export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10): Promise<SuggestedSessionResult> {
+export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10, difficulty?: string): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const subject = normalizeSubjectName(subjectLabel);
@@ -400,11 +423,12 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
 
   kairo.startSession({ mode: 'topic_practice', plan: queue });
 
+  const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];
   const seenIds: string[] = [];
   for (const conceptId of queue) {
     if (questions.length >= limit) break;
-    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+    const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds, minDifficulty, maxDifficulty });
     if (q) {
       questions.push(q);
       seenIds.push(q.id);
@@ -454,6 +478,30 @@ export function getTodayProgress(): TodayProgress {
     accuracyPct: questionsToday > 0 ? Math.round((correctToday / questionsToday) * 100) : null,
     dailyGoal: kairo?.profile?.dailyQuestionGoal ?? null,
   };
+}
+
+export interface TodayFocus {
+  macroState: string | null;
+  conceptId: string | null;
+  conceptName: string | null;
+  subject: string | null;
+  topic: string | null;
+  reason: string | null;
+}
+
+/**
+ * Home's "why this session" reasoning — previously a static, client-authored
+ * sentence identical for every student. This calls straight through to
+ * RecommendationEngine's own real scoring (decay urgency, exam proximity,
+ * macro-state), the same signals that decide the actual session queue, via
+ * a non-committal preview that doesn't start or consume a real session.
+ * Null conceptId/reason (no concepts yet) is a real, honest state — callers
+ * should fall back to a generic sentence rather than treat it as an error.
+ */
+export function getTodayFocus(): TodayFocus | null {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.getTodayFocus();
 }
 
 /** Sets (or clears, with null) the student's own daily-question-count goal — a real, student-declared target, never a system-invented default. */
@@ -592,6 +640,21 @@ export function getReviewReinforcementQuestion(conceptId: string, excludeId?: st
   const kairo = getEngine();
   if (!kairo) return null;
   return kairo.getQuestionForConcept(conceptId, { excludeIds: excludeId ? [excludeId] : [] });
+}
+
+/**
+ * A fresh question for the concept RecommendationEngine.processAnswer()
+ * decided the student should see next — a prerequisite reroute after a
+ * conceptual-gap answer, or a lower-stakes diagnostic question after a
+ * guess. submitAnswer() has always computed this decision on every single
+ * answer; Practice previously discarded it entirely, so the interrupt
+ * never reached the student and the next question was whatever was
+ * already sitting in the pre-fetched batch instead.
+ */
+export function getRecommendedNextQuestion(conceptId: string, excludeIds: string[] = [], maxDifficulty?: number | null): EngineFlatQuestion | null {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.getQuestionForConcept(conceptId, { excludeIds, maxDifficulty: maxDifficulty ?? null });
 }
 
 /** A concept's current retention state, read directly (not recomputed) so a genuine Reinforced transition during a Review session (Review Module §5.9) can be told apart from routine completion. */

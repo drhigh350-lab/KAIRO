@@ -826,6 +826,351 @@ test('Learn Module state round-trips through toJSON/fromJSON', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// MISCONCEPTION WIRING TESTS
+// ExplanationEngine/LearnModule previously diagnosed misconceptions via
+// MisconceptionLibrary.diagnose(), which reads distractorMappings — a
+// side-table only ever populated by mapDistractor(), which nothing in
+// production calls. Real content authors misconceptionId directly on a
+// question's own distractors (Question §2.4); these tests exercise that
+// path with no mapDistractor() call anywhere in sight, matching the real
+// shape of live seeded content.
+// ═══════════════════════════════════════════════════════════════
+
+test("MisconceptionLibrary: ExplanationEngine diagnoses straight from the question's own distractor data (no mapDistractor() call)", () => {
+  const q = new Question({
+    id: 'mc_wire_1',
+    subject: 'Biology', topic: 'Cell Biology', subtopic: 'Organelles',
+    stem: 'Which organelle is the site of aerobic respiration?',
+    options: [
+      { label: 'A', text: 'Mitochondrion', isCorrect: true },
+      { label: 'B', text: 'Nucleus', isCorrect: false }
+    ],
+    correctOption: 'A',
+    explanation: 'The mitochondrion is the site of aerobic respiration.',
+    distractors: [
+      { option: 'B', misconceptionId: 'confused_similar_concepts', explanation: 'The nucleus stores genetic material; it does not generate ATP.' }
+    ],
+    lifecycleState: 'live'
+  });
+
+  const explanation = learnEngine.explanations.generate({
+    question: q,
+    attempt: { correct: false, selectedOption: 'B', errorTag: ErrorTag.CONCEPTUAL_GAP },
+    concept: null,
+    macroState: 'building'
+  });
+  const distractorPart = explanation.parts.find(p => p.type === 'distractor_breakdown');
+  const bOption = distractorPart.content.find(d => d.label === 'B');
+  assert(bOption.misconception, 'A question with a real misconceptionId on its distractor should produce a non-null misconception diagnosis without mapDistractor() ever being called');
+  assertEqual(bOption.misconception.id, 'confused_similar_concepts', 'The diagnosed misconception should match the id authored on the question itself');
+});
+
+test("Learn: commonMisconceptions come from the question's own distractor data, not the legacy mapDistractor() table", () => {
+  const freshConceptId = learnEngine.addConcept({ name: 'Osmosis', subject: 'Biology', topic: 'Cell Biology', subtopic: 'Transport' });
+  const freshQuestion = new Question({
+    id: 'mc_wire_2',
+    subject: 'Biology', topic: 'Cell Biology', subtopic: 'Transport',
+    conceptsTested: [{ conceptId: freshConceptId, weight: 'primary' }],
+    stem: 'Water moves from a region of...',
+    options: [
+      { label: 'A', text: 'Low solute concentration to high solute concentration', isCorrect: true },
+      { label: 'B', text: 'High solute concentration to low solute concentration', isCorrect: false }
+    ],
+    correctOption: 'A',
+    explanation: 'Osmosis moves water toward the higher solute concentration.',
+    distractors: [
+      { option: 'B', misconceptionId: 'overgeneralized_rule', explanation: 'This reverses the direction of osmotic flow.' }
+    ],
+    lifecycleState: 'live'
+  });
+  learnEngine.questionGraph.addQuestion(freshQuestion);
+
+  const lesson = learnEngine.learn.fromIncorrectAnswer({
+    questionId: 'mc_wire_2', conceptId: freshConceptId, selectedOption: 'B', errorTag: ErrorTag.CONCEPTUAL_GAP
+  });
+  assert(lesson.steps.commonMisconceptions.length > 0, "Common misconceptions should be populated from the question's own distractor data");
+  assert(lesson.steps.commonMisconceptions[0].ownMistake === true, "Student's own mistake should still be named first");
+  assertEqual(lesson.steps.commonMisconceptions[0].id, 'overgeneralized_rule', 'Should resolve the exact misconceptionId authored on the question, without mapDistractor() ever being called for it');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADAPTIVE DIFFICULTY / FATIGUE PULLBACK WIRING TESTS
+// RecommendationEngine's fatigue interrupt only ever set
+// profile._tempSoftening, a flag nothing read. AdaptiveDifficulty checks
+// its own separate this.sessionSoftening, only ever set by its own
+// softenSession(), which nothing called — so a 'difficulty_pullback'
+// decision had zero effect on the difficulty of the next question served.
+// ═══════════════════════════════════════════════════════════════
+
+await test('AdaptiveDifficulty: a difficulty_pullback decision actually softens future difficulty selection, not just an unread profile flag', async () => {
+  const engine = new KairoEngine({
+    studentId: 'diff1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry']
+  });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Fatigue Concept', subject: 'Chemistry', topic: 'Reaction Rates' });
+  const concept = engine.graph.getConcept(conceptId);
+  concept.confidenceScore = 1; // push the Held tier toward the top of its band so a pullback is visible
+
+  engine.startSession({ mode: 'standard', plan: [] });
+  assertEqual(engine.difficulty.sessionSoftening, false, 'A fresh session should not start already softened');
+
+  concept.retentionState = 'held';
+  const tierBefore = engine.difficulty.selectDifficulty(concept, engine.profile.macroState);
+
+  // Three careless slips in a row: fast-but-not-instant wrong answers on a
+  // concept classify() sees as Held/Reinforced (ratio 6000/20000 = 0.3,
+  // satisfying isStrongHistory && ratio < 0.6 && responseTimeMs > 3000).
+  // A wrong answer flips Held -> Fading (ConceptNode._updateState), which
+  // would break isStrongHistory on the next loop iteration, so it's reset
+  // between submissions — this test is isolating the fatigue/difficulty
+  // wiring, not exercising retention-state transition rules.
+  let lastDecision = null;
+  for (let i = 0; i < 3; i++) {
+    concept.retentionState = 'held';
+    const result = engine.submitAnswer({
+      conceptId, correct: false, responseTimeMs: 6000,
+      selectedOption: 'B', correctOption: 'A', questionId: `dq${i}`, questionDifficulty: 3
+    });
+    lastDecision = result.decision;
+  }
+
+  assertEqual(lastDecision.action, 'difficulty_pullback', 'Three careless slips in a row should trigger the fatigue interrupt');
+  assertEqual(engine.difficulty.sessionSoftening, true, "AdaptiveDifficulty's own sessionSoftening flag should now be set by the fatigue interrupt");
+  const tierAfter = engine.difficulty.selectDifficulty(concept, engine.profile.macroState);
+  assert(tierAfter < tierBefore, `Difficulty tier should genuinely drop after a pullback (was ${tierBefore}, now ${tierAfter})`);
+
+  // A new session should not inherit softening from a previous one — it's
+  // meant to be temporary and session-scoped, not sticky forever.
+  engine.startSession({ mode: 'standard', plan: [] });
+  assertEqual(engine.difficulty.sessionSoftening, false, 'Starting a new session should reset temporary softening from a previous one');
+});
+
+test('getQuestionForConcept: maxDifficulty narrows the pool but never returns nothing when real questions exist above it', () => {
+  const engine = new KairoEngine({
+    studentId: 'diff2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Physics']
+  });
+  const conceptId = engine.addConcept({ name: 'Difficulty Pool Concept', subject: 'Physics', topic: 'Mechanics' });
+  for (const [id, difficultyRating] of [['dp_easy', 1], ['dp_hard1', 4], ['dp_hard2', 5]]) {
+    engine.questionGraph.addQuestion(new Question({
+      id, subject: 'Physics', topic: 'Mechanics',
+      conceptsTested: [{ conceptId, weight: 'primary' }],
+      difficultyRating, stem: `Q ${id}`,
+      options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+      correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+
+  const capped = engine.getQuestionForConcept(conceptId, { maxDifficulty: 2 });
+  assertEqual(capped.id, 'dp_easy', 'With a ceiling of 2, only the difficulty-1 question qualifies');
+
+  const noneQualify = engine.getQuestionForConcept(conceptId, { excludeIds: ['dp_hard1', 'dp_hard2'], maxDifficulty: 2 });
+  assertEqual(noneQualify.id, 'dp_easy', 'Still returns the one real question left, even excluding the harder ones');
+
+  const tooStrict = engine.getQuestionForConcept(conceptId, { excludeIds: ['dp_easy'], maxDifficulty: 2 });
+  assert(['dp_hard1', 'dp_hard2'].includes(tooStrict.id), 'When nothing meets the ceiling, falls back to the full remaining pool rather than returning null');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PRACTICE DIFFICULTY PICKER WIRING TESTS (P0-5)
+// PracticeHub's Easy/Medium/Hard/Adaptive picker was selected in the UI
+// and never sent to the engine — every session ran at whatever the
+// adaptive engine picked regardless of the student's choice. These prove
+// getQuestionForConcept()'s minDifficulty/maxDifficulty window (the
+// mechanism kairo-app now threads the picker through) actually shifts
+// which questions get served.
+// ═══════════════════════════════════════════════════════════════
+
+test("getQuestionForConcept: minDifficulty + maxDifficulty together select a real difficulty window, and 'Easy' vs 'Hard' genuinely differ", () => {
+  const engine = new KairoEngine({
+    studentId: 'diff3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry']
+  });
+  const conceptId = engine.addConcept({ name: 'Difficulty Window Concept', subject: 'Chemistry', topic: 'Acids' });
+  for (const [id, difficultyRating] of [['dw1', 1], ['dw2', 2], ['dw3', 4], ['dw4', 5]]) {
+    engine.questionGraph.addQuestion(new Question({
+      id, subject: 'Chemistry', topic: 'Acids',
+      conceptsTested: [{ conceptId, weight: 'primary' }],
+      difficultyRating, stem: `Q ${id}`,
+      options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+      correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+
+  // "Hard" (min 4, max 5) should only ever serve the two hardest questions.
+  for (let i = 0; i < 10; i++) {
+    const q = engine.getQuestionForConcept(conceptId, { minDifficulty: 4, maxDifficulty: 5 });
+    assert(['dw3', 'dw4'].includes(q.id), `Hard window should only serve difficulty 4-5 questions, got ${q.id}`);
+  }
+
+  // "Easy" (min 1, max 2) should only ever serve the two easiest questions
+  // — genuinely disjoint from Hard's pool above, not overlapping.
+  for (let i = 0; i < 10; i++) {
+    const q = engine.getQuestionForConcept(conceptId, { minDifficulty: 1, maxDifficulty: 2 });
+    assert(['dw1', 'dw2'].includes(q.id), `Easy window should only serve difficulty 1-2 questions, got ${q.id}`);
+  }
+
+  // A window matching nothing real falls back to the full pool rather than null.
+  const impossible = engine.getQuestionForConcept(conceptId, { minDifficulty: 3, maxDifficulty: 3 });
+  assert(impossible !== null, 'A window matching no real question should fall back to the full pool, not return null');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ERROR TAXONOMY WIRING TESTS (P0-7)
+// misread_question/misapplied_rule/partial_understanding were permanently
+// unreachable for two independent reasons: nothing ever populated
+// distractorTags, and the branches themselves were broken regardless —
+// misread_question's condition (`selectedOption === correctOption +
+// '_trap'`) could never match any real option label, and misapplied_rule/
+// final_step read a whole-question distractorTags array instead of the
+// tags on the option the student actually picked. Both fixed; these tests
+// use synthetic Question fixtures (not real production content — see
+// P0-7's completion note on why real content wasn't hand-tagged here).
+// ═══════════════════════════════════════════════════════════════
+
+test('Question.getDistractorTags() reads per-option tags, empty for an untagged or unknown option', () => {
+  const q = new Question({
+    id: 'tag_q1', subject: 'Biology', topic: 'T', stem: 'S',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: 'confused_similar_concepts', explanation: 'x', tags: ['misread_trap'] }],
+    lifecycleState: 'live'
+  });
+  assertEqual(JSON.stringify(q.getDistractorTags('B')), JSON.stringify(['misread_trap']), "Should return the tags authored on option B's distractor");
+  assertEqual(JSON.stringify(q.getDistractorTags('A')), '[]', 'The correct option has no distractor entry, so no tags');
+  assertEqual(JSON.stringify(q.getDistractorTags('C')), '[]', 'An option with no distractor entry at all should return [], not throw');
+});
+
+test('ErrorPatternClassifier: misread_question fires for a tagged misread-trap option, not the previous always-false condition', () => {
+  const engine = new KairoEngine({ studentId: 'tax1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  const conceptId = engine.addConcept({ name: 'Osmosis Direction', subject: 'Biology', topic: 'Transport' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q2', subject: 'Biology', topic: 'Transport', stem: 'Water moves from...',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: null, explanation: 'Answers the reversed question.', tags: ['misread_trap'] }],
+    lifecycleState: 'live'
+  });
+  const tag = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'B', correctOption: 'A', responseTimeMs: 15000,
+    question: q
+  });
+  assertEqual(tag, ErrorTag.MISREAD_QUESTION, 'A tagged misread-trap option should classify as misread_question, not conceptual_gap');
+});
+
+test('ErrorPatternClassifier: misapplied_rule fires for the actually-selected adjacent-rule option, not any tagged option on the question', () => {
+  const engine = new KairoEngine({ studentId: 'tax2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  const conceptId = engine.addConcept({ name: 'Ionic vs Covalent', subject: 'Chemistry', topic: 'Bonding' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q3', subject: 'Chemistry', topic: 'Bonding', stem: 'S',
+    options: [
+      { label: 'A', text: 'A', isCorrect: true },
+      { label: 'B', text: 'B', isCorrect: false },
+      { label: 'C', text: 'C', isCorrect: false }
+    ],
+    correctOption: 'A',
+    distractors: [
+      { option: 'B', misconceptionId: null, explanation: 'Correct for covalent bonding, not ionic.', tags: ['adjacent_rule'] },
+      { option: 'C', misconceptionId: null, explanation: 'Unrelated slip.', tags: [] }
+    ],
+    lifecycleState: 'live'
+  });
+  const pickedTagged = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'B', correctOption: 'A', responseTimeMs: 15000, question: q
+  });
+  assertEqual(pickedTagged, ErrorTag.MISAPPLIED_RULE, 'Picking the tagged adjacent-rule option should classify as misapplied_rule');
+
+  const pickedUntagged = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'C', correctOption: 'A', responseTimeMs: 15000, question: q
+  });
+  assert(pickedUntagged !== ErrorTag.MISAPPLIED_RULE, "Picking a different, untagged option shouldn't inherit another option's adjacent_rule tag");
+});
+
+test('ErrorPatternClassifier: partial_understanding fires for a tagged final-step slip on a calculation-heavy question', () => {
+  const engine = new KairoEngine({ studentId: 'tax3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  const conceptId = engine.addConcept({ name: 'Mole Ratio Calculations', subject: 'Chemistry', topic: 'Stoichiometry' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q4', subject: 'Chemistry', topic: 'Stoichiometry', stem: 'S',
+    calculationLoad: 'heavy',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: 'arithmetic_slip', explanation: 'Right setup, wrong final division.', tags: ['final_step'] }],
+    lifecycleState: 'live'
+  });
+  const tag = engine.classifier.classify({
+    concept: engine.graph.getConcept(conceptId),
+    selectedOption: 'B', correctOption: 'A', responseTimeMs: 15000, question: q
+  });
+  assertEqual(tag, ErrorTag.PARTIAL_UNDERSTANDING, 'A calculation-heavy question with a tagged final-step slip should classify as partial_understanding');
+});
+
+await test('KairoEngine.submitAnswer(): resolves the real Question from questionGraph for classification, not an always-empty caller-supplied distractorTags param', async () => {
+  const engine = new KairoEngine({ studentId: 'tax4', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Enzyme Specificity', subject: 'Biology', topic: 'Enzymes' });
+  engine.graph.getConcept(conceptId).retentionState = 'forming';
+  const q = new Question({
+    id: 'tag_q5', subject: 'Biology', topic: 'Enzymes', stem: 'S',
+    conceptsTested: [{ conceptId, weight: 'primary' }],
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A',
+    distractors: [{ option: 'B', misconceptionId: null, explanation: 'Answers the reversed question.', tags: ['misread_trap'] }],
+    lifecycleState: 'live'
+  });
+  engine.questionGraph.addQuestion(q);
+
+  // Deliberately not passing questionDistractorTags — proving the real
+  // fix is questionGraph resolution, not the caller having to supply it.
+  const result = engine.submitAnswer({
+    conceptId, correct: false, responseTimeMs: 15000,
+    selectedOption: 'B', correctOption: 'A', questionId: 'tag_q5', questionDifficulty: 2
+  });
+  assertEqual(result.attempt.errorTag, ErrorTag.MISREAD_QUESTION, "submitAnswer() should classify via the real Question's own tagged distractor data");
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TODAY'S FOCUS / RECOMMENDATION REASONING TESTS
+// Home's "why this session" sentence was static, client-authored copy,
+// identical regardless of student state, even though the engine already
+// computes macroState/decay/exam-proximity every session. getTodayFocus()
+// surfaces the engine's own real reasoning instead.
+// ═══════════════════════════════════════════════════════════════
+
+test("KairoEngine.getTodayFocus(): picks the Fading concept and explains why in concept-specific, non-generic language", () => {
+  const engine = new KairoEngine({ studentId: 'focus1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  const fadingId = engine.addConcept({ name: 'Enzyme Action', subject: 'Biology', topic: 'Metabolism' });
+  engine.graph.getConcept(fadingId).retentionState = 'fading';
+  engine.graph.getConcept(fadingId).decayEstimate = 0.9;
+
+  const focus = engine.getTodayFocus();
+  assertEqual(focus.conceptId, fadingId, 'The Fading concept should be picked as the highest-priority concept');
+  assert(focus.reason.includes('Enzyme Action'), 'Reason should name the actual concept, not a placeholder');
+  assert(focus.reason.toLowerCase().includes('forget'), 'A Fading concept should be explained in terms of forgetting, not a generic sentence');
+});
+
+test("KairoEngine.getTodayFocus(): two students in genuinely different states get different reasoning, not the same static sentence", () => {
+  const soonExam = Date.now() + 20 * 24 * 60 * 60 * 1000; // inside the 6-week exam-proximity window
+  const engineA = new KairoEngine({ studentId: 'focusA', name: 'A', examDate: soonExam, targetSubjects: ['Physics'] });
+  const heldId = engineA.addConcept({ name: 'Projectile Motion', subject: 'Physics', topic: 'Mechanics' });
+  engineA.graph.getConcept(heldId).retentionState = 'held';
+  engineA.graph.getConcept(heldId).confidenceScore = 0.9;
+  engineA.graph.getConcept(heldId).decayEstimate = 0.5;
+  const focusA = engineA.getTodayFocus();
+
+  const engineB = new KairoEngine({ studentId: 'focusB', name: 'B', examDate: Date.now() + 300 * 24 * 60 * 60 * 1000, targetSubjects: ['Physics'] });
+  engineB.addConcept({ name: 'Simple Harmonic Motion', subject: 'Physics', topic: 'Mechanics' });
+  const focusB = engineB.getTodayFocus();
+
+  assert(focusA.reason !== focusB.reason, 'Two students with genuinely different concept states should not see identical recommendation reasoning');
+  assert(focusA.reason.includes('exam approaching'), 'A Held concept close to exam should mention exam proximity');
+  assert(focusB.reason.includes("hasn't come up yet"), 'An Unseen concept should be explained as a fresh starting point, not a review');
+});
+
+// ═══════════════════════════════════════════════════════════════
 // SUPABASE SYNC TESTS
 // No live network calls — SupabaseSyncAdapter's row-mapping and
 // SyncManager's merge logic are pure functions over plain objects, so
@@ -998,6 +1343,59 @@ await test('fullSync pushes queued sessions through pushSession (kairo.sessions)
   assertEqual(sessionPush.rows.id, 'sess1', 'Pushed session row should carry the session id');
 });
 
+await test("fullSync: a rejected attempts batch (e.g. kairo.attempts' anti-cheat trigger) no longer takes an already-pushed session/cbt_result down with it", async () => {
+  const calls = [];
+  const mockClient = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; },
+            gt() { return builder; }, is() { return builder; },
+            maybeSingle() { return builder; }, single() { return builder; },
+            insert(rows) {
+              calls.push({ table, op: 'insert', rows });
+              if (table === 'attempts') {
+                // Simulates kairo.attempts' check_attempt_before_insert trigger
+                // rejecting the whole batch — confirmed against real
+                // production Postgres logs: "Invalid attempt:
+                // response_time_ms implausibly low (0 ms)".
+                return { then: (_resolve, reject) => reject(new Error('Invalid attempt: response_time_ms implausibly low (0 ms)')) };
+              }
+              return builder;
+            },
+            update(row) { calls.push({ table, op: 'update', row }); return builder; },
+            upsert(rows) { calls.push({ table, op: 'upsert', rows }); return builder; },
+            then(resolve) {
+              if (table === 'students') return resolve({ data: { id: 'stu1', auth_user_id: 'auth1' }, error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const adapter = new SupabaseSyncAdapter(mockClient, null);
+  const result = await adapter.fullSync({
+    authUserId: 'auth1', studentId: 'stu1',
+    profile: { name: 'Test' },
+    conceptNodes: [],
+    pendingAttempts: [{ conceptId: 'c1', correct: false, responseTimeMs: 0, questionId: 'q1' }],
+    pendingSessions: [{ id: 'sess1', mode: 'cbt_exam', plan: [], questionsAnswered: 1, correctCount: 1, startedAt: Date.now(), completedAt: Date.now() }],
+    pendingCbtResults: [{ id: 'cbt1', subjects: ['Biology'], questionResults: [], bySubject: [], totalQuestions: 1, score: 1, maxScore: 1, percentage: 100, startedAt: Date.now(), completedAt: Date.now() }],
+    since: null
+  });
+
+  const sessionPush = calls.find(c => c.table === 'sessions' && c.op === 'upsert');
+  const cbtPush = calls.find(c => c.table === 'cbt_results' && c.op === 'insert');
+  assert(sessionPush, 'The session should still push through even though the attempts batch failed — previously one failure aborted everything after it in the same try/catch');
+  assert(cbtPush, 'The cbt_result should still push through for the same reason');
+  assertEqual(result.failed.attempts.length, 1, 'The failed attempts batch should be reported back so the caller can retry just that, not silently dropped or conflated with a total sync failure');
+  assertEqual(result.failed.sessions.length, 0, 'The session push succeeded, so it should not be reported as failed');
+});
+
 await test('Notifications: pull and mark-read only, matching the real RLS shape (no INSERT policy exists)', async () => {
   const calls2 = [];
   const mockClient2 = {
@@ -1025,11 +1423,17 @@ await test('Notifications: pull and mark-read only, matching the real RLS shape 
   assert(markCall && markCall.row.read_at, 'markNotificationRead should UPDATE read_at — the only write kairo.notifications RLS actually permits');
 });
 
-test('CBT: setup uses JAMB-accurate per-subject question counts (English 60, others 40)', () => {
+test('CBT: setup uses JAMB-accurate per-subject question counts (Use of English 60, others 40)', () => {
+  // Was 'English' — CBTExamMode.JAMB_QUESTION_COUNT is keyed on 'Use of
+  // English' (the real seeded subject name; JAMB itself calls the subject
+  // "English", but Kairo's content doesn't), so this test was silently
+  // exercising the default-40 fallback instead of the 60-question branch
+  // it's actually meant to prove exists. Not a product bug — CBTExamMode.js
+  // has its own comment explaining exactly this naming choice.
   const fakeEngine = { contentPacks: {}, submitAnswer: () => {} };
   const cbt = new CBTExamMode(fakeEngine);
-  const result = cbt.setup({ subjects: ['English', 'Mathematics', 'Physics', 'Chemistry'] });
-  assertEqual(result.totalQuestions, 180, 'English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160');
+  const result = cbt.setup({ subjects: ['Use of English', 'Mathematics', 'Physics', 'Chemistry'] });
+  assertEqual(result.totalQuestions, 180, 'Use of English(60) + Mathematics(40) + Physics(40) + Chemistry(40) should total 180, the real JAMB question count — a uniform 40-per-subject default previously produced 160');
 });
 
 await test('CBT: submitAnswer withholds correctness feedback during a live attempt (CBT Exam Mode Spec §2.3/§5.2/§5.4)', async () => {
@@ -1040,7 +1444,13 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
   const fakeEngine = {
     contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
     submitAnswer: () => {},
-    sync: { queue: () => {} }
+    sync: { queue: () => {} },
+    // finish() calls this.engine.profile.recordSession() — every real
+    // KairoEngine has one, so this was missing only because this fake is
+    // deliberately minimal for testing the mid-exam withholding behavior
+    // below, not because finish() is broken (a real-engine test covers
+    // finish() itself further down this file).
+    profile: { recordSession: () => {} }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
@@ -1097,6 +1507,31 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
 
   const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'cbt_exam');
   assert(sessionPush, 'CBT finish() should queue a kairo.sessions row tagged mode: cbt_exam — previously nothing did, and the crash meant it never got this far anyway');
+});
+
+await test("CBT: finish() doesn't submit unanswered questions as attempts (they'd fail kairo.attempts' anti-cheat trigger and silently take the whole sync down)", async () => {
+  const engine = new KairoEngine({ studentId: 'sync2b', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const cbtConceptId = engine.addConcept({ name: 'CBT Concept', subject: 'Biology', topic: 'T' });
+  engine.contentPacks = {
+    getOfflineQuestions: async ({ subject, count }) => Array.from({ length: count }, (_, i) => ({
+      id: `${subject}_${i}`, questionId: `${subject}_${i}`, subject, text: `Q${i}`,
+      options: ['A', 'B', 'C', 'D'], correctOption: 'A', explanation: 'x', conceptId: cbtConceptId
+    }))
+  };
+
+  const queued = [];
+  engine.sync.queue = (item) => queued.push(item);
+
+  engine.cbt.setup({ subjects: ['Biology'] });
+  await engine.cbt.buildPaper();
+  engine.cbt.start();
+  engine.cbt.submitAnswer(0, 'A', 5000); // only question 0 gets answered; the rest (real exam default: timeSpentMs 0) are left blank
+  engine.cbt.finish();
+
+  const attemptPushes = queued.filter(q => q.type === 'attempt');
+  assertEqual(attemptPushes.length, 1, 'Only the one genuinely answered question should be submitted as an attempt — not the ~39 left blank with the buildPaper() default of timeSpentMs: 0');
+  assertEqual(attemptPushes[0].data.responseTimeMs, 5000, 'The one real attempt pushed should be the answered question, with its real response time');
 });
 
 await test('Custom Practice and Topic Practice sessions are tagged with their real mode, not silently recorded as standard', async () => {

@@ -335,9 +335,24 @@ export class KairoEngine {
    * _flattenQuestion) so callers get the same {text, options, conceptId, ...}
    * shape regardless of which mode requested it.
    */
-  getQuestionForConcept(cid, { excludeIds = [] } = {}) {
-    const candidates = this.questionGraph.getQuestionsForConcept(cid)
+  getQuestionForConcept(cid, { excludeIds = [], maxDifficulty = null, minDifficulty = null } = {}) {
+    let candidates = this.questionGraph.getQuestionsForConcept(cid)
       .filter(q => !excludeIds.includes(q.id));
+    // Never let a difficulty window produce an honest "no questions" when
+    // real ones exist outside it — narrow the pool when it helps, fall
+    // back to the full pool rather than returning nothing. Ceiling and
+    // floor are applied as two independent narrowing passes (each with
+    // its own fallback), not a single combined filter, so a floor with
+    // nothing above it doesn't wipe out a ceiling that already found
+    // real matches.
+    if (maxDifficulty != null) {
+      const easier = candidates.filter(q => q.difficultyRating <= maxDifficulty);
+      if (easier.length > 0) candidates = easier;
+    }
+    if (minDifficulty != null) {
+      const harder = candidates.filter(q => q.difficultyRating >= minDifficulty);
+      if (harder.length > 0) candidates = harder;
+    }
     if (candidates.length === 0) return null;
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
     return this._flattenQuestion(chosen);
@@ -400,6 +415,11 @@ export class KairoEngine {
       decayModel: this.decayModel,
       examDate: this.profile.examDate
     });
+    // this.difficulty is a single instance that lives for the whole profile
+    // (see _rebuildProfileBoundSubsystems()), not recreated per session —
+    // its "temporary" pullback needs an explicit reset at session start or
+    // it silently stays softened forever after the first fatigue detection.
+    this.difficulty.resetSession();
 
     const plan = externalPlan || this.recommendation.buildSessionPlan();
     this.sessionStartTime = Date.now();
@@ -423,6 +443,35 @@ export class KairoEngine {
   }
 
   /**
+   * A lightweight, non-committal preview of what startSession() would pick
+   * as today's top-priority concept, and why — for surfaces like Home that
+   * need to explain the day's recommendation before the student commits to
+   * actually starting a session. Uses a throwaway RecommendationEngine so
+   * nothing here touches this.currentSession or this.recommendation (a real
+   * startSession() call still builds its own plan independently afterward).
+   */
+  getTodayFocus() {
+    this.profile.computeMacroState(this.graph);
+    const preview = new RecommendationEngine({
+      knowledgeGraph: this.graph,
+      studentProfile: this.profile,
+      decayModel: this.decayModel,
+      examDate: this.profile.examDate
+    });
+    const plan = preview.buildSessionPlan();
+    const topConceptId = plan[0] || null;
+    const concept = topConceptId ? this.graph.getConcept(topConceptId) : null;
+    return {
+      macroState: this.profile.macroState,
+      conceptId: topConceptId,
+      conceptName: concept?.name || null,
+      subject: concept?.subject || null,
+      topic: concept?.topic || null,
+      reason: concept ? preview.explainTopPick(concept, this.profile.macroState, this.profile.examDate) : null
+    };
+  }
+
+  /**
    * The shared "record an attempt against the Learning Engine" primitive —
    * every module's spec (Practice, CBT, Learn, Review) says the same thing:
    * "does not run a separate intelligence layer, every write flows through
@@ -440,12 +489,20 @@ export class KairoEngine {
 
     let errorTag = null;
     if (!correct) {
+      // The real Question (with its own distractors[].tags, authored
+      // per-option) is what actually powers misread_question/
+      // misapplied_rule/partial_understanding — the caller-supplied
+      // questionDistractorTags below was always [] in practice, since
+      // nothing ever sent it. Falls back to the caller-supplied shape when
+      // the question isn't resolvable (e.g. content not loaded yet), same
+      // degrade-gracefully pattern as the explanation lookup further down.
+      const questionObj = questionId ? this.questionGraph.getQuestion(questionId) : null;
       errorTag = this.classifier.classify({
         concept,
         selectedOption,
         correctOption,
         responseTimeMs,
-        question: {
+        question: questionObj || {
           id: questionId,
           distractorTags: questionDistractorTags,
           difficulty: questionDifficulty,
@@ -495,6 +552,16 @@ export class KairoEngine {
           difficulty: questionDifficulty
         })
       : null;
+
+    // RecommendationEngine's fatigue interrupt only ever flipped
+    // profile._tempSoftening — a flag nothing reads. AdaptiveDifficulty
+    // checks its own separate this.sessionSoftening, set only by its own
+    // softenSession(), which nothing called. The two never actually talked
+    // to each other, so a 'difficulty_pullback' decision had zero effect on
+    // difficulty selection independent of how questions get fetched.
+    if (decision?.action === 'difficulty_pullback') {
+      this.difficulty.softenSession();
+    }
 
     if (this.currentSession) {
       this.currentSession.questionsAnswered++;

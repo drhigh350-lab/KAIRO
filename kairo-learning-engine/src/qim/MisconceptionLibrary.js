@@ -28,7 +28,15 @@ export class MisconceptionLibrary {
   }
 
   /**
-   * Get the misconception for a student's wrong answer.
+   * Get the misconception for a student's wrong answer, via the
+   * questionId -> distractorMappings side-table below. Kept for
+   * analyzeStudentPattern() and anything else built against it, but
+   * nothing in the live student experience should call this directly —
+   * mapDistractor() is the only thing that populates distractorMappings,
+   * and nothing in production ever calls it. Real diagnosis for a live
+   * attempt should go through diagnoseQuestion()/misconceptionsForQuestion()
+   * below, which read the misconceptionId already authored on the
+   * question's own distractors (Question §2.4) instead.
    */
   diagnose(questionId, selectedOption) {
     const mappings = this.distractorMappings.get(questionId);
@@ -41,7 +49,9 @@ export class MisconceptionLibrary {
   }
 
   /**
-   * Get all misconceptions for a question (for explanation generation).
+   * Get all misconceptions for a question (for explanation generation),
+   * via the same legacy distractorMappings side-table as diagnose() above.
+   * See misconceptionsForQuestion() for the path that reads real content.
    */
   getQuestionMisconceptions(questionId) {
     const mappings = this.distractorMappings.get(questionId);
@@ -51,6 +61,40 @@ export class MisconceptionLibrary {
       option,
       misconception: this.misconceptions.get(misconceptionId)
     })).filter(m => m.misconception);
+  }
+
+  /**
+   * Resolve a misconception id (as authored directly on a question's own
+   * distractor data) against the catalog.
+   */
+  resolve(misconceptionId) {
+    return this.misconceptions.get(misconceptionId) || null;
+  }
+
+  /**
+   * Diagnose a wrong answer using the misconceptionId authored on the
+   * question's own distractor data (Question.getMisconceptionForOption()),
+   * not the distractorMappings side-table diagnose() reads — that table is
+   * only ever populated by mapDistractor(), which nothing in production
+   * calls, so diagnose() silently returns null for every real attempt.
+   */
+  diagnoseQuestion(question, selectedOption) {
+    if (!question || typeof question.getMisconceptionForOption !== 'function') return null;
+    const misconceptionId = question.getMisconceptionForOption(selectedOption);
+    return misconceptionId ? this.resolve(misconceptionId) : null;
+  }
+
+  /**
+   * All misconceptions authored across a question's distractors — the
+   * question-object-based equivalent of getQuestionMisconceptions() above,
+   * for "common misconceptions on this concept" (see LearnModule).
+   */
+  misconceptionsForQuestion(question) {
+    if (!question) return [];
+    return (question.distractors || [])
+      .filter(d => d.misconceptionId)
+      .map(d => ({ option: d.option, misconception: this.resolve(d.misconceptionId) }))
+      .filter(m => m.misconception);
   }
 
   /**

@@ -72,9 +72,23 @@ export class SyncManager {
       // consumed them, so a second device's changes never reached this one.
       this._applyRemote(result);
 
-      return { status: 'synced', count: toSync.length, ...result };
+      // Re-queue only what fullSync() actually reports as failed — not
+      // everything indiscriminately. Previously any error anywhere put the
+      // entire batch back in the queue, including items (a session, a CBT
+      // result, a profile push) that had already landed successfully;
+      // fullSync() itself now isolates each push, so this only retries the
+      // real failures.
+      const failed = result.failed || {};
+      for (const data of failed.attempts || []) this.queue({ type: 'attempt', data });
+      for (const data of failed.sessions || []) this.queue({ type: 'session', data });
+      for (const data of failed.cbtResults || []) this.queue({ type: 'cbt_result', data });
+
+      const failedCount = (failed.attempts?.length || 0) + (failed.sessions?.length || 0) + (failed.cbtResults?.length || 0);
+      return { status: failedCount > 0 ? 'partial' : 'synced', count: toSync.length, ...result };
     } catch (err) {
-      // Re-queue on failure — toSync items go back to the front of the queue
+      // Only reached when the foundational profile push itself fails —
+      // nothing else was attempted, so the whole original batch is still
+      // genuinely pending and belongs back in the queue.
       this.pendingSync = [...toSync, ...this.pendingSync];
       return { status: 'error', error: err.message, queued: this.pendingSync.length };
     }

@@ -528,31 +528,88 @@ export class SupabaseSyncAdapter {
 
   async fullSync({ authUserId, studentId, profile, conceptNodes, pendingAttempts, pendingSessions = [], pendingCbtResults = [], since }) {
     this.syncStatus.status = 'syncing';
+
+    // Profile is foundational — every other push assumes studentId/
+    // authUserId are already valid, so a failure here aborts the whole
+    // sync, same as always.
     try {
       await this.pushProfile(profile, authUserId, studentId);
-      await this.pushConceptStates(conceptNodes, studentId);
-      await this.pushAttempts(pendingAttempts, studentId);
-      for (const session of pendingSessions) {
-        await this.pushSession(session, studentId);
-      }
-      for (const result of pendingCbtResults) {
-        await this.pushCbtResults(result, studentId);
-      }
-
-      const remoteProfile = await this.pullProfile(studentId);
-      const remoteConceptStates = await this.pullConceptStates(studentId);
-      const remoteAttempts = await this.pullAttempts(studentId, since);
-
-      this.syncStatus.lastSync = Date.now();
-      this.syncStatus.pendingCount = 0;
-      this.syncStatus.status = 'synced';
-
-      return { remoteProfile, remoteConceptStates, remoteAttempts, syncedAt: this.syncStatus.lastSync };
     } catch (err) {
       this.syncStatus.status = 'error';
       this.syncStatus.error = err.message;
       throw err;
     }
+
+    try {
+      await this.pushConceptStates(conceptNodes, studentId);
+    } catch (err) {
+      console.error('pushConceptStates failed (will retry next sync):', err);
+    }
+
+    // Sessions and CBT results push before attempts, and each item is
+    // isolated (caught independently), on purpose: they're the primary
+    // "did this happen and what was the outcome" record, and a single
+    // failure — anywhere — must never be able to silently take another,
+    // already-succeeded item down with it. Previously this ran attempts
+    // first as one big batch in the same try/catch as everything else, so
+    // a single rejected attempt (e.g. a CBT question the student left
+    // unanswered, correctly rejected by kairo.attempts' anti-cheat
+    // trigger for an implausible 0ms response time — see
+    // CBTExamMode.finish()'s fix) aborted the entire sync and silently
+    // erased that exam's own session record and score along with it.
+    const failedSessions = [];
+    for (const session of pendingSessions) {
+      try {
+        await this.pushSession(session, studentId);
+      } catch (err) {
+        console.error('pushSession failed:', session.id, err);
+        failedSessions.push(session);
+      }
+    }
+
+    const failedCbtResults = [];
+    for (const result of pendingCbtResults) {
+      try {
+        await this.pushCbtResults(result, studentId);
+      } catch (err) {
+        console.error('pushCbtResults failed:', result.id, err);
+        failedCbtResults.push(result);
+      }
+    }
+
+    let failedAttempts = [];
+    try {
+      await this.pushAttempts(pendingAttempts, studentId);
+    } catch (err) {
+      // A single batch insert — one bad row fails all of them together.
+      // Isolated here so it can no longer take the sessions/cbt_results
+      // pushed above, or the profile already pushed before them, with it.
+      console.error('pushAttempts failed (whole batch, will retry next sync):', err);
+      failedAttempts = pendingAttempts;
+    }
+
+    let remoteProfile = null, remoteConceptStates = [], remoteAttempts = [];
+    try {
+      remoteProfile = await this.pullProfile(studentId);
+      remoteConceptStates = await this.pullConceptStates(studentId);
+      remoteAttempts = await this.pullAttempts(studentId, since);
+    } catch (err) {
+      // Everything above already landed (or was recorded as failed) —
+      // a pull-back failure shouldn't undo that or be reported as if the
+      // pushes themselves failed.
+      console.error('Pull-back after push failed:', err);
+    }
+
+    const pendingCount = failedSessions.length + failedCbtResults.length + failedAttempts.length;
+    this.syncStatus.lastSync = Date.now();
+    this.syncStatus.pendingCount = pendingCount;
+    this.syncStatus.status = pendingCount > 0 ? 'partial' : 'synced';
+
+    return {
+      remoteProfile, remoteConceptStates, remoteAttempts,
+      syncedAt: this.syncStatus.lastSync,
+      failed: { sessions: failedSessions, cbtResults: failedCbtResults, attempts: failedAttempts }
+    };
   }
 
   getSyncStatus() {
