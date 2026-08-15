@@ -9,10 +9,11 @@ import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, loadBookmarks } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { generateKaiText } from '../../lib/kaiAi';
+import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
@@ -94,6 +95,10 @@ export function PracticeFlow() {
   const startedSuggested = useRef(false);
   const qIndexRef = useRef(qIndex);
   qIndexRef.current = qIndex;
+  const [resumeSnapshot, setResumeSnapshot] = useState<PracticeSessionSnapshot | null>(null);
+  useEffect(() => {
+    setResumeSnapshot(getPracticeSessionSnapshot(getEngine()?.profile?.studentId));
+  }, []);
 
   /** Recommended-by-Kairo session (Practice Module §2.2) — zero-input, real DDE-style queue. Shared by the initial-mount auto-start (arriving via entry:'suggested') and Practice Home's own "Start Session" tap. */
   function startSuggested() {
@@ -152,6 +157,33 @@ export function PracticeFlow() {
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+  }
+
+  /** Quick Resume (Practice Module §2.5/§3.2) — reconstructs the exact question set and position from a snapshot saved after a prior answer, rather than starting a fresh recommendation. */
+  function resumeSession(snapshot: PracticeSessionSnapshot) {
+    setEngineQuestions(null);
+    setEngineLoadError(null);
+    setEntryFlow(snapshot.entryFlow);
+    setSubject({ key: snapshot.subjectKey, label: snapshot.subjectLabel });
+    setTopic(snapshot.topic);
+    setSubtopic(snapshot.subtopic);
+    setDifficulty(snapshot.difficulty);
+    let restoredResults: PracticeResult[] = [];
+    try { restoredResults = JSON.parse(snapshot.resultsJson); } catch { /* fall back to empty */ }
+    setResults(restoredResults);
+    setQIndex(snapshot.qIndex);
+    go('practiceQuestion');
+    resumePracticeQuestions(snapshot.loadSubjectLabel, snapshot.questionIds)
+      .then((questions) => {
+        if (questions.length === 0 || snapshot.qIndex >= questions.length) {
+          setEngineLoadError("This session couldn't be resumed — some of its questions are no longer available.");
+          clearSessionSnapshot(getEngine()?.profile?.studentId, 'practice');
+          setResumeSnapshot(null);
+          return;
+        }
+        setEngineQuestions(questions);
+      })
+      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not resume your session.'));
   }
 
   function go(next: Screen) {
@@ -303,15 +335,31 @@ export function PracticeFlow() {
     setDecisionNote(null);
 
     if (!engineQuestions) return;
+    const kairo = getEngine();
     if (qIndex + 1 >= engineQuestions.length) {
       setHasHistory(true);
-      const kairo = getEngine();
+      clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
       if (kairo) {
         kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
       }
       go('practiceSummary');
     } else {
-      setQIndex(qIndex + 1);
+      const nextIndex = qIndex + 1;
+      setQIndex(nextIndex);
+      // Quick Resume (Practice Module §2.5/§3.2) — one answer in is enough
+      // to be worth resuming; a session abandoned before any answer isn't.
+      saveSessionSnapshot(kairo?.profile?.studentId, {
+        kind: 'practice',
+        entryFlow,
+        subjectKey: activeSubject.key,
+        subjectLabel: activeSubject.label,
+        loadSubjectLabel: (activeSubject.key === 'mixed' || activeSubject.key === 'weak') ? null : activeSubject.label,
+        topic, subtopic, difficulty,
+        questionIds: engineQuestions.map((q) => q.id),
+        qIndex: nextIndex,
+        resultsJson: JSON.stringify(newResults),
+        savedAt: Date.now(),
+      });
     }
   }
 
@@ -342,6 +390,13 @@ export function PracticeFlow() {
     return (
       <PracticeHome
         onBack={toHome}
+        resumeSummary={resumeSnapshot ? {
+          subjectLabel: resumeSnapshot.subjectLabel,
+          topic: resumeSnapshot.topic,
+          questionsDone: resumeSnapshot.qIndex,
+          questionsTotal: resumeSnapshot.questionIds.length,
+        } : null}
+        onResume={() => resumeSnapshot && resumeSession(resumeSnapshot)}
         onStartSuggested={() => {
           setSubject(subjects[0]);
           setDifficulty('adaptive');

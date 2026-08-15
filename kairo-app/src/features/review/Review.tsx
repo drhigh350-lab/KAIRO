@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
 import {
-  getReviewSummary, getWeaknessReview, getMonthlyWrapped,
+  getEngine, getReviewSummary, getWeaknessReview, getMonthlyWrapped,
   getBookmarkedQuestions, removeBookmark, getSessionHistory,
   type BookmarkedQuestion, type SessionHistoryEntry,
 } from '../../lib/kairoEngine';
+import { getReviewSessionSnapshot, type ReviewSessionSnapshot } from '../../lib/sessionResume';
 
 interface QueueItem { id: string; name: string; reason: string; priority: string }
 interface WeaknessItem { concept: { id: string; name: string; subject: string; topic: string }; count: number }
@@ -26,10 +27,22 @@ export function Review() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
+  const [resumeSnapshot, setResumeSnapshot] = useState<ReviewSessionSnapshot | null>(null);
+  const [resumeItemsLeft, setResumeItemsLeft] = useState(0);
 
   useEffect(() => {
     getBookmarkedQuestions(20).then(setBookmarks).catch(() => setBookmarks([]));
     getSessionHistory(20).then(setHistory).catch(() => setHistory([]));
+    const snapshot = getReviewSessionSnapshot(getEngine()?.profile?.studentId);
+    setResumeSnapshot(snapshot);
+    if (snapshot) {
+      try {
+        const parsedPlan = JSON.parse(snapshot.planJson) as { items: unknown[] };
+        setResumeItemsLeft(Math.max(0, parsedPlan.items.length - snapshot.itemIndex));
+      } catch {
+        setResumeItemsLeft(0);
+      }
+    }
   }, []);
 
   async function handleRemoveBookmark(questionId: string) {
@@ -74,6 +87,19 @@ export function Review() {
           ? `${totalWaiting} thing${totalWaiting === 1 ? ' is' : 's are'} ready to come back to you.`
           : "Nothing's waiting for review right now — that changes as you practise."}
       </div>
+
+      {/* Continue Reviewing (Review Module §4.3 item 2) — always outranks starting a fresh category. */}
+      {resumeSnapshot && resumeItemsLeft > 0 && (
+        <Card style={{ background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-accent-blue)', boxShadow: 'none' }}>
+          <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'var(--dark-accent-blue)', fontWeight: 700 }}>CONTINUE REVIEWING</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--dark-text-heading)', marginTop: 8 }}>
+            {resumeItemsLeft} thing{resumeItemsLeft === 1 ? '' : 's'} left in your last session
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Button variant="darkAccent" size="md" fullWidth onClick={() => navigate('/review/session', { state: { resume: true } })}>Resume</Button>
+          </div>
+        </Card>
+      )}
 
       {recap?.hasUrgentReview && (
         <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
