@@ -19,6 +19,7 @@ import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 import { LearnLesson } from './features/learn/LearnLesson';
 import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
+import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoMark } from './components';
 import { getEngine, restoreSession } from './lib/kairoEngine';
 
@@ -71,6 +72,7 @@ export default function App() {
 
   return (
     <AppShell>
+      {ready && <NotificationCenter />}
       {ready ? (
         <Routes>
           <Route path="/" element={<Splash />} />

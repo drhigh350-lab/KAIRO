@@ -556,6 +556,60 @@ export function getTodayFocus(): TodayFocus | null {
   return kairo.getTodayFocus();
 }
 
+export interface AppNotification {
+  candidateId: string;
+  type: string;
+  tier: string;
+  title: string;
+  body: string;
+  action: string | null;
+  sourceId?: string;
+}
+
+/**
+ * Runs the real notification pulse — ReEngagementEngine, CrossModuleMilestones,
+ * ContinuationEngine's post-exam window, and NotificationEngine's client
+ * heuristics, arbitrated through the Orchestrator's tone/journey-stage/
+ * suppression/frequency gates. All of this was fully built and individually
+ * tested at the engine layer but never actually invoked from the app before —
+ * this is that missing entrypoint. No external transport (push/email/
+ * WhatsApp/SMS) exists yet, so whatever comes back here is meant for in-app
+ * display only, regardless of the tier the Orchestrator assigned.
+ */
+export function runNotificationPulse(): AppNotification[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  return kairo.runNotificationPulse();
+}
+
+let pulseRanForStudentId: string | null = null;
+
+/**
+ * Same as runNotificationPulse(), but only actually runs once per signed-in
+ * session (per studentId) — safe to call on every route change without
+ * re-triggering the pulse's Orchestrator side effects (frequency-budget
+ * bookkeeping) repeatedly. Exists because a fresh sign-in navigates
+ * client-side (Splash -> /home), so there's no single reliable "engine just
+ * connected" moment to hook a one-shot call onto — this makes calling it
+ * from every route change safe and correct instead: a no-op until an
+ * engine actually exists, then exactly once.
+ */
+export function runNotificationPulseOnce(): AppNotification[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  const sid = kairo.profile.studentId;
+  if (pulseRanForStudentId === sid) return [];
+  pulseRanForStudentId = sid;
+  return kairo.runNotificationPulse();
+}
+
+/** Call when the student dismisses or taps through a delivered notification — feeds the Orchestrator's per-type suppression learning and stops a client-heuristic item (daily recap, streak nudge, etc.) from resurfacing once acknowledged. */
+export function recordNotificationOutcome(notification: AppNotification, outcome: 'dismissed' | 'engaged'): void {
+  const kairo = getEngine();
+  if (!kairo) return;
+  kairo.recordNotificationOutcome(notification, outcome);
+}
+
 /** Sets (or clears, with null) the student's own daily-question-count goal — a real, student-declared target, never a system-invented default. */
 export async function setDailyGoal(goal: number | null): Promise<void> {
   const kairo = getEngine();

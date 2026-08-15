@@ -706,6 +706,62 @@ test('Continuation engine never solicits an outcome', () => {
   assertEqual(testEngine.continuation.shouldSolicitOutcome(), false, 'Should never solicit outcome data');
 });
 
+test('runNotificationPulse() respects a hard stop and delivers nothing', () => {
+  // Regression: this is the real entrypoint that finally invokes
+  // ReEngagementEngine/CrossModuleMilestones/ContinuationEngine/
+  // NotificationEngine — all fully built, individually tested, but never
+  // actually called from anywhere in the running app until now.
+  const testEngine = new (engine.constructor)({
+    studentId: 'sjee_test_010', name: 'HardStop Student',
+    examDate: Date.now() - 1 * 24 * 60 * 60 * 1000, // exam just passed -> real continuation candidate available
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  testEngine.comms.consent.setHardStop(true);
+  const delivered = testEngine.runNotificationPulse();
+  assertEqual(delivered.length, 0, 'A real "Stop All Notifications" hard-stop should block every candidate, including the post-exam acknowledgment');
+  assertEqual(testEngine.notificationOrchestrator.hardOptOut, true, 'Orchestrator hardOptOut should mirror the real, persisted consent hard-stop rather than drifting independently');
+});
+
+test('runNotificationPulse() surfaces a real Journey Stage transition milestone end-to-end', () => {
+  const testEngine = new (engine.constructor)({
+    studentId: 'sjee_test_011', name: 'Pulse Student',
+    examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  testEngine.profile.sessions = [
+    { completedAt: now - 2 * day, prompted: true, questionsAnswered: 5, correctCount: 4 },
+    { completedAt: now - 1 * day, prompted: false, questionsAnswered: 5, correctCount: 4 }
+  ];
+  const cId = testEngine.addConcept({ name: 'PulseC1', subject: 'Chemistry', topic: 'T', subtopic: 'S', questionPoolIds: ['pq1'] });
+  testEngine.graph.getConcept(cId).retentionState = RetentionState.REINFORCED;
+  testEngine.journeyStage.compute(testEngine.graph); // triggers arrival -> establishment
+
+  const delivered = testEngine.runNotificationPulse();
+  const milestone = delivered.find(c => c.type === 'milestone_journey_stage_transition');
+  assert(milestone, 'The real Establishment transition milestone should survive submit -> arbitrate and come back out of runNotificationPulse()');
+  assertEqual(milestone.tier, 'informational', 'Milestones are always Informational-tier (§7.5)');
+});
+
+test('recordNotificationOutcome() marks a NotificationEngine-sourced candidate read so it stops resurfacing', () => {
+  const testEngine = new (engine.constructor)({
+    studentId: 'sjee_test_012', name: 'Recap Student',
+    examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  const cId = testEngine.addConcept({ name: 'RecapC1', subject: 'Chemistry', topic: 'T', subtopic: 'S', questionPoolIds: ['rq1'] });
+  testEngine.graph.getConcept(cId).retentionState = RetentionState.FADING;
+
+  const first = testEngine.runNotificationPulse();
+  const recap = first.find(c => c.type === 'daily_recap');
+  assert(recap, 'A Fading concept with no session today should surface the real daily-recap candidate');
+
+  testEngine.recordNotificationOutcome(recap, 'dismissed');
+  const second = testEngine.notifications.checkNotifications();
+  assertEqual(second.some(n => n.type === 'daily_recap'), false, 'Once acknowledged, the identical daily-recap item should not resurface on the next check');
+});
+
 // ═══════════════════════════════════════════════════════════════
 // NOTIFICATIONS & COMMUNICATION SYSTEMS
 // ═══════════════════════════════════════════════════════════════
