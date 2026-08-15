@@ -9,7 +9,7 @@ import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, loadBookmarks } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { generateKaiText } from '../../lib/kaiAi';
@@ -66,6 +66,10 @@ export function PracticeFlow() {
   const entry = (location.state as { entry?: string } | null)?.entry ?? 'home';
 
   const [init] = useState(() => computeInitial(entry));
+  // Loads the real bookmark set once per Practice mount — PracticeQuestion
+  // reads it synchronously (isQuestionBookmarked) and re-syncs itself once
+  // this resolves, so it doesn't need to be awaited before questions render.
+  useEffect(() => { loadBookmarks(); }, []);
   const [screen, setScreen] = useState<Screen>(init.screen);
   const [history, setHistory] = useState<Screen[]>([]);
   const [subject, setSubject] = useState<SubjectLike | null>(init.subject);

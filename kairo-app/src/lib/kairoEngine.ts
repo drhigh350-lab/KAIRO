@@ -1335,3 +1335,153 @@ export async function reportQuestion(questionId: string, kind: 'report' | 'feedb
   });
   if (error) throw error;
 }
+
+// ─────────────────────────────────────────────
+// Bookmarks (kairo.bookmarks) — PracticeQuestion's bookmark toggle was a
+// local useState with no write path (reset to false on every reload),
+// LearnModule.fromBookmark() (§3.9) has been a real entry point this
+// whole time with no real bookmark data to route from, and Review Home's
+// Bookmarks section (Review Module §4.3 item 6) had nothing to read.
+// Loaded once per session into an in-memory cache, same pattern as
+// contentLoadedFor — a bookmark toggle needs a synchronous read, not a
+// network round trip per question shown.
+// ─────────────────────────────────────────────
+
+let bookmarkedQuestionIds: Set<string> | null = null;
+
+async function ensureBookmarksLoaded(): Promise<Set<string>> {
+  if (bookmarkedQuestionIds) return bookmarkedQuestionIds;
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('bookmarks')
+    .select('question_id')
+    .eq('student_id', kairo.profile.studentId);
+  if (error) throw error;
+  bookmarkedQuestionIds = new Set((data || []).map((row: { question_id: string }) => row.question_id));
+  return bookmarkedQuestionIds;
+}
+
+/** Whether a question is bookmarked — false (not "unknown") until ensureBookmarksLoaded() has resolved at least once this session, since a practice question's initial render can't wait on a network round trip. */
+export function isQuestionBookmarked(questionId: string): boolean {
+  return bookmarkedQuestionIds?.has(questionId) ?? false;
+}
+
+/** Loads the student's real bookmark set — call once when Practice starts, before rendering the first question's bookmark state. */
+export async function loadBookmarks(): Promise<void> {
+  await ensureBookmarksLoaded();
+}
+
+/** Toggles a bookmark for real and returns the new state — PracticeQuestion's bookmark icon previously just flipped local state with nothing persisted. */
+export async function toggleBookmark(questionId: string): Promise<boolean> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const supabase = getSupabase();
+  const ids = await ensureBookmarksLoaded();
+  const studentId = kairo.profile.studentId;
+
+  if (ids.has(questionId)) {
+    const { error } = await supabase.schema('kairo').from('bookmarks')
+      .delete().eq('student_id', studentId).eq('question_id', questionId);
+    if (error) throw error;
+    ids.delete(questionId);
+    return false;
+  }
+  const { error } = await supabase.schema('kairo').from('bookmarks')
+    .insert({ student_id: studentId, question_id: questionId });
+  if (error) throw error;
+  ids.add(questionId);
+  return true;
+}
+
+export interface BookmarkedQuestion {
+  id: string;
+  stem: string;
+  subject: string;
+  topic: string;
+  conceptId: string | null;
+}
+
+/** Real bookmarked questions for Review Home's Bookmarks section (Review Module §4.3 item 6) — queried directly against kairo.questions rather than requiring that subject's content already be loaded into the local graph. */
+export async function getBookmarkedQuestions(limit = 20): Promise<BookmarkedQuestion[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const ids = await ensureBookmarksLoaded();
+  if (ids.size === 0) return [];
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('questions')
+    .select('id, stem, subject, topic, concepts_tested')
+    .in('id', Array.from(ids))
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map((row: { id: string; stem: string; subject: string; topic: string; concepts_tested: { conceptId: string; weight: number | string }[] }) => ({
+    id: row.id,
+    stem: row.stem,
+    subject: row.subject,
+    topic: row.topic,
+    conceptId: row.concepts_tested?.find((c) => c.weight === 'primary' || (typeof c.weight === 'number' && c.weight >= 1))?.conceptId ?? row.concepts_tested?.[0]?.conceptId ?? null,
+  }));
+}
+
+/** Removes a bookmark from Review Home's Bookmarks list directly — unlike toggleBookmark(), never re-adds it, since a list item is by definition already bookmarked. */
+export async function removeBookmark(questionId: string): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const supabase = getSupabase();
+  const ids = await ensureBookmarksLoaded();
+  const { error } = await supabase.schema('kairo').from('bookmarks')
+    .delete().eq('student_id', kairo.profile.studentId).eq('question_id', questionId);
+  if (error) throw error;
+  ids.delete(questionId);
+}
+
+// ─────────────────────────────────────────────
+// Session History (kairo.sessions) — Review Home's Session History section
+// (Review Module §4.3 item 7). kairo.sessions' own mode CHECK constraint
+// (standard|rapid_fire|custom_practice|topic_practice|cbt_exam|recovery)
+// has no 'review' or 'learn' value — Review sessions and Learn lessons are
+// deliberately not their own session-type rows (Learn tracks its own
+// completedLessons/activeLessons state instead); this reads the real
+// Practice/CBT/Recovery history the spec names, not a new session type.
+// ─────────────────────────────────────────────
+
+export interface SessionHistoryEntry {
+  id: string;
+  mode: string;
+  modeLabel: string;
+  questionsAnswered: number;
+  correctCount: number;
+  startedAt: number;
+  completedAt: number | null;
+}
+
+const SESSION_MODE_LABELS: Record<string, string> = {
+  standard: 'Practice',
+  rapid_fire: 'Rapid Fire',
+  custom_practice: 'Custom Practice',
+  topic_practice: 'Topic Practice',
+  cbt_exam: 'CBT Exam',
+  recovery: 'Recovery Session',
+};
+
+/** Real past sessions, most recent first — Review Home's Session History section. */
+export async function getSessionHistory(limit = 20): Promise<SessionHistoryEntry[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('sessions')
+    .select('id, mode, questions_answered, correct_count, started_at, completed_at')
+    .eq('student_id', kairo.profile.studentId)
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map((row: { id: string; mode: string; questions_answered: number | null; correct_count: number | null; started_at: string | null; completed_at: string | null }) => ({
+    id: row.id,
+    mode: row.mode,
+    modeLabel: SESSION_MODE_LABELS[row.mode] || row.mode,
+    questionsAnswered: row.questions_answered ?? 0,
+    correctCount: row.correct_count ?? 0,
+    startedAt: row.started_at ? new Date(row.started_at).getTime() : 0,
+    completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
+  }));
+}
