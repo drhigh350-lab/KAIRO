@@ -1,4 +1,4 @@
-import { MissionCard, Card } from '../../components';
+import { MissionCard, Card, Button } from '../../components';
 import { ScreenHeader } from '../learning/shared';
 import { getEngine, getInsightsSummary, getStreakStatus } from '../../lib/kairoEngine';
 
@@ -9,6 +9,9 @@ export interface PracticeHomeProps {
   onByTopic: () => void;
   onMixed: () => void;
   onWeak: () => void;
+  /** Present when a Practice session was left mid-way (Quick Resume, Practice Module §2.5/§3.2) — null when there's nothing to resume. */
+  resumeSummary?: { subjectLabel: string; topic: string | null; questionsDone: number; questionsTotal: number } | null;
+  onResume?: () => void;
 }
 
 const quickActions = [
@@ -25,7 +28,7 @@ const quickActions = [
  * Recommended Mission is the primary action; Quick Actions are for a
  * student who wants to override that default.
  */
-export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic, onMixed, onWeak }: PracticeHomeProps) {
+export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic, onMixed, onWeak, resumeSummary, onResume }: PracticeHomeProps) {
   const insights = getInsightsSummary();
   const streak = getStreakStatus();
   const sessions: { subject?: string; topic?: string; questionsAnswered?: number; correctCount?: number; completedAt?: number }[] = getEngine()?.profile?.sessions || [];
@@ -43,6 +46,21 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title="Practice" tone="dark" />
       <div style={{ padding: '4px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {resumeSummary && onResume && (
+          <Card style={{ background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-accent-blue)', boxShadow: 'none' }}>
+            <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'var(--dark-accent-blue)', fontWeight: 700 }}>CONTINUE WHERE YOU LEFT OFF</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--dark-text-heading)', marginTop: 8 }}>
+              {resumeSummary.subjectLabel}{resumeSummary.topic ? ` · ${resumeSummary.topic}` : ''}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>
+              {resumeSummary.questionsDone} of {resumeSummary.questionsTotal} done
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <Button variant="darkAccent" size="md" fullWidth onClick={onResume}>Resume Session</Button>
+            </div>
+          </Card>
+        )}
+
         <MissionCard
           badge="Recommended"
           title="Start Practising"

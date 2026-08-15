@@ -457,6 +457,16 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
   return { questions };
 }
 
+/** Re-resolves real questions by id for Practice's Quick Resume — ensures the right subject content is loaded first (or every seeded subject, for a mixed/weak session), since a resumed session may start from a fresh page load with nothing loaded yet. Drops any id that no longer resolves rather than throwing, so a resume with one stale question still recovers the rest. */
+export async function resumePracticeQuestions(loadSubjectLabel: string | null, questionIds: string[]): Promise<EngineFlatQuestion[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(loadSubjectLabel ? [loadSubjectLabel] : []);
+  return questionIds
+    .map((id) => kairo.getQuestionById(id))
+    .filter((q: EngineFlatQuestion | null): q is EngineFlatQuestion => !!q);
+}
+
 export interface TodayProgress {
   questionsToday: number;
   studyMinutesToday: number;

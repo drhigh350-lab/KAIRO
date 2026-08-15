@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button, Card, ProgressBar, AnswerFeedback } from '../../components';
 import { ScreenHeader } from '../learning/shared';
 import {
@@ -13,6 +13,7 @@ import {
   type ReviewSessionItem,
 } from '../../lib/kairoEngine';
 import { selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
+import { saveSessionSnapshot, clearSessionSnapshot, getReviewSessionSnapshot } from '../../lib/sessionResume';
 
 type ItemPhase = 'reflect' | 'reinforce';
 type Screen = 'loading' | 'framing' | 'item' | 'pattern' | 'summary';
@@ -32,6 +33,8 @@ interface ItemResult {
  */
 export function ReviewSession() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isResume = !!(location.state as { resume?: boolean } | null)?.resume;
   const [plan, setPlan] = useState<ReviewSessionPlan | null>(null);
   const [screen, setScreen] = useState<Screen>('loading');
   const [itemIndex, setItemIndex] = useState(0);
@@ -42,10 +45,35 @@ export function ReviewSession() {
   const [results, setResults] = useState<ItemResult[]>([]);
   const startedAt = useRef(Date.now());
   const patternShown = useRef(false);
+  const resumeStartIndex = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Continue Reviewing (Review Module §4.3 item 2) — resume always
+      // restarts at the beginning of the item it was on (mid-item reflect
+      // vs. reinforce position isn't preserved); prior items' results
+      // carry forward so the Consolidation Summary still reflects the
+      // whole session, not just what happened after resuming.
+      if (isResume) {
+        const snapshot = getReviewSessionSnapshot(getEngine()?.profile?.studentId);
+        if (snapshot) {
+          try {
+            const restoredPlan = JSON.parse(snapshot.planJson) as ReviewSessionPlan;
+            const restoredResults = JSON.parse(snapshot.resultsJson) as ItemResult[];
+            await ensureReviewContentLoaded(restoredPlan.items);
+            if (!cancelled) {
+              resumeStartIndex.current = Math.min(snapshot.itemIndex, restoredPlan.items.length);
+              setResults(restoredResults);
+              setPlan(restoredPlan);
+              setScreen('framing');
+            }
+            return;
+          } catch {
+            // Corrupt snapshot — fall through to a fresh plan below.
+          }
+        }
+      }
       const p = getReviewSessionPlan(8);
       if (p) await ensureReviewContentLoaded(p.items);
       if (!cancelled) {
@@ -54,6 +82,7 @@ export function ReviewSession() {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toReview = () => navigate('/review');
@@ -97,19 +126,34 @@ export function ReviewSession() {
 
   function beginSession() {
     if (!plan || plan.items.length === 0) { setScreen('summary'); return; }
-    startItem(0, plan);
+    if (resumeStartIndex.current >= plan.items.length) { setScreen('summary'); return; }
+    startItem(resumeStartIndex.current, plan);
   }
 
   function finishItem(correct: boolean, item: ReviewSessionItem, reinforcedTransition = false) {
-    setResults((r) => [...r, { conceptName: item.conceptName, correct, reinforcedTransition }]);
+    const newResults = [...results, { conceptName: item.conceptName, correct, reinforcedTransition }];
+    setResults(newResults);
     const nextIndex = itemIndex + 1;
+    const studentId = getEngine()?.profile?.studentId;
     if (plan && nextIndex < plan.items.length) {
+      // Continue Reviewing — only worth saving once at least one item is
+      // genuinely done, same threshold as Practice's Quick Resume.
+      saveSessionSnapshot(studentId, {
+        kind: 'review',
+        planJson: JSON.stringify(plan),
+        itemIndex: nextIndex,
+        resultsJson: JSON.stringify(newResults),
+        savedAt: Date.now(),
+      });
       startItem(nextIndex, plan);
-    } else if (plan?.pattern && !patternShown.current) {
-      patternShown.current = true;
-      setScreen('pattern');
     } else {
-      setScreen('summary');
+      clearSessionSnapshot(studentId, 'review');
+      if (plan?.pattern && !patternShown.current) {
+        patternShown.current = true;
+        setScreen('pattern');
+      } else {
+        setScreen('summary');
+      }
     }
   }
 
