@@ -517,6 +517,81 @@ export class KairoEngine {
   }
 
   /**
+   * Collects candidates from every SJEE/notification-producing module —
+   * NotificationEngine's client heuristics (daily recap, streak, exam
+   * proximity, weekly reflection, recovery welcome), ReEngagementEngine,
+   * CrossModuleMilestones, ContinuationEngine's post-exam window — submits
+   * them to the Orchestrator, and returns whatever survives arbitration.
+   * Each of those modules was fully built and individually tested but
+   * never actually invoked from anywhere in the running app; this is that
+   * missing entrypoint. Call once per app open and once after a session
+   * ends (callers are expected to render the result as an in-app banner;
+   * no external transport — push/email/WhatsApp/SMS — exists yet, so
+   * everything returned here is in-app-only regardless of the tier/
+   * channel the Orchestrator assigned).
+   *
+   * Real, persisted consent (Notification Settings' "Stop All
+   * Notifications") is the single source of truth for whether ANYTHING
+   * gets delivered — mirrored onto the Orchestrator's own flag here since
+   * nothing else keeps them in sync. Per-category toggles intentionally do
+   * NOT gate this in-app path (Notification Settings' own copy is explicit
+   * that turning a category off only stops external sends — "they'll
+   * still show up inside Review when you open the app" — matching §13.1's
+   * "in-app content is never gated the way external channels are").
+   */
+  runNotificationPulse() {
+    this.notificationOrchestrator.setHardOptOut(this.comms.consent.hardStopActive);
+    if (this.comms.consent.hardStopActive) return [];
+
+    this.profile.computeMacroState(this.graph);
+    const emotionalStates = this.emotionalProfile.compute(this.graph);
+
+    const priorityToTier = { high: 'standard', medium: 'low', low: 'informational' };
+    for (const n of this.notifications.checkNotifications()) {
+      this.notificationOrchestrator.submit({
+        type: n.type,
+        tier: priorityToTier[n.priority] || 'informational',
+        title: n.title,
+        body: n.body,
+        action: n.action,
+        sourceId: n.id
+      });
+    }
+
+    const reengageCandidate = this.reEngagement.generateCandidate(this.graph);
+    if (reengageCandidate) this.notificationOrchestrator.submit(reengageCandidate);
+
+    for (const m of this.crossModuleMilestones.check(this.graph, emotionalStates)) {
+      this.notificationOrchestrator.submit({
+        type: `milestone_${m.category}`,
+        tier: 'informational',
+        title: 'A milestone worth noting',
+        body: m.framing,
+        action: null
+      });
+    }
+
+    const postExamCandidate = this.continuation.checkImmediateWindow();
+    if (postExamCandidate) this.notificationOrchestrator.submit(postExamCandidate);
+
+    return this.notificationOrchestrator.arbitrate(this.kai);
+  }
+
+  /**
+   * Call when a delivered notification (from runNotificationPulse()) is
+   * dismissed without leading to a session, or tapped through — feeds
+   * §5.8's per-type suppression learning either way. For a candidate
+   * sourced from NotificationEngine's own client heuristics (sourceId
+   * set), also marks it read there so checkNotifications() stops
+   * resurfacing the identical item once the student has actually seen it.
+   */
+  recordNotificationOutcome(candidate, outcome) {
+    if (outcome === 'dismissed') this.notificationOrchestrator.recordDismissal(candidate.type);
+    if (outcome === 'engaged') this.notificationOrchestrator.recordEngagement(candidate.type);
+    if (candidate.sourceId) this.notifications.markAsRead(candidate.sourceId);
+  }
+
+  /**
    * The shared "record an attempt against the Learning Engine" primitive —
    * every module's spec (Practice, CBT, Learn, Review) says the same thing:
    * "does not run a separate intelligence layer, every write flows through
