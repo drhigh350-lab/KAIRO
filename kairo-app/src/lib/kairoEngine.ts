@@ -1294,3 +1294,23 @@ export async function getUniversityRankings(limit = 20): Promise<UniversityRanki
     studentCount: row.student_count,
   }));
 }
+
+// ─────────────────────────────────────────────
+// Question reports (kairo.question_reports) — Practice's overflow menu
+// "Report question" and "Question feedback" were previously UI-only
+// stubs (a toast, no write). This gives them a real, append-only
+// destination a content team can review.
+// ─────────────────────────────────────────────
+
+/** Persists a "Report question" or "Question feedback" tap from Practice against the real question the student was looking at. Throws if there's no signed-in student — callers should already be inside an active session. */
+export async function reportQuestion(questionId: string, kind: 'report' | 'feedback'): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const supabase = getSupabase();
+  const { error } = await supabase.schema('kairo').from('question_reports').insert({
+    student_id: kairo.profile.studentId,
+    question_id: questionId,
+    kind,
+  });
+  if (error) throw error;
+}

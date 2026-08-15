@@ -1,11 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton, Badge } from '../../components';
 import {
-  BookmarkIcon, ReportIcon, FlagIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
+  BookmarkIcon, ReportIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
   InlineToast, Modal, OverflowMenu, MiniCalculator, type ConfidenceLevel,
 } from '../learning/shared';
 import type { PracticeQuestion as PracticeQuestionData } from './data';
 import { generateKaiTextWithDiagnostics } from '../../lib/kaiAi';
+import { reportQuestion } from '../../lib/kairoEngine';
 
 export interface PracticeQuestionResult {
   correct: boolean;
@@ -83,7 +84,6 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const [bookmarked, setBookmarked] = useState(false);
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [reported, setReported] = useState(false);
-  const [flagged, setFlagged] = useState(false);
   const [hideElim, setHideElim] = useState(false);
   const [showOverflow, setShowOverflow] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
@@ -95,9 +95,25 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
     onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current });
   }
   function flashToast(msg: string) { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2200); }
-  function report() { setReported(true); flashToast("Thanks — we'll take a look at this question."); }
-  function toggleFlag() { setFlagged((f) => !f); flashToast(!flagged ? 'Flagged for review.' : 'Flag removed.'); }
-  function sendFeedback() { flashToast('Feedback sent — thanks for helping Kai improve.'); }
+  async function report() {
+    if (reported) return;
+    setReported(true);
+    flashToast("Thanks — we'll take a look at this question.");
+    try {
+      await reportQuestion(question.id, 'report');
+    } catch {
+      setReported(false);
+      flashToast("Couldn't send that — try again.");
+    }
+  }
+  async function sendFeedback() {
+    try {
+      await reportQuestion(question.id, 'feedback');
+      flashToast('Feedback sent — thanks for helping Kai improve.');
+    } catch {
+      flashToast("Couldn't send that — try again.");
+    }
+  }
 
   /**
    * KaiPanel's "Ask Kai for more" row (Explain again / Give another example
@@ -134,7 +150,6 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const yourMisconception = distractors.find((d) => d.label === selectedLabel)?.misconception ?? null;
 
   const overflowItems = [
-    { label: flagged ? 'Unflag question' : 'Flag question', icon: <FlagIcon filled={flagged} />, onClick: toggleFlag },
     { label: reported ? 'Question reported' : 'Report question', icon: <ReportIcon />, onClick: report, tone: 'danger' as const },
     { label: hideElim ? 'Show elimination marks' : 'Hide elimination marks', icon: <CloseIconSmall />, onClick: () => setHideElim((h) => !h) },
     { label: 'Question feedback', icon: <FeedbackIconSmall />, onClick: sendFeedback },
