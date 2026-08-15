@@ -234,11 +234,11 @@ export async function signOutAndDisconnect(): Promise<void> {
   contentLoadedFor = [];
 }
 
-// Only these four subjects have a seeded live question bank today (verified
+// Only these five subjects have a seeded live question bank today (verified
 // directly against kairo.questions) — a student can pick from 14 subjects at
 // onboarding, but most have zero content yet. This is a content gap, not
 // something to fabricate around.
-export const SEEDED_SUBJECTS = ['Biology', 'Chemistry', 'Physics', 'Use of English'];
+export const SEEDED_SUBJECTS = ['Biology', 'Chemistry', 'Physics', 'Use of English', 'Mathematics'];
 
 /** Whether a subject (in its onboarding/practice-picker label form, e.g. "English Language") has real seeded question content today. */
 export function hasSeededContent(subjectLabel: string): boolean {
