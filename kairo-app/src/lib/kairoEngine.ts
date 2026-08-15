@@ -412,14 +412,34 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
   const subject = normalizeSubjectName(subjectLabel);
   await ensureContentLoaded([subject]);
 
-  const concepts = subtopic
+  const concepts = (subtopic
     ? kairo.getAllConcepts({ subject, topic, subtopic })
-    : kairo.getAllConcepts({ subject, topic });
-  const queue = concepts
-    .slice()
-    .sort((a: Engine, b: Engine) => (a.state === 'fading' ? -1 : 1) - (b.state === 'fading' ? -1 : 1))
-    .slice(0, limit)
-    .map((c: Engine) => c.id);
+    : kairo.getAllConcepts({ subject, topic })
+  ).slice().sort((a: Engine, b: Engine) => (a.state === 'fading' ? -1 : 1) - (b.state === 'fading' ? -1 : 1));
+
+  // A subtopic maps to exactly one concept in almost all seeded content,
+  // so the old queue — distinct concepts sliced to `limit` — capped every
+  // topic-practice session at 1 question no matter how many real
+  // questions existed for that one concept. Round-robin across each
+  // concept's real question pool instead, so a single concept with N
+  // seeded questions still fills up to min(N, limit) session slots.
+  const pools = concepts.map((c: Engine) => ({
+    conceptId: c.id,
+    remaining: kairo.questionGraph.getQuestionsForConcept(c.id).length
+  }));
+  const queue: string[] = [];
+  let addedThisPass = true;
+  while (queue.length < limit && addedThisPass) {
+    addedThisPass = false;
+    for (const pool of pools) {
+      if (queue.length >= limit) break;
+      if (pool.remaining > 0) {
+        queue.push(pool.conceptId);
+        pool.remaining--;
+        addedThisPass = true;
+      }
+    }
+  }
 
   kairo.startSession({ mode: 'topic_practice', plan: queue });
 
