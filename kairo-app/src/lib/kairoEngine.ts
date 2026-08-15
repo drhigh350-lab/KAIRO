@@ -1002,6 +1002,42 @@ export async function completeLearnLesson(conceptId: string, returnTo = 'practic
   return result;
 }
 
+/**
+ * Direct mirror of LearnModule.getLearnHome()'s real output (Learn Module
+ * spec §4) — previously had no screen at all, so Learn was reachable only
+ * reactively, right after a wrong answer (fromIncorrectAnswer), never as
+ * somewhere a student could go on their own initiative.
+ */
+export interface LearnHomeData {
+  kaiFraming: { text: string; tone: string };
+  continueLearning: { conceptId: string; conceptName: string; entryPoint: string } | null;
+  recommendedConcepts: { id: string; name: string; reason: string }[];
+  weakTopics: { subject: string; topic: string; count: number }[];
+  recentlyLearned: { conceptId: string; conceptName: string; holding: boolean | null; completedAt: number }[];
+  masteredConcepts: { id: string; name: string }[];
+  suggestedNextLessons: { id: string; name: string }[];
+  coldStart: boolean;
+}
+
+export function getLearnHome(): LearnHomeData | null {
+  const kairo = getEngine();
+  return kairo ? kairo.learn.getLearnHome() : null;
+}
+
+/** Learn Module spec §3.5 — the DDE proactively routing a Critical/Repeated gap before more practice would help. Used for Learn Home's higher-priority "Recommended" list. */
+export function startLearnFromWeakTopic(conceptId: string, gapSeverity = 'critical'): LearnLesson {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  return kairo.learn.fromWeakTopicRecommendation({ conceptId, gapSeverity });
+}
+
+/** Learn Module spec §3.6 — minor, secondary route, for Learn Home's quieter "Suggested Next Lessons" list. */
+export function startLearnFromDashboard(conceptId: string): LearnLesson {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  return kairo.learn.fromDashboard({ conceptId });
+}
+
 // ─────────────────────────────────────────────
 // Rapid Fire — timed burst practice via the real kairo.rapidFire
 // (RapidFireEngine). It only ever pulls concepts the student has already

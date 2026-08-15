@@ -29,6 +29,11 @@ const quickActions: { label: string; d: string; color: string; to: string; entry
   { label: 'Topic Practice', d: 'M4 6h16M4 12h16M4 18h10', color: '#9B6BE0', to: '/practice', entry: 'topic' },
   { label: 'Mixed Practice', d: 'M16 3h5v5M4 20L21 3M21 16v5h-5M4 4l5 5', color: '#28B5C4', to: '/practice', entry: 'mixed' },
   { label: 'Rapid Fire', d: 'M13 2L3 14h7l-1 8 11-14h-7l1-6z', color: '#E0A039', to: '/rapid-fire' },
+  // Previously only reachable reactively, right after a wrong answer in
+  // Practice — this is the one proactive way in, so a student can go
+  // understand something on their own initiative, not only when Kairo
+  // interrupts them with it.
+  { label: 'Understand a Concept', d: 'M12 4.5C9.5 2.5 6 2.5 4 4v14c2-1.5 5.5-1.5 8 .5 2.5-2 6-2 8-.5V4c-2-1.5-5.5-1.5-8 .5z', color: '#5FBF7A', to: '/learn' },
 ];
 
 export function HomeDashboard() {
