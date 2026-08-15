@@ -136,6 +136,13 @@ export function LearnLesson() {
           <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.6 }}>You've already shown a solid handle on this — nothing more to walk through right now.</div>
         ) : (
           <>
+            {steps.teachingHook && (
+              <Section title="Think of it this way">
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--dark-text-heading)', lineHeight: 1.5 }}>{steps.teachingHook.hook}</div>
+                <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.6, marginTop: 8 }}>{steps.teachingHook.analogy}</div>
+              </Section>
+            )}
+
             {steps.coreConcept && (
               <Section title="What this concept is asking">
                 <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6 }}>{steps.coreConcept.learningObjective}</div>
