@@ -150,6 +150,7 @@ export class SupabaseSyncAdapter {
       // Student Journey & Engagement Engine
       journey_stage: profileData.journeyStage || 'arrival',
       journey_stage_history: profileData.journeyStageHistory || [],
+      notification_orchestrator: profileData.notificationOrchestrator || null,
       re_engagement: profileData.reEngagement || null,
       cross_module_milestones: profileData.crossModuleMilestones || null,
       continuation: profileData.continuation || null,
@@ -215,6 +216,7 @@ export class SupabaseSyncAdapter {
 
       journeyStage: row.journey_stage,
       journeyStageHistory: row.journey_stage_history || [],
+      notificationOrchestrator: row.notification_orchestrator,
       reEngagement: row.re_engagement,
       crossModuleMilestones: row.cross_module_milestones,
       continuation: row.continuation,

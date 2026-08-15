@@ -154,6 +154,7 @@ export class KairoEngine {
    * before save rather than written on every internal state change.
    */
   _snapshotSjeeState() {
+    this.profile.notificationOrchestrator = this.notificationOrchestrator.toJSON();
     this.profile.reEngagement = this.reEngagement.toJSON();
     this.profile.crossModuleMilestones = this.crossModuleMilestones.toJSON();
     this.profile.continuation = this.continuation.toJSON();
@@ -176,7 +177,7 @@ export class KairoEngine {
       this.emotionalProfile = new EmotionalProfile(this.profile);
       this.learningState = LearningStateTracker.fromJSON(this.profile);
       this.journeyStage = JourneyStageTracker.fromJSON(this.profile);
-      this.notificationOrchestrator = new NotificationOrchestrator(this.profile);
+      this.notificationOrchestrator = NotificationOrchestrator.fromJSON(this.profile, savedProfile.notificationOrchestrator);
       this.reEngagement = ReEngagementEngine.fromJSON(this.profile, savedProfile.reEngagement);
       this.crossModuleMilestones = CrossModuleMilestones.fromJSON(this.profile, savedProfile.crossModuleMilestones);
       this.continuation = ContinuationEngine.fromJSON(this.profile, savedProfile.continuation);
@@ -258,6 +259,27 @@ export class KairoEngine {
     } catch {
       // best-effort
     }
+
+    // Every module below was constructed once, at engine-construction time,
+    // against a blank profile — the Object.assign above overwrites
+    // profile.journeyStage/reEngagement/crossModuleMilestones/continuation/
+    // comms/notificationOrchestrator with the real remote values, but these
+    // LIVE instances never re-read them on their own. Without this rebuild,
+    // the very next _snapshotSjeeState() call a few lines down would
+    // overwrite the just-fetched remote state with each instance's still-
+    // blank in-memory defaults — silently resetting a student's saved
+    // notification consent (including an active "Stop All Notifications"
+    // hard-stop), win-back history, and awarded milestones on every single
+    // sign-in or page-reload restore. journeyStage specifically also feeds
+    // the very next startSession() call's compute(), which runs against
+    // whatever this.journeyStage.currentStage says — leaving it stale at
+    // 'arrival' would make that recomputation start from the wrong state.
+    this.journeyStage = JourneyStageTracker.fromJSON(this.profile);
+    this.reEngagement = ReEngagementEngine.fromJSON(this.profile, this.profile.reEngagement);
+    this.crossModuleMilestones = CrossModuleMilestones.fromJSON(this.profile, this.profile.crossModuleMilestones);
+    this.continuation = ContinuationEngine.fromJSON(this.profile, this.profile.continuation);
+    this.comms = CommsService.fromJSON(this.profile, this.profile.comms);
+    this.notificationOrchestrator = NotificationOrchestrator.fromJSON(this.profile, this.profile.notificationOrchestrator);
 
     this.sync.attachRemote(adapter, this);
     this._snapshotSjeeState();
