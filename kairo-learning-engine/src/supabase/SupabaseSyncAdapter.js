@@ -376,6 +376,37 @@ export class SupabaseSyncAdapter {
     return true;
   }
 
+  /**
+   * Real past sessions, oldest first — connectSupabase() had no way to pull
+   * these back down at all (pushSession() above is write-only), so
+   * profile.sessions only ever held whatever this engine instance completed
+   * since connecting. Every reload silently reset it to empty, which fed
+   * straight into Today's Progress, EliteScore's consistency math, Macro
+   * State, and Level/XP — all quietly wrong immediately after any refresh.
+   */
+  async fetchSessions(studentId, { limit = 200 } = {}) {
+    const { data, error } = await this._table('sessions')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('started_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data || []).map(this._rowToSession).reverse();
+  }
+
+  _rowToSession(row) {
+    return {
+      sessionId: row.id,
+      mode: row.mode,
+      plan: row.plan || [],
+      questionsAnswered: row.questions_answered || 0,
+      correctCount: row.correct_count || 0,
+      eliteScore: row.elite_score || null,
+      startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
+      completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null
+    };
+  }
+
   // ─────────────────────────────────────────────
   // CBT exam results (kairo.cbt_results) — the full per-question, per-subject
   // breakdown of a finished mock, distinct from the lightweight kairo.sessions

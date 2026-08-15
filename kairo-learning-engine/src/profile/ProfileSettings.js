@@ -105,20 +105,31 @@ export class ProfileSettings {
 
   /**
    * Learning Journey: visible progress across all subjects/topics.
+   *
+   * total/mastered stay concept-based (that's the right unit for a
+   * meaningful mastery %) — but a topic maps to ~1 concept in almost all
+   * seeded content, so "total concepts" badly understates how much a
+   * student can actually practice here when that one concept has many
+   * real questions attached. questionCount is the real, deduplicated
+   * count of live questions reachable from this subject/topic/subtopic's
+   * concepts (a question tested across multiple concepts in the same
+   * topic is only counted once) — what the UI should show for "how much
+   * is here," separate from the mastery-percentage math.
    */
   getLearningJourney() {
     const concepts = Array.from(this.engine.graph.nodes.values());
+    const questionGraph = this.engine.questionGraph;
     const subjects = {};
 
     for (const c of concepts) {
       if (!subjects[c.subject]) {
-        subjects[c.subject] = { topics: {}, total: 0, mastered: 0 };
+        subjects[c.subject] = { topics: {}, total: 0, mastered: 0, questionIds: new Set() };
       }
       if (!subjects[c.subject].topics[c.topic]) {
-        subjects[c.subject].topics[c.topic] = { subtopics: {}, total: 0, mastered: 0 };
+        subjects[c.subject].topics[c.topic] = { subtopics: {}, total: 0, mastered: 0, questionIds: new Set() };
       }
       if (!subjects[c.subject].topics[c.topic].subtopics[c.subtopic]) {
-        subjects[c.subject].topics[c.topic].subtopics[c.subtopic] = { concepts: [], total: 0, mastered: 0 };
+        subjects[c.subject].topics[c.topic].subtopics[c.subtopic] = { concepts: [], total: 0, mastered: 0, questionIds: new Set() };
       }
 
       const sub = subjects[c.subject].topics[c.topic].subtopics[c.subtopic];
@@ -132,6 +143,12 @@ export class ProfileSettings {
       subjects[c.subject].total++;
       subjects[c.subject].topics[c.topic].total++;
 
+      for (const q of questionGraph.getQuestionsForConcept(c.id)) {
+        sub.questionIds.add(q.id);
+        subjects[c.subject].topics[c.topic].questionIds.add(q.id);
+        subjects[c.subject].questionIds.add(q.id);
+      }
+
       if (c.retentionState === 'held' || c.retentionState === 'reinforced') {
         sub.mastered++;
         subjects[c.subject].mastered++;
@@ -139,15 +156,22 @@ export class ProfileSettings {
       }
     }
 
-    // Calculate percentages
+    // Calculate percentages and flatten questionIds -> questionCount
     for (const subject in subjects) {
-      subjects[subject].masteryPct = Math.round((subjects[subject].mastered / subjects[subject].total) * 100);
-      for (const topic in subjects[subject].topics) {
-        const t = subjects[subject].topics[topic];
+      const sj = subjects[subject];
+      sj.masteryPct = Math.round((sj.mastered / sj.total) * 100);
+      sj.questionCount = sj.questionIds.size;
+      delete sj.questionIds;
+      for (const topic in sj.topics) {
+        const t = sj.topics[topic];
         t.masteryPct = Math.round((t.mastered / t.total) * 100);
+        t.questionCount = t.questionIds.size;
+        delete t.questionIds;
         for (const subtopic in t.subtopics) {
           const s = t.subtopics[subtopic];
           s.masteryPct = Math.round((s.mastered / s.total) * 100);
+          s.questionCount = s.questionIds.size;
+          delete s.questionIds;
         }
       }
     }

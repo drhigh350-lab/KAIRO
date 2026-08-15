@@ -65,6 +65,13 @@ export function PracticeFlow() {
   // Home's own quick actions, or Practice Home's own actions below) still
   // route straight to their specific flow.
   const entry = (location.state as { entry?: string } | null)?.entry ?? 'home';
+  // Home's MissionCard names one specific concept (getTodayFocus()) and
+  // explains why it's recommended — carried through router state so the
+  // suggested session that actually starts is anchored to that same
+  // concept instead of a freshly (and possibly differently) ranked one.
+  // Read once via ref: only the initial mount's auto-start needs it, and a
+  // ref avoids re-triggering that effect.
+  const anchorConceptIdRef = useRef((location.state as { anchorConceptId?: string | null } | null)?.anchorConceptId ?? null);
 
   const [init] = useState(() => computeInitial(entry));
   // Loads the real bookmark set once per Practice mount — PracticeQuestion
@@ -101,10 +108,10 @@ export function PracticeFlow() {
   }, []);
 
   /** Recommended-by-Kairo session (Practice Module §2.2) — zero-input, real DDE-style queue. Shared by the initial-mount auto-start (arriving via entry:'suggested') and Practice Home's own "Start Session" tap. */
-  function startSuggested() {
+  function startSuggested(anchorConceptId?: string | null) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    startSuggestedSession(5)
+    startSuggestedSession(5, anchorConceptId)
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
@@ -118,7 +125,7 @@ export function PracticeFlow() {
   useEffect(() => {
     if (entryFlow !== 'suggested' || startedSuggested.current) return;
     startedSuggested.current = true;
-    startSuggested();
+    startSuggested(anchorConceptIdRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

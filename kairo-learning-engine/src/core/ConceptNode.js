@@ -36,6 +36,12 @@ export class ConceptNode {
     this.errorPatternTags = new Map();    // tag -> count
     this.reinforcedCycles = 0;            // how many Fading→Reinforced transitions survived
     this.personalDecayRate = 1.0;         // multiplier relative to base (1.0 = average)
+    // Sticky once true — unlike retentionState (which can fall back through
+    // Fading/Forming later), this records that Held was genuinely reached at
+    // least once. EliteScore's retention points read this instead of the
+    // live retentionState so a later decay can't retroactively erase points
+    // already earned for a real, past achievement.
+    this.everReachedHeld = false;
   }
 
   /**
@@ -71,6 +77,7 @@ export class ConceptNode {
       case RetentionState.FORMING:
         if (correct && this._recentAccuracy() >= DecayConstants.HELD_CONFIDENCE_THRESHOLD) {
           this.retentionState = RetentionState.HELD;
+          this.everReachedHeld = true;
         }
         break;
 
@@ -213,7 +220,8 @@ export class ConceptNode {
       attemptHistory: this.attemptHistory,
       errorPatternTags: Object.fromEntries(this.errorPatternTags),
       reinforcedCycles: this.reinforcedCycles,
-      personalDecayRate: this.personalDecayRate
+      personalDecayRate: this.personalDecayRate,
+      everReachedHeld: this.everReachedHeld
     };
   }
 
@@ -228,6 +236,13 @@ export class ConceptNode {
     node.errorPatternTags = new Map(Object.entries(data.errorPatternTags || {}));
     node.reinforcedCycles = data.reinforcedCycles || 0;
     node.personalDecayRate = data.personalDecayRate || 1.0;
+    // Backward-compatible for concepts saved before this field existed —
+    // infer it from retentionState so a concept that's currently Held,
+    // Fading, or Reinforced (all of which require having passed through
+    // Held at least once, per _updateState()'s transition graph) doesn't
+    // lose credit it already earned before this field was added.
+    node.everReachedHeld = data.everReachedHeld
+      ?? ['held', 'fading', 'reinforced'].includes(data.retentionState);
     return node;
   }
 }

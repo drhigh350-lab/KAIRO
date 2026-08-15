@@ -32,7 +32,7 @@ export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: Subto
           <OptionRow
             key={s.subtopic}
             label={s.subtopic}
-            subtitle={`${s.total} concept${s.total === 1 ? '' : 's'} · ${s.masteryPct}% mastered`}
+            subtitle={`${s.questionCount} question${s.questionCount === 1 ? '' : 's'} · ${s.masteryPct}% mastered`}
             onClick={() => onPick(s.subtopic)}
             tone="dark"
           />

@@ -153,6 +153,39 @@ test('Fading → correct = REINFORCED', () => {
   assert(after.reinforcedCycles >= 1, 'Should increment reinforced cycle');
 });
 
+test('Elite Score never decreases, even after a concept decays back down', () => {
+  const before = engine.eliteScore.calculate(engine.graph, engine.profile.sessions);
+
+  const c = engine.graph.getConcept(moleId);
+  assertEqual(c.retentionState, RetentionState.REINFORCED, 'Precondition: concept should still be Reinforced from the prior test');
+  engine.submitAnswer({
+    conceptId: moleId, correct: false, responseTimeMs: 9000,
+    selectedOption: 'B', correctOption: 'A', questionId: 'q_decay', questionDifficulty: 2
+  });
+  assertEqual(engine.graph.getConcept(moleId).retentionState, RetentionState.FADING, 'Concept should have decayed back to Fading after a wrong answer');
+
+  const after = engine.eliteScore.calculate(engine.graph, engine.profile.sessions);
+  assert(after.total >= before.total, `Elite Score total should never decrease (before: ${before.total}, after: ${after.total})`);
+  assert(after.retention >= before.retention, `Retention subscore should never decrease even after the concept decays (before: ${before.retention}, after: ${after.retention})`);
+});
+
+test('ConceptNode.everReachedHeld stays true even if the concept later regresses all the way to Forming', () => {
+  const node = new ConceptNode({ id: 'sticky_held_test', name: 'Sticky Held Test Concept', subject: 'Biology', topic: 'Sticky Test Topic' });
+  for (let i = 0; i < 5; i++) {
+    node.recordAttempt({ correct: true, responseTimeMs: 5000, timestamp: Date.now(), questionId: `sticky_q${i}`, difficulty: 1 });
+  }
+  assertEqual(node.retentionState, RetentionState.HELD, 'Precondition: should reach Held after a run of correct answers');
+  assert(node.everReachedHeld, 'everReachedHeld should be set the first time Held is reached');
+
+  node.recordAttempt({ correct: false, responseTimeMs: 5000, timestamp: Date.now(), questionId: 'sticky_wrong1', difficulty: 1 });
+  assertEqual(node.retentionState, RetentionState.FADING, 'A wrong answer on Held should drop to Fading');
+
+  node.recordAttempt({ correct: false, responseTimeMs: 5000, timestamp: Date.now(), errorTag: ErrorTag.CONCEPTUAL_GAP, questionId: 'sticky_wrong2', difficulty: 1 });
+  assertEqual(node.retentionState, RetentionState.FORMING, 'A conceptual gap on Fading should drop all the way back to Forming');
+
+  assert(node.everReachedHeld, 'everReachedHeld should still be true even after regressing to Forming — EliteScore must not lose credit for a real, past achievement');
+});
+
 test('Recommendation engine builds non-empty session plan', () => {
   const plan = engine.startSession();
   assert(plan.queue.length > 0, 'Session plan should have concepts');
@@ -302,6 +335,32 @@ test('Topic Practice generates journey', () => {
   assertEqual(journey.topic, 'Stoichiometry', 'Topic should match');
   assert(Array.isArray(journey.subtopics), 'Should have subtopics array');
   assert(typeof journey.overallMastery === 'number', 'Should have mastery %');
+});
+
+test('getTopicJourney() and getLearningJourney() report real question counts, not just concept counts', () => {
+  // Regression test: a topic/subtopic maps to ~1 concept in almost all
+  // seeded content, so the picker screens showed "1 concept" no matter how
+  // many real questions that one concept actually had — misrepresenting
+  // how much a student could practice.
+  const conceptId = engine.addConcept({ name: 'Question Count Concept', subject: 'Chemistry', topic: 'Question Count Topic', subtopic: 'Question Count Subtopic' });
+  for (let i = 0; i < 4; i++) {
+    engine.questionGraph.addQuestion(new Question({
+      id: `qcount_q${i}`, subject: 'Chemistry', topic: 'Question Count Topic', subtopic: 'Question Count Subtopic',
+      conceptsTested: [{ conceptId, weight: 1 }],
+      stem: `S${i}`, options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+      lifecycleState: 'live'
+    }));
+  }
+
+  const topicJourney = engine.getTopicJourney('Chemistry', 'Question Count Topic');
+  const subtopicEntry = topicJourney.subtopics.find((s) => s.name === 'Question Count Subtopic');
+  assertEqual(subtopicEntry.total, 1, 'Concept count should still be 1 (one concept in this subtopic)');
+  assertEqual(subtopicEntry.questionCount, 4, 'Question count should reflect the real 4-question pool, not the 1-concept count');
+
+  const learningJourney = engine.settings.getLearningJourney();
+  const topicEntry = learningJourney['Chemistry'].topics['Question Count Topic'];
+  assertEqual(topicEntry.total, 1, 'Concept count should still be 1 at the topic level too');
+  assertEqual(topicEntry.questionCount, 4, 'getLearningJourney() should also report the real question count at the topic level');
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1751,6 +1810,71 @@ test('Supabase adapter: kairo.questions row maps correctly to the Question const
   assertEqual(mapped.conceptsTested[0].conceptId, 'c1', 'concepts_tested should map to conceptsTested');
   assertEqual(mapped.correctOption, 'A', 'correct_option should map to correctOption');
   assertEqual(mapped.lifecycleState, 'live', 'lifecycle_state should map to lifecycleState');
+});
+
+test('Supabase adapter: kairo.sessions row maps correctly to profile.sessions shape', () => {
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+  const startedAt = Date.now() - 60000;
+  const completedAt = Date.now();
+  const row = {
+    id: 'sess_map_1', mode: 'topic_practice', plan: ['c1', 'c1'], questions_answered: 5, correct_count: 4,
+    elite_score: { total: 62.3 }, started_at: new Date(startedAt).toISOString(), completed_at: new Date(completedAt).toISOString()
+  };
+  const mapped = adapter._rowToSession(row);
+  assertEqual(mapped.sessionId, 'sess_map_1', 'id should map to sessionId');
+  assertEqual(mapped.mode, 'topic_practice', 'mode should round-trip');
+  assertEqual(mapped.questionsAnswered, 5, 'questions_answered should map to questionsAnswered');
+  assertEqual(mapped.correctCount, 4, 'correct_count should map to correctCount');
+  assertEqual(mapped.startedAt, new Date(row.started_at).getTime(), 'started_at ISO string should map to an epoch-ms startedAt');
+  assertEqual(mapped.completedAt, new Date(row.completed_at).getTime(), 'completed_at ISO string should map to an epoch-ms completedAt');
+});
+
+await test('fetchSessions() returns real past sessions oldest-first, and connectSupabase() uses it to restore profile.sessions', async () => {
+  const now = Date.now();
+  const sessionRows = [
+    { id: 's_newer', mode: 'standard', plan: [], questions_answered: 3, correct_count: 3, elite_score: null, started_at: new Date(now - 86400000).toISOString(), completed_at: new Date(now - 86400000 + 60000).toISOString() },
+    { id: 's_older', mode: 'standard', plan: [], questions_answered: 5, correct_count: 4, elite_score: null, started_at: new Date(now - 2 * 86400000).toISOString(), completed_at: new Date(now - 2 * 86400000 + 60000).toISOString() }
+  ]; // deliberately newest-first, matching the real .order('started_at', {ascending:false}) query
+  const studentRow = {
+    id: 'stu_connect_test', auth_user_id: 'auth_connect_test', name: 'Ada', target_subjects: [],
+    total_questions_answered: 8, total_correct: 7, elite_score_history: [], badges: [], completed_challenges: [],
+    macro_state_history: [], response_time_baselines: {}, streak_window_sessions: [], notification_history: []
+  };
+
+  const mockClient = {
+    auth: { async getUser() { return { data: { user: { id: 'auth_connect_test' } }, error: null }; } },
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; }, limit() { return builder; },
+            maybeSingle() {
+              if (table === 'students') return Promise.resolve({ data: studentRow, error: null });
+              return Promise.resolve({ data: null, error: null });
+            },
+            then(resolve) {
+              if (table === 'sessions') return resolve({ data: sessionRows, error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const adapter = new SupabaseSyncAdapter(mockClient, null);
+  const fetched = await adapter.fetchSessions('stu_connect_test');
+  assertEqual(fetched.length, 2, 'fetchSessions should return both real rows');
+  assertEqual(fetched[0].sessionId, 's_older', 'fetchSessions should return oldest-first, reversing the DB\'s newest-first order');
+  assertEqual(fetched[1].sessionId, 's_newer', 'fetchSessions should return oldest-first, reversing the DB\'s newest-first order');
+
+  const connectEngine = new KairoEngine({ studentId: 'pending', name: '', examDate: null, targetSubjects: [] });
+  await connectEngine.init();
+  const result = await connectEngine.connectSupabase(mockClient, {});
+  assertEqual(result.studentId, 'stu_connect_test', 'connectSupabase should hydrate the real remote studentId');
+  assertEqual(connectEngine.profile.sessions.length, 2, 'connectSupabase should populate profile.sessions from fetchSessions(), not leave it empty — this was the root cause of Today\'s Progress/EliteScore consistency/Macro State all resetting on every reload');
+  assertEqual(connectEngine.profile.sessions[0].sessionId, 's_older', 'restored sessions should be chronologically ordered oldest-first, matching what _averageSessionGap() and other consumers assume');
 });
 
 await test('loadContentCatalog() populates engine.graph and engine.questionGraph from Supabase, and getQuestionForConcept() bridges the practice loop to real seeded content', async () => {
