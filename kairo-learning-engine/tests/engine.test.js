@@ -733,6 +733,9 @@ test('Learn: fromIncorrectAnswer builds a full lesson for a conceptual gap', () 
   // real, hand-authored one — none exist for this test fixture's concept,
   // so keyIdea should be cleanly omitted (null), not filled with generic text.
   assertEqual(lesson.steps.keyIdea, null, 'Key idea should be omitted when no genuine memory anchor exists for this concept');
+  // Same discipline as memory anchors: TEACHING_HOOKS only covers the
+  // Mathematics batch — this test fixture's concept isn't in it.
+  assertEqual(lesson.steps.teachingHook, null, 'Teaching hook should be omitted when no genuine hook is authored for this concept');
 });
 
 test('Learn: careless_slip compresses to a light lesson', () => {
@@ -741,6 +744,31 @@ test('Learn: careless_slip compresses to a light lesson', () => {
   });
   assert(lesson2.compressed, 'careless_slip should trigger compression');
   assertEqual(lesson2.steps.coreConcept.conceptSummary, null, 'Compressed lesson should skip the fuller concept summary');
+});
+
+test('Learn: teachingHook surfaces the real authored hook for a Mathematics concept, and is stripped when compressed', () => {
+  const mathConceptId = learnEngine.addConcept({ name: 'Number Bases', subject: 'Mathematics', topic: 'Number Bases', subtopic: 'Base Conversion' });
+  const mathQuestion = new Question({
+    id: 'hook_q1', subject: 'Mathematics', topic: 'Number Bases', subtopic: 'Base Conversion',
+    conceptsTested: [{ conceptId: mathConceptId, weight: 1 }],
+    stem: 'Convert 110101₂ to base 10.',
+    options: [{ label: 'A', text: '53', isCorrect: true }, { label: 'B', text: '43', isCorrect: false }],
+    correctOption: 'A', explanation: 'Place values double moving left, giving 53.',
+    lifecycleState: 'live'
+  });
+  learnEngine.questionGraph.addQuestion(mathQuestion);
+
+  const lesson = learnEngine.learn.fromIncorrectAnswer({
+    questionId: 'hook_q1', conceptId: mathConceptId, selectedOption: 'B', errorTag: ErrorTag.CONCEPTUAL_GAP
+  });
+  assert(lesson.steps.teachingHook, 'A concept with a real authored hook should surface it');
+  assert(lesson.steps.teachingHook.hook.includes('number systems'), 'Should return the exact authored hook text for Number Bases');
+  assert(lesson.steps.teachingHook.analogy.includes('Base ten'), 'Should return the exact authored analogy text for Number Bases');
+
+  const compressedLesson = learnEngine.learn.fromIncorrectAnswer({
+    questionId: 'hook_q1', conceptId: mathConceptId, selectedOption: 'B', errorTag: ErrorTag.CARELESS_SLIP
+  });
+  assertEqual(compressedLesson.steps.teachingHook, null, 'A compressed (careless_slip) lesson should strip the teaching hook along with the rest of the fuller content');
 });
 
 test('Learn: reinforcement attempt caps a Fading->Reinforced jump at Held', () => {

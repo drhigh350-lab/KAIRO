@@ -13,6 +13,52 @@
 import { RetentionState, ErrorTag, DecayConstants } from "../utils/constants.js";
 import { isExamProximity, isPrimaryConceptLink } from "../utils/helpers.js";
 
+// First real batch — Mathematics only, matching the 10 concepts seeded
+// alongside kairo.questions' first Mathematics content batch. Keyed by
+// concept.name (exact match against kairo.concepts.name).
+const TEACHING_HOOKS = {
+  'Number Bases': {
+    hook: 'You already switch number systems every day without noticing.',
+    analogy: "Base ten is just how many fingers you have. Binary works the same way, but with only two \"fingers\" — 0 and 1 — so each place value doubles instead of multiplying by ten."
+  },
+  'Indices and Logarithms': {
+    hook: 'A logarithm is just an index question asked backward.',
+    analogy: "Indices ask \"what do I get if I raise 2 to the power 3?\" A logarithm asks the reverse: \"what power do I need to turn 2 into 8?\" Same relationship, viewed from opposite ends."
+  },
+  'Simultaneous Equations': {
+    hook: 'Two clues together can pin down an answer that neither clue could alone.',
+    analogy: "Being told a bag has 10 sweets total doesn't tell you how many are red. Add a second clue — \"there are 2 more red than blue\" — and suddenly there's only one possible answer. That's what solving two equations together does."
+  },
+  'Quadratic Equations': {
+    hook: 'Some equations have two honest answers, not one.',
+    analogy: 'A ball thrown straight up passes the same height twice — once going up, once coming back down. Factorizing a quadratic finds both of those moments at once.'
+  },
+  'Simple Interest and Percentages': {
+    hook: 'Interest is just a rental fee, for money instead of an object.',
+    analogy: "Paying a fixed fee to borrow a friend's bicycle for a week is the same idea as simple interest — a fixed charge for borrowing money for a fixed time, calculated the same way every period."
+  },
+  'Mensuration': {
+    hook: 'Every mensuration formula is really just counting, in disguise.',
+    analogy: 'Area is counting how many unit squares fit inside a shape; volume is counting how many unit cubes fit inside a solid. The formulas are shortcuts so you never have to count one by one.'
+  },
+  'Trigonometry': {
+    hook: 'A right-angled triangle keeps the same ratios no matter how big it gets.',
+    analogy: "A short ladder leaning at 60° and a tall ladder leaning at the same 60° are completely different sizes, but the ratio between height and length is identical — that fixed ratio is what a trig function captures."
+  },
+  'Statistics': {
+    hook: 'Mean, median, and mode all answer "what\'s typical here?" — just differently.',
+    analogy: 'If nine classmates score around 60% and one scores 5%, the mean gets dragged down by that one outlier, but the median barely moves — like one unusually short person standing in an otherwise average-height crowd.'
+  },
+  'Probability': {
+    hook: "Probability is just counting the ways something can happen, out of every way anything could.",
+    analogy: 'Picking a red sweet from a bag of 5 red and 3 blue is not magic — it is simply that 5 out of the 8 total sweets are red.'
+  },
+  'Sequences and Series': {
+    hook: 'A sequence is a rule you can predict, not a list you have to memorize.',
+    analogy: "Saving ₦500 in week one, then ₦500 more every week after, is an arithmetic progression — the pattern itself tells you what week 20 looks like, without writing out every week in between."
+  }
+};
+
 export class LearnModule {
   constructor(kairoEngine) {
     this.engine = kairoEngine;
@@ -326,6 +372,7 @@ export class LearnModule {
             }
           : null,
         coreConcept: { learningObjective, conceptSummary: compressed ? null : this._conceptSummary(concept, referenceQuestion) },
+        teachingHook: compressed ? null : this._teachingHook(concept),
         simpleBreakdown: compressed ? null : simpleBreakdown,
         commonMisconceptions: compressed ? commonMisconceptions.slice(0, 1) : commonMisconceptions,
         examInsight,
@@ -365,6 +412,7 @@ export class LearnModule {
         question: null,
         explanation: null,
         coreConcept: null,
+        teachingHook: null,
         simpleBreakdown: null,
         commonMisconceptions: [],
         examInsight: null,
@@ -414,6 +462,20 @@ export class LearnModule {
     }
     // §10.4 — honest about sparse content, never a padded or invented paragraph.
     return `${concept.name} (${place}). Full authored content for this concept is still being built out.`;
+  }
+
+  /**
+   * A relatable opening hook + everyday analogy, shown before the formal
+   * concept explanation — not part of the documented §5.x lesson flow,
+   * added because the lesson otherwise jumps straight into technical
+   * content with nothing easing a student into unfamiliar ground. Same
+   * discipline as §5.9's Memory Aid: a real, hand-authored entry per
+   * concept, or cleanly omitted — never a generic or forced analogy.
+   * First batch covers Mathematics only (TEACHING_HOOKS below); every
+   * other concept returns null until a real one is authored for it.
+   */
+  _teachingHook(concept) {
+    return TEACHING_HOOKS[concept?.name] || null;
   }
 
   _collectMisconceptions(concept, questionId, selectedOption) {

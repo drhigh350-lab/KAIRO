@@ -945,6 +945,7 @@ export interface LearnLesson {
     question: { id: string; stem: string; selectedOption: string | null; correctOption: string } | null;
     explanation: { correctReasoning: string | null; distractorBreakdown: string | null } | null;
     coreConcept: { learningObjective: string; conceptSummary: string | null } | null;
+    teachingHook: { hook: string; analogy: string } | null;
     simpleBreakdown: { text: string | null; sparse: boolean } | null;
     commonMisconceptions: { id: string; name: string; description: string; category?: string; ownMistake: boolean }[];
     examInsight: string | null;
