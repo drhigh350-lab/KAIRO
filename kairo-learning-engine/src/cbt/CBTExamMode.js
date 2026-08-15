@@ -281,9 +281,23 @@ export class CBTExamMode {
     const results = this._calculateResults();
     this.state = 'finished';
 
-    // Feed results into main engine for retention tracking
+    // Feed results into main engine for retention tracking. A question the
+    // student never answered (left blank under time pressure — completely
+    // normal in a real timed CBT mock, not an edge case) keeps buildPaper()'s
+    // default timeSpentMs: 0 all the way through — that's not a genuine
+    // attempt with a real response time, it's an absence of one, and
+    // kairo.attempts' own anti-cheat trigger (check_attempt_before_insert,
+    // response_time_ms < 150ms) correctly rejects it. Since pushAttempts()
+    // inserts the whole pending batch in one statement, one rejected
+    // 0ms attempt previously aborted that entire insert — and because
+    // fullSync() ran attempts before sessions/cbt_results, it silently took
+    // the exam's own session record and score with it too, with the
+    // failure swallowed by SyncManager.sync()'s catch and never shown to
+    // the student. Confirmed against production Postgres logs after a
+    // real CBT run: "Invalid attempt: response_time_ms implausibly low (0
+    // ms)" — the exam finished and scored correctly, but never synced.
     for (const r of results.questionResults) {
-      if (r.conceptId) {
+      if (r.conceptId && r.studentAnswer != null) {
         this.engine.submitAnswer({
           conceptId: r.conceptId,
           correct: r.isCorrect,

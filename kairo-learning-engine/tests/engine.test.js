@@ -1343,6 +1343,59 @@ await test('fullSync pushes queued sessions through pushSession (kairo.sessions)
   assertEqual(sessionPush.rows.id, 'sess1', 'Pushed session row should carry the session id');
 });
 
+await test("fullSync: a rejected attempts batch (e.g. kairo.attempts' anti-cheat trigger) no longer takes an already-pushed session/cbt_result down with it", async () => {
+  const calls = [];
+  const mockClient = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; },
+            gt() { return builder; }, is() { return builder; },
+            maybeSingle() { return builder; }, single() { return builder; },
+            insert(rows) {
+              calls.push({ table, op: 'insert', rows });
+              if (table === 'attempts') {
+                // Simulates kairo.attempts' check_attempt_before_insert trigger
+                // rejecting the whole batch — confirmed against real
+                // production Postgres logs: "Invalid attempt:
+                // response_time_ms implausibly low (0 ms)".
+                return { then: (_resolve, reject) => reject(new Error('Invalid attempt: response_time_ms implausibly low (0 ms)')) };
+              }
+              return builder;
+            },
+            update(row) { calls.push({ table, op: 'update', row }); return builder; },
+            upsert(rows) { calls.push({ table, op: 'upsert', rows }); return builder; },
+            then(resolve) {
+              if (table === 'students') return resolve({ data: { id: 'stu1', auth_user_id: 'auth1' }, error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const adapter = new SupabaseSyncAdapter(mockClient, null);
+  const result = await adapter.fullSync({
+    authUserId: 'auth1', studentId: 'stu1',
+    profile: { name: 'Test' },
+    conceptNodes: [],
+    pendingAttempts: [{ conceptId: 'c1', correct: false, responseTimeMs: 0, questionId: 'q1' }],
+    pendingSessions: [{ id: 'sess1', mode: 'cbt_exam', plan: [], questionsAnswered: 1, correctCount: 1, startedAt: Date.now(), completedAt: Date.now() }],
+    pendingCbtResults: [{ id: 'cbt1', subjects: ['Biology'], questionResults: [], bySubject: [], totalQuestions: 1, score: 1, maxScore: 1, percentage: 100, startedAt: Date.now(), completedAt: Date.now() }],
+    since: null
+  });
+
+  const sessionPush = calls.find(c => c.table === 'sessions' && c.op === 'upsert');
+  const cbtPush = calls.find(c => c.table === 'cbt_results' && c.op === 'insert');
+  assert(sessionPush, 'The session should still push through even though the attempts batch failed — previously one failure aborted everything after it in the same try/catch');
+  assert(cbtPush, 'The cbt_result should still push through for the same reason');
+  assertEqual(result.failed.attempts.length, 1, 'The failed attempts batch should be reported back so the caller can retry just that, not silently dropped or conflated with a total sync failure');
+  assertEqual(result.failed.sessions.length, 0, 'The session push succeeded, so it should not be reported as failed');
+});
+
 await test('Notifications: pull and mark-read only, matching the real RLS shape (no INSERT policy exists)', async () => {
   const calls2 = [];
   const mockClient2 = {
@@ -1454,6 +1507,31 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
 
   const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'cbt_exam');
   assert(sessionPush, 'CBT finish() should queue a kairo.sessions row tagged mode: cbt_exam — previously nothing did, and the crash meant it never got this far anyway');
+});
+
+await test("CBT: finish() doesn't submit unanswered questions as attempts (they'd fail kairo.attempts' anti-cheat trigger and silently take the whole sync down)", async () => {
+  const engine = new KairoEngine({ studentId: 'sync2b', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const cbtConceptId = engine.addConcept({ name: 'CBT Concept', subject: 'Biology', topic: 'T' });
+  engine.contentPacks = {
+    getOfflineQuestions: async ({ subject, count }) => Array.from({ length: count }, (_, i) => ({
+      id: `${subject}_${i}`, questionId: `${subject}_${i}`, subject, text: `Q${i}`,
+      options: ['A', 'B', 'C', 'D'], correctOption: 'A', explanation: 'x', conceptId: cbtConceptId
+    }))
+  };
+
+  const queued = [];
+  engine.sync.queue = (item) => queued.push(item);
+
+  engine.cbt.setup({ subjects: ['Biology'] });
+  await engine.cbt.buildPaper();
+  engine.cbt.start();
+  engine.cbt.submitAnswer(0, 'A', 5000); // only question 0 gets answered; the rest (real exam default: timeSpentMs 0) are left blank
+  engine.cbt.finish();
+
+  const attemptPushes = queued.filter(q => q.type === 'attempt');
+  assertEqual(attemptPushes.length, 1, 'Only the one genuinely answered question should be submitted as an attempt — not the ~39 left blank with the buildPaper() default of timeSpentMs: 0');
+  assertEqual(attemptPushes[0].data.responseTimeMs, 5000, 'The one real attempt pushed should be the answered question, with its real response time');
 });
 
 await test('Custom Practice and Topic Practice sessions are tagged with their real mode, not silently recorded as standard', async () => {
