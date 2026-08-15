@@ -443,7 +443,17 @@ export class KairoEngine {
       plan,
       completed: [],
       questionsAnswered: 0,
-      correctCount: 0
+      correctCount: 0,
+      // JourneyStageTracker._hasActivated() (SJEE §4.7) requires "at least
+      // one unprompted return" to leave Activation — this field was never
+      // set on any session anywhere, so that check silently failed every
+      // time (undefined !== false) and no student could ever reach
+      // Establishment on behavior alone. No code path currently starts a
+      // session *because of* a Kairo-sent notification (that delivery
+      // pipeline isn't wired to a launch action yet), so every real
+      // session today genuinely is unprompted — false is the honest
+      // default, not a placeholder.
+      prompted: false
     };
 
     const kaiOpen = this.kai.proactiveMessage('session_open');

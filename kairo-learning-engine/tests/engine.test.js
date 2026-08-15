@@ -546,6 +546,42 @@ test('Journey stage starts at arrival and is readable via KairoEngine', () => {
   assertEqual(testEngine.profile.journeyStage, 'arrival', 'Should mirror onto profile');
 });
 
+await test('A real session started via startSession() is marked unprompted, letting Activation genuinely progress to Establishment', async () => {
+  // Regression: startSession() never set session.prompted at all, so
+  // JourneyStageTracker._hasActivated()'s `s.prompted === false` check
+  // (undefined === false) was always false — no student could ever
+  // reach Establishment on real behavior, only via exam-date proximity
+  // overrides. Every other SJEE-area test mocked `prompted` directly on
+  // hand-built session objects, so this never got caught.
+  const testEngine = new (engine.constructor)({
+    studentId: 'sjee_test_007', name: 'Activation Student',
+    examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  await testEngine.init();
+  const cId = testEngine.addConcept({ name: 'ActC1', subject: 'Chemistry', topic: 'T', subtopic: 'S', questionPoolIds: ['aq1'] });
+
+  testEngine.startSession({ mode: 'standard', plan: [cId] });
+  assertEqual(testEngine.currentSession.prompted, false, 'A real session should be recorded as unprompted — nothing currently prompts a return');
+  testEngine.submitAnswer({ conceptId: cId, correct: true, responseTimeMs: 4000, selectedOption: 'A', correctOption: 'A', questionId: 'aq1' });
+  testEngine.currentSession.questionsAnswered = 1;
+  testEngine.currentSession.correctCount = 1;
+  await testEngine.endSession();
+
+  // Backdate the one real session so a second, later one lands on a
+  // distinct calendar day (Activation needs two non-consecutive days).
+  testEngine.profile.sessions[0].completedAt -= 24 * 60 * 60 * 1000;
+
+  testEngine.startSession({ mode: 'standard', plan: [cId] });
+  testEngine.submitAnswer({ conceptId: cId, correct: true, responseTimeMs: 4000, selectedOption: 'A', correctOption: 'A', questionId: 'aq1' });
+  testEngine.currentSession.questionsAnswered = 1;
+  testEngine.currentSession.correctCount = 1;
+  await testEngine.endSession();
+
+  const stage = testEngine.journeyStage.compute(testEngine.graph);
+  assertEqual(stage, 'establishment', 'Two distinct real practice days with real concept movement should reach Establishment');
+});
+
 test('Notification orchestrator enforces the single daily standard-tier slot', () => {
   const testEngine = new (engine.constructor)({
     studentId: 'sjee_test_002', name: 'Notif Student',
