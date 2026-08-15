@@ -17,6 +17,7 @@ import { NotificationSettings } from './features/profile/NotificationSettings';
 import { Leaderboard } from './features/profile/Leaderboard';
 import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 import { LearnLesson } from './features/learn/LearnLesson';
+import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { KairoMark } from './components';
 import { getEngine, restoreSession } from './lib/kairoEngine';
@@ -90,6 +91,7 @@ export default function App() {
           <Route path="/profile/notifications" element={<NotificationSettings />} />
           <Route path="/profile/leaderboard" element={<Leaderboard />} />
           <Route path="/challenges/*" element={<ChallengesFlow />} />
+          <Route path="/learn" element={<LearnHome />} />
           <Route path="/learn/:conceptId" element={<LearnLesson />} />
           <Route path="/rapid-fire" element={<RapidFireFlow />} />
 
