@@ -3,6 +3,22 @@
  */
 
 /**
+ * A concept link (Question.conceptsTested[i]) is "primary" when its weight
+ * is the string 'primary' — the shape the Question model was originally
+ * documented with — or a number of 1 or more. Every real question
+ * currently seeded (kairo.questions, 800/800 concept links checked
+ * directly against production) uses the numeric convention, weight: 1.0,
+ * never the string — code that only checked `weight === 'primary'`
+ * (QuestionRelationshipGraph.findPrerequisiteCheck, Question.
+ * getPrimaryConcept, LearnModule._representativeQuestion) silently
+ * treated every real concept link as non-primary. A fractional weight
+ * (e.g. 0.5) reads naturally as a partial/secondary link and is excluded.
+ */
+export function isPrimaryConceptLink(c) {
+  return c.weight === 'primary' || (typeof c.weight === 'number' && c.weight >= 1);
+}
+
+/**
  * Time-safe date comparison. Returns days between two timestamps.
  */
 export function daysBetween(a, b) {

@@ -11,7 +11,7 @@
  */
 
 import { RetentionState, ErrorTag, DecayConstants } from "../utils/constants.js";
-import { isExamProximity } from "../utils/helpers.js";
+import { isExamProximity, isPrimaryConceptLink } from "../utils/helpers.js";
 
 export class LearnModule {
   constructor(kairoEngine) {
@@ -392,7 +392,7 @@ export class LearnModule {
 
   _representativeQuestion(concept) {
     const forConcept = this.engine.questionGraph.getQuestionsForConcept(concept.id);
-    const primary = forConcept.filter(q => q.conceptsTested.some(c => c.conceptId === concept.id && c.weight === 'primary'));
+    const primary = forConcept.filter(q => q.conceptsTested.some(c => c.conceptId === concept.id && isPrimaryConceptLink(c)));
     const pool = primary.length > 0 ? primary : forConcept;
     if (pool.length === 0) return null;
     return pool.slice().sort((a, b) => a.difficultyRating - b.difficultyRating)[0];

@@ -6,6 +6,7 @@
 import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag } from "../src/utils/constants.js";
+import { isPrimaryConceptLink } from "../src/utils/helpers.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -1130,6 +1131,63 @@ await test('KairoEngine.submitAnswer(): resolves the real Question from question
     selectedOption: 'B', correctOption: 'A', questionId: 'tag_q5', questionDifficulty: 2
   });
   assertEqual(result.attempt.errorTag, ErrorTag.MISREAD_QUESTION, "submitAnswer() should classify via the real Question's own tagged distractor data");
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PRIMARY CONCEPT LINK WIRING TESTS (P1)
+// Question.conceptsTested[i].weight === 'primary' was the original design,
+// but every real seeded question uses a numeric weight instead (1.0,
+// always — confirmed directly against all 800 concept links in
+// production). Code that only checked the string silently treated every
+// real concept link as non-primary in QuestionRelationshipGraph.
+// findPrerequisiteCheck(), Question.getPrimaryConcept(), and
+// LearnModule._representativeQuestion().
+// ═══════════════════════════════════════════════════════════════
+
+test('isPrimaryConceptLink(): accepts both the original string convention and the numeric one every real question actually uses', () => {
+  assert(isPrimaryConceptLink({ weight: 'primary' }), "The originally-documented string convention should still count");
+  assert(isPrimaryConceptLink({ weight: 1 }), 'weight: 1 (every real seeded question) should count as primary');
+  assert(isPrimaryConceptLink({ weight: 1.0 }), 'weight: 1.0 (the exact value production data uses) should count as primary');
+  assert(isPrimaryConceptLink({ weight: 2 }), 'A weight above 1 should still read as primary, not just exactly 1');
+  assert(!isPrimaryConceptLink({ weight: 0.5 }), 'A fractional weight should read as partial/secondary, not primary');
+  assert(!isPrimaryConceptLink({ weight: 'secondary' }), "The string 'secondary' should not count as primary");
+  assert(!isPrimaryConceptLink({}), 'No weight at all should not count as primary');
+});
+
+test('Question.getPrimaryConcept() finds a numeric-weight link — the shape every real seeded question actually has', () => {
+  const q = new Question({
+    id: 'primary_q1', subject: 'Biology', topic: 'T', stem: 'S',
+    conceptsTested: [{ conceptId: 'c1', weight: 1 }, { conceptId: 'c2', weight: 0.5 }],
+    options: [{ label: 'A', text: 'A', isCorrect: true }],
+    correctOption: 'A', lifecycleState: 'live'
+  });
+  const primary = q.getPrimaryConcept();
+  assert(primary, 'getPrimaryConcept() should find the numeric-weight link — it returned nothing before this fix');
+  assertEqual(primary.conceptId, 'c1', 'Should find the weight: 1 link, not the weight: 0.5 secondary one');
+});
+
+await test('QuestionRelationshipGraph.findPrerequisiteCheck() finds a prerequisite question tagged with a real, numeric-weight concept link', async () => {
+  const engine = new KairoEngine({ studentId: 'prereq1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  await engine.init();
+  const prereqConceptId = engine.addConcept({ name: 'Mole Concept', subject: 'Chemistry', topic: 'Stoichiometry' });
+
+  const mainQuestion = new Question({
+    id: 'main_q1', subject: 'Chemistry', topic: 'Stoichiometry', stem: 'S',
+    prerequisiteConcepts: [prereqConceptId],
+    options: [{ label: 'A', text: 'A', isCorrect: true }],
+    correctOption: 'A', lifecycleState: 'live'
+  });
+  const prereqQuestion = new Question({
+    id: 'prereq_q1', subject: 'Chemistry', topic: 'Stoichiometry', stem: 'What is a mole?',
+    conceptsTested: [{ conceptId: prereqConceptId, weight: 1 }], // real seeded shape — numeric, not the string 'primary'
+    options: [{ label: 'A', text: 'A', isCorrect: true }],
+    correctOption: 'A', lifecycleState: 'live'
+  });
+  engine.questionGraph.addQuestion(mainQuestion);
+  engine.questionGraph.addQuestion(prereqQuestion);
+
+  const found = engine.questionGraph.findPrerequisiteCheck('main_q1');
+  assert(found.some(q => q.id === 'prereq_q1'), "findPrerequisiteCheck() should find the prerequisite question even though its concept link uses a numeric weight, not the string 'primary'");
 });
 
 // ═══════════════════════════════════════════════════════════════

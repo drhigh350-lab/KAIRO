@@ -4,6 +4,8 @@
  * Every field answers: "What does this question know, and what can it teach the system?"
  */
 
+import { isPrimaryConceptLink } from "../utils/helpers.js";
+
 export class Question {
   constructor({
     // Identity
@@ -16,7 +18,11 @@ export class Question {
     learningObjective,
 
     // 2.2 Concept Attachment
-    conceptsTested = [],        // [{ conceptId, weight: 'primary'|'secondary' }]
+    // weight: 'primary'|'secondary' was the original design, but every real
+    // seeded question uses a numeric weight instead (1.0, always) — see
+    // isPrimaryConceptLink() in utils/helpers.js, which getPrimaryConcept()
+    // below uses and which accepts both.
+    conceptsTested = [],        // [{ conceptId, weight: 'primary'|'secondary'|number }]
     prerequisiteConcepts = [],
 
     // 2.3 Difficulty & Cognitive Load
@@ -85,7 +91,7 @@ export class Question {
    * Get the primary concept this question tests.
    */
   getPrimaryConcept() {
-    return this.conceptsTested.find(c => c.weight === 'primary');
+    return this.conceptsTested.find(isPrimaryConceptLink);
   }
 
   /**
