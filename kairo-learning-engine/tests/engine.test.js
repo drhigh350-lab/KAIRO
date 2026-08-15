@@ -1682,6 +1682,12 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   const engine = new KairoEngine({ studentId: 'sync3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
   await engine.init();
   const cpConceptId = engine.addConcept({ name: 'Custom Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'cp_q1', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId: cpConceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
 
   const customResult = engine.startCustomPractice({ subjects: ['Biology'], count: 5 });
   assertEqual(engine.currentSession.mode, 'custom_practice', 'startCustomPractice() should tag the session mode: custom_practice, not the startSession() default of standard');
@@ -1691,6 +1697,30 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   const topicResult = engine.startTopicPractice('Biology', 'Cells', 'Organelles', 5);
   assertEqual(engine.currentSession.mode, 'topic_practice', 'startTopicPractice() should tag the session mode: topic_practice');
   assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
+});
+
+test('TopicPracticeEngine.buildSubtopicSession fills the session from a concept\'s real question pool, not just one slot per concept', () => {
+  // Regression test for a real bug: a subtopic almost always maps to
+  // exactly one concept in seeded content, but that one concept can have
+  // many real questions (checked directly against production: Biology's
+  // "Evidence for Evolution" has 10). The old queue sliced distinct
+  // concepts to `count`, so every topic-practice session was capped at 1
+  // question — completely defeating a "deep-dive into a single topic"
+  // feature — no matter how many real questions existed for that concept.
+  const conceptId = learnEngine.addConcept({ name: 'Deep Dive Concept', subject: 'Biology', topic: 'Deep Dive Topic', subtopic: 'Deep Dive Subtopic' });
+  for (let i = 0; i < 6; i++) {
+    learnEngine.questionGraph.addQuestion(new Question({
+      id: `deepdive_q${i}`, subject: 'Biology', topic: 'Deep Dive Topic', subtopic: 'Deep Dive Subtopic',
+      conceptsTested: [{ conceptId, weight: 1 }],
+      stem: `S${i}`, options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+      lifecycleState: 'live'
+    }));
+  }
+
+  const session = learnEngine.topicPractice.buildSubtopicSession('Biology', 'Deep Dive Topic', 'Deep Dive Subtopic', 10);
+  assertEqual(session.conceptCount, 1, 'This subtopic should map to exactly one concept, matching the real content pattern this bug came from');
+  assertEqual(session.queue.length, 6, 'The queue should fill to the concept\'s real question pool size (6), not cap at 1 slot per distinct concept');
+  assertEqual(session.queue.filter(id => id === conceptId).length, 6, 'Every queue slot should repeat the same (only) concept, so getQuestionForConcept can draw 6 distinct real questions from its pool via excludeIds');
 });
 
 test('Supabase adapter: kairo.concepts row maps correctly to ConceptNode shape', () => {
