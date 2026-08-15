@@ -62,6 +62,7 @@ export class StudentProfile {
     this.learningStateHistory = []; // { from, to, at }
     this.journeyStage = 'arrival';
     this.journeyStageHistory = []; // { from, to, at }
+    this.notificationOrchestrator = null; // NotificationOrchestrator.toJSON() snapshot
     this.reEngagement = null;      // ReEngagementEngine.toJSON() snapshot
     this.crossModuleMilestones = null; // CrossModuleMilestones.toJSON() snapshot
     this.continuation = null;      // ContinuationEngine.toJSON() snapshot
@@ -260,6 +261,7 @@ export class StudentProfile {
       learningStateHistory: this.learningStateHistory,
       journeyStage: this.journeyStage,
       journeyStageHistory: this.journeyStageHistory,
+      notificationOrchestrator: this.notificationOrchestrator,
       reEngagement: this.reEngagement,
       crossModuleMilestones: this.crossModuleMilestones,
       continuation: this.continuation,

@@ -710,9 +710,32 @@ test('Continuation engine never solicits an outcome', () => {
 // NOTIFICATIONS & COMMUNICATION SYSTEMS
 // ═══════════════════════════════════════════════════════════════
 
-test('Comms service withholds delivery without consent', () => {
+test('Comms service withholds delivery without consent, for a category with no in-app fallback', () => {
+  // Exam-Critical has no ChannelSelector in-app fallback (§4.7 — Push or
+  // SMS only), so it's the real "consent genuinely blocks delivery" case.
   const testEngine = new (engine.constructor)({
     studentId: 'comms_test_001', name: 'NoConsent Student',
+    examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
+    targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
+  });
+  const resolved = testEngine.comms.resolve({
+    category: 'exam_critical', tier: 'time_critical',
+    data: { observation: 'Your mock exam window opens in 10 minutes.', action: 'Open Kairo now.' }
+  });
+  assertEqual(resolved, null, 'No push/SMS permission granted and no in-app fallback for Exam-Critical — should resolve to null, not deliver');
+});
+
+test('Comms service falls back to in-app when no external channel is consented (§13.1)', () => {
+  // Regression: ConsentManager.canSend() used to gate Channel.IN_APP
+  // identically to every external channel, requiring an explicit
+  // categoryPreferences[in_app_badge][category] === true entry that no UI
+  // anywhere ever sets (Notification Settings only lists push/email/
+  // whatsapp/sms) — so ChannelSelector's own "fall back to in-app so the
+  // student still sees it" default silently resolved to null every time,
+  // for every student, contradicting §13.1's "still receives full in-app
+  // content" even with zero external channels granted.
+  const testEngine = new (engine.constructor)({
+    studentId: 'comms_test_001b', name: 'NoExternalConsent Student',
     examDate: Date.now() + 90 * 24 * 60 * 60 * 1000,
     targetSubjects: ['Chemistry'], targetCourse: 'Medicine and Surgery'
   });
@@ -720,7 +743,8 @@ test('Comms service withholds delivery without consent', () => {
     category: 'academic_nudge', tier: 'standard',
     data: { observation: 'Mole Concept is starting to fade.', action: 'Review it now.' }
   });
-  assertEqual(resolved, null, 'No channel permission granted — should resolve to null, not deliver');
+  assert(resolved, 'Should still resolve — in-app is the graceful fallback, never gated behind unreachable per-channel consent');
+  assertEqual(resolved.channel, 'in_app_badge', 'Should fall back to the in-app channel specifically');
 });
 
 test('Comms service resolves a full pipeline with consent granted', () => {
@@ -1911,6 +1935,67 @@ await test('fetchSessions() returns real past sessions oldest-first, and connect
   assertEqual(result.studentId, 'stu_connect_test', 'connectSupabase should hydrate the real remote studentId');
   assertEqual(connectEngine.profile.sessions.length, 2, 'connectSupabase should populate profile.sessions from fetchSessions(), not leave it empty — this was the root cause of Today\'s Progress/EliteScore consistency/Macro State all resetting on every reload');
   assertEqual(connectEngine.profile.sessions[0].sessionId, 's_older', 'restored sessions should be chronologically ordered oldest-first, matching what _averageSessionGap() and other consumers assume');
+});
+
+await test('connectSupabase() rebuilds journeyStage/reEngagement/comms from the remote row instead of silently resetting them', async () => {
+  // Regression: journeyStage/reEngagement/crossModuleMilestones/continuation/
+  // comms/notificationOrchestrator are all constructed once, at engine-
+  // construction time, against a blank profile. connectSupabase() used to
+  // Object.assign the real remote values onto profile.* and then
+  // immediately call _snapshotSjeeState(), which writes each LIVE
+  // instance's still-blank in-memory state back onto profile.* —
+  // overwriting the value that was just fetched. In particular this meant
+  // an explicit "Stop All Notifications" hard-stop silently re-enabled
+  // itself on every sign-in/reload.
+  const studentRow = {
+    id: 'stu_sjee_test', auth_user_id: 'auth_sjee_test', name: 'Chidi', target_subjects: [],
+    total_questions_answered: 0, total_correct: 0, elite_score_history: [], badges: [], completed_challenges: [],
+    macro_state_history: [], response_time_baselines: {}, streak_window_sessions: [], notification_history: [],
+    journey_stage: 'establishment',
+    journey_stage_history: [{ from: 'activation', to: 'establishment', at: Date.now() - 86400000 }],
+    re_engagement: { winBackAttempts: [{ at: Date.now() - 86400000, tier: 'standard', respondedTo: false }], isDormant: false },
+    comms: {
+      consent: {
+        channelPermissions: { push: true, in_app_badge: true, whatsapp: false, email: false, sms: false },
+        categoryPreferences: {}, hardStopActive: true, editorialConsent: false, leaderboardOptIn: false
+      },
+      interactionLog: [], recentSends: []
+    }
+  };
+
+  const mockClient = {
+    auth: { async getUser() { return { data: { user: { id: 'auth_sjee_test' } }, error: null }; } },
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; }, limit() { return builder; },
+            maybeSingle() {
+              if (table === 'students') return Promise.resolve({ data: studentRow, error: null });
+              return Promise.resolve({ data: null, error: null });
+            },
+            then(resolve) { return resolve({ data: [], error: null }); }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const connectEngine = new KairoEngine({ studentId: 'pending', name: '', examDate: null, targetSubjects: [] });
+  await connectEngine.init();
+  await connectEngine.connectSupabase(mockClient, {});
+
+  assertEqual(connectEngine.journeyStage.currentStage, 'establishment', 'journeyStage tracker instance should be rebuilt from the remote row, not left at its constructed default of arrival');
+  assertEqual(connectEngine.comms.consent.hardStopActive, true, 'A saved hard-stop should survive connectSupabase(), not silently re-enable notifications');
+  assertEqual(connectEngine.reEngagement.winBackAttempts.length, 1, 'Real win-back history should survive connectSupabase()');
+
+  // The real failure mode: _snapshotSjeeState() (called internally by
+  // connectSupabase(), and again by every endSession()) must not clobber
+  // what was just restored.
+  connectEngine._snapshotSjeeState();
+  assertEqual(connectEngine.profile.comms.consent.hardStopActive, true, '_snapshotSjeeState() after connect should preserve the hard-stop, not overwrite it with a fresh ConsentManager\'s default false');
+  assertEqual(connectEngine.profile.reEngagement.winBackAttempts.length, 1, '_snapshotSjeeState() after connect should preserve win-back history, not overwrite it with an empty array');
 });
 
 await test('loadContentCatalog() populates engine.graph and engine.questionGraph from Supabase, and getQuestionForConcept() bridges the practice loop to real seeded content', async () => {

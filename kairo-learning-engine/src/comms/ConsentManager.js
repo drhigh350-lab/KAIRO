@@ -103,6 +103,16 @@ export class ConsentManager {
 
     if (this.hardStopActive) return false;
 
+    // §13.1 — in-app content is never gated behind a per-category
+    // preference the way external channels are: it "asks nothing of the
+    // student outside the product" and is never escalated to an
+    // un-opted-in channel. categoryPreferences[IN_APP] has no UI to set
+    // it at all (Notification Settings only lists push/email/whatsapp/
+    // sms), so without this the §10.8 "ambiguous consent defaults to
+    // silence" rule would silently block every in-app notification,
+    // forever, for every student.
+    if (channel === Channel.IN_APP) return true;
+
     if (!this.channelPermissions[channel]) return false;
 
     if (category === NotificationCategory.EDITORIAL_BROADCAST) {

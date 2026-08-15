@@ -256,4 +256,36 @@ export class NotificationOrchestrator {
     }
     return 'push'; // standard tier default
   }
+
+  /**
+   * Persist the frequency budget, suppression learning, and dismissal/
+   * delivery history — this class had no toJSON()/fromJSON() at all, so
+   * every one of these silently reset to empty on every reload. That
+   * broke §5.6's "at most one Standard push per day, one Low per 3-day
+   * window" the moment a student refreshed mid-day (the budget forgot
+   * anything had been sent), and §5.8's per-type suppression learning
+   * never survived past the current tab. `candidates` (still-pending,
+   * unarbitrated submissions) is deliberately NOT persisted — those are
+   * regenerated fresh from live state on the next check, not a queue
+   * that should survive a reload stale.
+   */
+  toJSON() {
+    return {
+      deliveryLog: this.deliveryLog,
+      dismissalLog: this.dismissalLog,
+      typeSuppressionScores: this.typeSuppressionScores,
+      hardOptOut: this.hardOptOut
+    };
+  }
+
+  static fromJSON(profile, data) {
+    const orchestrator = new NotificationOrchestrator(profile);
+    if (data) {
+      orchestrator.deliveryLog = data.deliveryLog || [];
+      orchestrator.dismissalLog = data.dismissalLog || [];
+      orchestrator.typeSuppressionScores = data.typeSuppressionScores || {};
+      orchestrator.hardOptOut = data.hardOptOut || false;
+    }
+    return orchestrator;
+  }
 }
