@@ -21,7 +21,7 @@ export class Question {
 
     // 2.3 Difficulty & Cognitive Load
     difficultyRating = 1,       // 1–5, calibrated empirically
-    cognitiveLevel = 'recall',  // recall | application | analysis | synthesis
+    cognitiveLevel = 'recall',  // recall | comprehension | application | analysis | synthesis
     estimatedSolvingTimeSec = 30,
     readingLoad = 'low',        // low | medium | high
     calculationLoad = 'none',   // none | light | moderate | heavy

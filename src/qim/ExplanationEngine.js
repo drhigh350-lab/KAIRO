@@ -131,6 +131,7 @@ export class ExplanationEngine {
       'moderate': 'Check your units before calculating. Many correct methods fail at the unit-conversion step.',
       'heavy': 'Break the calculation into steps. Write down each intermediate value — one early error compounds.',
       'recall': 'This is a fact-check question. If you do not know it immediately, eliminate obviously wrong options first.',
+      'comprehension': 'This tests whether you understand the concept, not just recall it. Explain the idea in your own words before picking an option.',
       'application': 'Identify the concept being tested before calculating. The numbers matter less than knowing which formula applies.',
       'analysis': 'Look for what the question is asking vs. what it seems to ask. The distractors often answer a different question.',
       'synthesis': 'Map out all given information first. Synthesis questions require you to connect multiple pieces before solving.'

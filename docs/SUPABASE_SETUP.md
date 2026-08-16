@@ -636,6 +636,77 @@ Kai's voice, not a transactional receipt).
   building a UI moment that asks a student for email permission is a
   product/onboarding decision, not something to invent here.
 
+## 5j. Eleventh pass — `cognitive_level` constraint fix + a repeatable Python generation pipeline for the JAMB archive
+
+Investigating how to seed 25 years of JAMB past questions efficiently
+surfaced a real, live data-quality gap and a missing piece of tooling.
+
+**Found: `kairo.questions_cognitive_level_check` didn't allow
+`'comprehension'`** — only `recall | application | analysis | synthesis`.
+The QIM content-processing voice (the TECHMED tutor prompt used to turn raw
+past questions into QIM JSON) has always used a three-way
+`recall | comprehension | application` split, so every `comprehension`
+question hitting this constraint would either fail the insert outright or
+get silently remapped to something else on the way in. Confirmed the
+latter happened: a `jamb_past_question`-sourced row for "It is difficult to
+achieve an orderly arrangement of the molecules of a gas..." — a
+textbook comprehension question — is stored live with
+`cognitive_level: 'application'`. Fixed via migration
+`allow_comprehension_cognitive_level` (drop + re-add the check constraint
+with `comprehension` added to the allowed list — purely additive, no
+existing rows violate it). `src/qim/Question.js`'s doc-comment and
+`ExplanationEngine.js`'s `_generateExamTip()` tips map (previously had no
+`'comprehension'` entry, so it would have silently returned no exam tip for
+any question with that level) were updated to match.
+
+**Found: 360 `jamb_past_question` Chemistry rows (1983, 2000–2010) are
+already live, seeded outside `scripts/seed-content-catalog.js`.** Their
+`concepts_tested` is shaped `{conceptId, weight: 1}` (a number) instead of
+the canonical `{conceptId, weight: 'primary'}` (the string enum
+`Question.js`/`seed-content-catalog.js` use everywhere else), and their
+`learning_objective` uses a thinner template ("Answer a real JAMB {year}
+question on {topic}.") instead of the established "Understand {topic} well
+enough to apply it, not just recall it." used by the other 830 questions.
+Concept ids on these rows don't match the deterministic `conceptId()` hash
+the rest of the catalog relies on, so they're likely disconnected from the
+real concept graph. **Flagged, not backfilled** — going forward, new
+content should not repeat this drift; correcting the existing 360 rows is
+a separate decision, not made in this pass.
+
+**Added `scripts/qim/generate_qim_batch.py`** — closes the actual gap this
+investigation started from: turning 25 years of raw JAMB/UTME question data
+into QIM JSON without the token cost of doing it turn-by-turn in a chat
+session (every chat turn re-sends the entire growing conversation as input
+tokens). Calls the Claude Batches API directly instead: one batch job per
+run, one stateless request per chunk of raw questions, the tutor system
+prompt `cache_control`'d so it's billed once per cache window rather than
+in full on every chunk, and structured output forced via `tool_choice` so
+there's no free-text JSON to parse or retry. `id`/`learningObjective`/
+`source`/`lifecycleState` are computed in Python from the raw source data,
+not asked of the model, so every output token the model spends is
+pedagogical content rather than boilerplate keys — and `learningObjective`
+uses the same canonical template as the rest of the catalog, closing the
+drift found above for anything generated through this path. Deliberately
+does **not** reimplement the Supabase upload side: output is written in the
+exact shape `scripts/import-question-bank.js` already produces, so the
+existing, already-correct `scripts/seed-content-catalog.js` consumes it
+unchanged (dry-run by default, real `conceptId()` hash, real
+`QuestionLifecycle.validate()` QA gates via `--promote-live`) — a second,
+parallel Python upload path would only risk drifting from that logic the
+same way the 360-row seed already has.
+
+Verified structurally (no live API calls, since that needs a real
+`ANTHROPIC_API_KEY` this session doesn't have): chunking, request building
+(confirmed `tool_choice`/`cache_control` shape), id generation, and
+result-processing were exercised against a fake client built from the
+actual installed `anthropic` SDK's batch response field names (checked
+directly against `anthropic/types/messages/*.py`, not assumed) — see the
+inline test used during development. The generated output was then run
+through the **real** `scripts/seed-content-catalog.js` in its default
+dry-run mode (no `--apply`, nothing written to Supabase) and correctly
+produced `Would upsert 1 concepts and 1 questions`, confirming the two
+scripts' shapes actually match end-to-end, not just on paper.
+
 ## 6. What is still NOT done
 
 - ~~The onboarding subject picker offers 8 subjects but only 4 have
