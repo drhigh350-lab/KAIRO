@@ -1,6 +1,7 @@
 import { KairoEngine, SupabaseSyncAdapter, CBTExamMode } from 'kairo-learning-engine';
 import { getSupabase } from './supabaseClient';
-import type { EngineFlatQuestion } from './engineAdapter';
+import { selectedOptionLabel, type EngineFlatQuestion } from './engineAdapter';
+import type { PracticeExplanation } from '../features/practice/PracticeQuestion';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Engine = any;
@@ -965,7 +966,30 @@ export function submitOnboardingProfile(course: string, examDateISO: string, sub
   return { title: introStep?.title, body: introStep?.body };
 }
 
-/** A real 5-question diagnostic spread across the student's seeded subjects, sourced the same way as every other real practice question. */
+function shuffled<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const DIAGNOSTIC_ANCHOR_SUBJECT = 'Use of English';
+
+/**
+ * A strict, JAMB-shaped 5-question diagnostic: English opens and closes it
+ * (from two distinct topics where the content allows), with one question
+ * from each of up to three elective subjects filling the middle — [English,
+ * elective 1, elective 2, elective 3, English]. Previously this pooled every
+ * concept across every selected subject and shuffled the whole thing flat,
+ * so the same subject could appear 3+ times in a row and English could be
+ * entirely absent from a 5-question "read + math" check-in.
+ *
+ * Every question is sourced the same way as real Practice questions
+ * (getQuestionForConcept) — a slot with nothing real to offer is simply
+ * skipped and backfilled from the remaining pool, never a placeholder.
+ */
 export async function getDiagnosticQuestions(subjects: string[], count = 5): Promise<Engine[]> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
@@ -974,26 +998,44 @@ export async function getDiagnosticQuestions(subjects: string[], count = 5): Pro
   const seeded = normalized.filter((s) => SEEDED_SUBJECTS.includes(s));
   const pool = seeded.length ? seeded : SEEDED_SUBJECTS;
 
-  const concepts: Engine[] = [];
-  for (const subject of pool) {
-    concepts.push(...kairo.getAllConcepts({ subject }));
-  }
-  for (let i = concepts.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [concepts[i], concepts[j]] = [concepts[j], concepts[i]];
+  const seenIds: string[] = [];
+  function pickFrom(concepts: Engine[]): Engine | null {
+    for (const concept of concepts) {
+      const q = kairo.getQuestionForConcept(concept.id, { excludeIds: seenIds });
+      if (q) return q;
+    }
+    return null;
   }
 
-  const questions: Engine[] = [];
-  const seenIds: string[] = [];
-  for (const concept of concepts) {
-    if (questions.length >= count) break;
-    const q = kairo.getQuestionForConcept(concept.id, { excludeIds: seenIds });
-    if (q) {
-      questions.push(q);
-      seenIds.push(q.id);
+  const englishConcepts: Engine[] = shuffled(kairo.getAllConcepts({ subject: DIAGNOSTIC_ANCHOR_SUBJECT }));
+  const electives = pool.filter((s) => s !== DIAGNOSTIC_ANCHOR_SUBJECT).slice(0, 3);
+
+  const queue: Engine[] = [];
+
+  const first = pickFrom(englishConcepts);
+  if (first) { queue.push(first); seenIds.push(first.id); }
+
+  for (const subject of electives) {
+    const q = pickFrom(shuffled(kairo.getAllConcepts({ subject })));
+    if (q) { queue.push(q); seenIds.push(q.id); }
+  }
+
+  const firstTopic = first ? englishConcepts.find((c) => c.id === first.conceptId)?.topic : null;
+  const secondEnglishPool = firstTopic ? englishConcepts.filter((c) => c.topic !== firstTopic) : englishConcepts;
+  const second = pickFrom(secondEnglishPool.length ? secondEnglishPool : englishConcepts);
+  if (second) { queue.push(second); seenIds.push(second.id); }
+
+  // Sparse content in any slot above — backfill from the full pool rather
+  // than shipping fewer than `count` real questions.
+  if (queue.length < count) {
+    for (const subject of pool) {
+      if (queue.length >= count) break;
+      const q = pickFrom(shuffled(kairo.getAllConcepts({ subject })));
+      if (q) { queue.push(q); seenIds.push(q.id); }
     }
   }
-  return questions;
+
+  return queue.slice(0, count);
 }
 
 export interface DiagnosticAnswer {
@@ -1011,18 +1053,61 @@ export interface OnboardingCompleteResult {
   profile: Engine;
 }
 
+export interface DiagnosticSubmitResult {
+  explanation: PracticeExplanation | null;
+  kaiNote: string | null;
+}
+
 /**
- * Submits the diagnostic results, walks the remaining message-only steps
- * ('results', 'first_session') to reach 'complete', then builds the
- * student's real initial plan — seeds the local content catalog, feeds the
- * diagnostic answers into the knowledge graph, sets profile fields
- * (name/targetCourse/examDate/targetSubjects), and generates the first
- * real adaptive session. Persists immediately, same as AccountReady's old
- * onStart used to for these same profile fields.
+ * Records a real diagnostic attempt the moment it's answered — the same
+ * submitAnswer() call Practice makes live, so the same rich per-distractor
+ * explanation/misconception breakdown Practice renders (PracticeQuestion's
+ * "Why each option is wrong" section) is available during the diagnostic
+ * too. Previously the diagnostic only ever called submitAnswer() in bulk,
+ * after the whole quiz finished (see OnboardingEngine.buildInitialPlan()),
+ * so DiagnosticQuiz had no real explanation data to show per question and
+ * fell back to the question's own placeholder-ish `why` text instead.
+ */
+export function submitDiagnosticAnswer(q: EngineFlatQuestion, selectedIndex: number | null, correct: boolean, responseTimeMs: number): DiagnosticSubmitResult {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const { kaiResponse, explanation } = kairo.submitAnswer({
+    conceptId: q.conceptId ?? null,
+    correct,
+    responseTimeMs,
+    selectedOption: selectedOptionLabel(q, selectedIndex),
+    correctOption: q.correctOption,
+    questionId: q.id,
+    questionDifficulty: q.difficulty,
+  });
+  return { explanation: explanation ?? null, kaiNote: kaiResponse?.text ?? null };
+}
+
+/**
+ * Submits the diagnostic results, walks the remaining steps to 'complete',
+ * then builds the student's real initial plan — seeds the local content
+ * catalog, feeds the diagnostic answers into the knowledge graph, sets
+ * profile fields (name/targetCourse/examDate/targetSubjects), and generates
+ * the first real adaptive session. Persists immediately, same as
+ * AccountReady's old onStart used to for these same profile fields.
+ *
+ * The engine's own step machine is still sitting on 'diagnostic_intro' at
+ * this point — DiagnosticIntro.tsx/DiagnosticQuiz.tsx render the quiz
+ * without ever calling submitOnboardingStep() themselves, so a `null` has
+ * to advance past 'diagnostic_intro' first before `results` can land on
+ * the actual 'diagnostic' step. This used to submit `results` one step too
+ * early (landing on 'diagnostic_intro', which has no field and isn't
+ * 'diagnostic', so the real answers were silently discarded and
+ * this.data.diagnosticResults stayed at its default `[]`) — the exact
+ * cause of DiagnosticResults always showing "0/0" and "0%" regardless of
+ * how the student actually did. It also meant the step machine never
+ * reached 'complete' (stopped one step short at 'first_session'), so
+ * OnboardingEngine.isComplete() could never return true either.
  */
 export async function completeOnboardingFlow(results: DiagnosticAnswer[]): Promise<OnboardingCompleteResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
+  kairo.submitOnboardingStep(null); // -> 'diagnostic'
   kairo.submitOnboardingStep(results); // -> 'results'
   kairo.submitOnboardingStep(null); // -> 'first_session'
   kairo.submitOnboardingStep(null); // -> complete

@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { PracticeQuestion } from '../practice/PracticeQuestion';
+import { useRef, useState } from 'react';
+import { PracticeQuestion, type PracticeExplanation } from '../practice/PracticeQuestion';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
-import type { DiagnosticAnswer } from '../../lib/kairoEngine';
+import { submitDiagnosticAnswer, type DiagnosticAnswer } from '../../lib/kairoEngine';
 
 export interface DiagnosticQuizProps {
   questions: EngineFlatQuestion[];
@@ -12,7 +12,9 @@ export interface DiagnosticQuizProps {
 /** The real 5-question diagnostic, reusing the same PracticeQuestion UI every other real session already uses. */
 export function DiagnosticQuiz({ questions, onComplete, onExit }: DiagnosticQuizProps) {
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<DiagnosticAnswer[]>([]);
+  const [explanation, setExplanation] = useState<PracticeExplanation | null>(null);
+  const [kaiNote, setKaiNote] = useState<string | null>(null);
+  const answers = useRef<DiagnosticAnswer[]>([]);
 
   const q = questions[index];
   return (
@@ -21,20 +23,35 @@ export function DiagnosticQuiz({ questions, onComplete, onExit }: DiagnosticQuiz
       question={toUiQuestion(q)}
       index={index}
       total={questions.length}
+      explanation={explanation}
+      kaiNote={kaiNote}
       onExit={onExit}
-      onNext={({ correct, selectedIndex, responseTimeMs }) => {
-        const next = [...answers, {
+      onAnswered={({ correct, selectedIndex, responseTimeMs }) => {
+        // Records the real attempt the moment it's answered (mirroring
+        // Practice's own submitAnswer() call) — the same rich
+        // per-distractor "why each option is wrong" breakdown Practice
+        // renders now shows here too, instead of a flat, placeholder-ish
+        // `why` line. Previously every diagnostic answer was only
+        // recorded in bulk after the whole quiz finished, so there was
+        // no real explanation data to show per question.
+        const result = submitDiagnosticAnswer(q, selectedIndex, correct, responseTimeMs);
+        setExplanation(result.explanation);
+        setKaiNote(result.kaiNote);
+        answers.current.push({
           conceptId: q.conceptId ?? null,
           correct,
           responseTimeMs,
           selectedOption: selectedOptionLabel(q, selectedIndex),
           correctOption: q.correctOption,
           questionId: q.id,
-        }];
+        });
+      }}
+      onNext={() => {
         if (index + 1 >= questions.length) {
-          onComplete(next);
+          onComplete(answers.current);
         } else {
-          setAnswers(next);
+          setExplanation(null);
+          setKaiNote(null);
           setIndex(index + 1);
         }
       }}

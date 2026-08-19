@@ -143,24 +143,17 @@ export class OnboardingEngine {
    * concepts here rather than fabricating placeholder ones.
    */
   async buildInitialPlan() {
-    const { subjects, targetCourse, examDate, diagnosticResults } = this.data;
+    const { subjects, targetCourse, examDate } = this.data;
 
     const { conceptsLoaded } = await this.engine.loadContentCatalog({ subjects });
 
-    // Process diagnostic results into the knowledge graph
-    for (const result of diagnosticResults || []) {
-      if (result.conceptId) {
-        this.engine.submitAnswer({
-          conceptId: result.conceptId,
-          correct: result.correct,
-          responseTimeMs: result.responseTimeMs || 15000,
-          selectedOption: result.selectedOption,
-          correctOption: result.correctOption,
-          questionId: result.questionId,
-          questionDifficulty: 1
-        });
-      }
-    }
+    // Diagnostic answers are recorded live, one submitAnswer() call per
+    // question as the student actually answers it (see the app's
+    // submitDiagnosticAnswer()) — this used to also replay every answer
+    // here in bulk, which double-recorded each attempt (once live, once
+    // again here) and skewed the very first retention-state/confidence
+    // numbers a student's knowledge map ever gets. this.data.diagnosticResults
+    // is still read directly by _summarizeDiagnostic() below for its tally.
 
     // Set profile data
     this.engine.profile.name = this.data.name;
