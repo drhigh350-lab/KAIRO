@@ -161,6 +161,13 @@ export class OnboardingEngine {
     this.engine.profile.targetUniversity = this.data.targetUniversity;
     this.engine.profile.examDate = examDate ? new Date(examDate).getTime() : null;
     this.engine.profile.targetSubjects = subjects || [];
+    // The one durable "has this student actually taken the diagnostic"
+    // signal — set only here, at the genuine end of the flow, so it stays
+    // false even if profile fields above get saved early (e.g. right
+    // after the "About You" step, before the diagnostic runs) elsewhere
+    // in the flow. A route guard checks this, not targetSubjects, so
+    // dashboard access stays blocked until the diagnostic is really done.
+    this.engine.profile.diagnosticCompleted = true;
 
     // Generate personalized first session
     const plan = this.engine.startSession();

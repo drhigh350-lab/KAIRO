@@ -13,19 +13,24 @@ export function getEngine(): Engine | null {
 }
 
 /**
- * Whether the signed-in student has actually finished onboarding —
- * `targetSubjects` is only ever written once, by
- * OnboardingEngine.buildInitialPlan() at the very end of the real
- * onboarding flow (see kairo-learning-engine/src/onboarding/
- * OnboardingEngine.js), so a non-empty array here is a reliable signal
- * without needing a dedicated flag/column. Used by route guards to tell
- * "authenticated but never finished onboarding" apart from "authenticated
- * and ready for the main app" — those previously looked identical to
- * every screen (both have a non-null engine), so an abandoned onboarding
- * silently landed on a blank Home instead of being routed back.
+ * Whether the signed-in student has actually taken the real diagnostic —
+ * `profile.diagnosticCompleted` is set exactly once, by
+ * OnboardingEngine.buildInitialPlan() at the genuine end of onboarding
+ * (see kairo-learning-engine/src/onboarding/OnboardingEngine.js), and
+ * persists to kairo.students.diagnostic_completed so this holds even
+ * after a cache clear / new device. Deliberately not `targetSubjects.
+ * length > 0` — those profile fields are now saved as soon as the "About
+ * You" step is submitted (savePartialOnboardingProgress(), below), well
+ * before the diagnostic runs, so that signal alone would let a student
+ * skip straight to /home without ever taking it. Used by route guards to
+ * tell "authenticated but never finished onboarding" apart from
+ * "authenticated and ready for the main app" — those previously looked
+ * identical to every screen (both have a non-null engine), so an
+ * abandoned onboarding silently landed on a blank Home instead of being
+ * routed back.
  */
 export function isOnboarded(): boolean {
-  return (engine?.profile?.targetSubjects?.length ?? 0) > 0;
+  return engine?.profile?.diagnosticCompleted === true;
 }
 
 function createEngine(name: string): Engine {
@@ -963,6 +968,23 @@ export function submitOnboardingProfile(course: string, examDateISO: string, sub
   kairo.submitOnboardingStep(course); // -> 'exam_date'
   kairo.submitOnboardingStep(examDateISO); // -> 'subjects'
   const introStep = kairo.submitOnboardingStep(subjects); // -> 'diagnostic_intro'
+
+  // Save real progress to the account immediately, rather than waiting for
+  // the whole flow (including the diagnostic) to finish — previously name/
+  // course/exam date/subjects were only ever written to profile inside
+  // buildInitialPlan(), so a student who created a real account but closed
+  // the app before finishing the diagnostic lost everything they'd already
+  // entered and had to start over. Fire-and-forget (never blocks the
+  // "Continue" button on a network round trip) — profile.diagnosticCompleted
+  // stays false until buildInitialPlan() genuinely runs, so this alone
+  // can't let a student skip the diagnostic (see isOnboarded() above).
+  kairo.profile.name = kairo.onboarding.data.name || kairo.profile.name;
+  kairo.profile.targetCourse = course;
+  kairo.profile.examDate = examDateISO ? new Date(examDateISO).getTime() : null;
+  kairo.profile.targetSubjects = subjects;
+  kairo.store.saveProfile(kairo.profile).catch(() => {});
+  kairo.sync.sync().catch(() => {});
+
   return { title: introStep?.title, body: introStep?.body };
 }
 

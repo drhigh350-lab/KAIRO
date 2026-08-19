@@ -14,6 +14,7 @@ export class StudentProfile {
     targetSubjects = [],
     targetCourse = null,
     authUserId = null,
+    diagnosticCompleted = false,  // true only once OnboardingEngine.buildInitialPlan() has genuinely run — the one durable signal a route guard can check for "has this student actually taken the diagnostic," independent of whether individual profile fields (name/targetCourse/targetSubjects) were saved early
 
     // ─── Student Intelligence Model §1 — Identity (declared, not inferred) ───
     dateOfBirth = null,           // used to derive age-appropriate tone; DOB itself never surfaced
@@ -40,6 +41,7 @@ export class StudentProfile {
     this.targetSubjects = targetSubjects;
     this.targetCourse = targetCourse;
     this.authUserId = authUserId;
+    this.diagnosticCompleted = diagnosticCompleted;
 
     this.dateOfBirth = dateOfBirth;
     this.examType = examType;
@@ -242,6 +244,7 @@ export class StudentProfile {
       examDate: this.examDate,
       targetSubjects: this.targetSubjects,
       targetCourse: this.targetCourse,
+      diagnosticCompleted: this.diagnosticCompleted,
       dateOfBirth: this.dateOfBirth,
       examType: this.examType,
       examYear: this.examYear,
