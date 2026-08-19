@@ -11,6 +11,22 @@ export function getEngine(): Engine | null {
   return engine;
 }
 
+/**
+ * Whether the signed-in student has actually finished onboarding —
+ * `targetSubjects` is only ever written once, by
+ * OnboardingEngine.buildInitialPlan() at the very end of the real
+ * onboarding flow (see kairo-learning-engine/src/onboarding/
+ * OnboardingEngine.js), so a non-empty array here is a reliable signal
+ * without needing a dedicated flag/column. Used by route guards to tell
+ * "authenticated but never finished onboarding" apart from "authenticated
+ * and ready for the main app" — those previously looked identical to
+ * every screen (both have a non-null engine), so an abandoned onboarding
+ * silently landed on a blank Home instead of being routed back.
+ */
+export function isOnboarded(): boolean {
+  return (engine?.profile?.targetSubjects?.length ?? 0) > 0;
+}
+
 function createEngine(name: string): Engine {
   engine = new KairoEngine({
     studentId: 'pending',

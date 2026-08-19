@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
@@ -21,17 +21,17 @@ import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoMark } from './components';
-import { getEngine, restoreSession } from './lib/kairoEngine';
+import { getEngine, isOnboarded, restoreSession } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
-// (or connectGoogleAccount()) themselves before deciding where to go — this
-// list is every *other* route, which previously never restored a session at
-// all. The in-memory `engine` singleton in kairoEngine.ts is wiped on every
-// real page reload, so a student who refreshed (or opened a bookmark/PWA
-// shortcut) straight into /home, /profile, /review, etc. saw a genuinely
-// empty, "signed out"-looking screen even though their Supabase auth
-// session was still sitting in localStorage the whole time — this is what
-// read as "my progress reset" / "I have to sign in again" on every refresh.
+// themselves before deciding where to go — this list is every *other*
+// route, which previously never restored a session at all. The in-memory
+// `engine` singleton in kairoEngine.ts is wiped on every real page reload,
+// so a student who refreshed (or opened a bookmark/PWA shortcut) straight
+// into /home, /profile, /review, etc. saw a genuinely empty, "signed
+// out"-looking screen even though their Supabase auth session was still
+// sitting in localStorage the whole time — this is what read as "my
+// progress reset" / "I have to sign in again" on every refresh.
 const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/insights', '/profile', '/challenges', '/learn', '/rapid-fire'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
@@ -67,6 +67,24 @@ function BootScreen() {
   );
 }
 
+/**
+ * Guards every route that assumes a signed-in, fully onboarded student —
+ * by the time this renders, useBootRestore() above has already attempted
+ * restoreSession() for the current path, so this only needs to read the
+ * resulting state, never re-run the restore itself. Previously every
+ * route below rendered unconditionally: a signed-out visitor hitting
+ * /home directly saw a real (blank) dashboard instead of a boundary, and
+ * a signed-in student who never finished onboarding (no targetSubjects
+ * set yet) landed on the same blank Home rather than being sent back to
+ * pick up onboarding where they left off.
+ */
+function RequireOnboarded() {
+  if (!getEngine() || !isOnboarded()) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <Outlet />;
+}
+
 export default function App() {
   const ready = useBootRestore();
 
@@ -79,23 +97,25 @@ export default function App() {
           <Route path="/onboarding/google" element={<GoogleAuthCallback />} />
           <Route path="/onboarding/*" element={<OnboardingFlow />} />
 
-          <Route element={<AppTabs />}>
-            <Route path="/home" element={<HomeDashboard />} />
-            <Route path="/review" element={<Review />} />
-            <Route path="/insights" element={<Insights />} />
-          </Route>
+          <Route element={<RequireOnboarded />}>
+            <Route element={<AppTabs />}>
+              <Route path="/home" element={<HomeDashboard />} />
+              <Route path="/review" element={<Review />} />
+              <Route path="/insights" element={<Insights />} />
+            </Route>
 
-          <Route path="/practice/*" element={<PracticeFlow />} />
-          <Route path="/cbt/*" element={<CbtFlow />} />
-          <Route path="/review/session" element={<ReviewSession />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/edit" element={<EditProfile />} />
-          <Route path="/profile/notifications" element={<NotificationSettings />} />
-          <Route path="/profile/leaderboard" element={<Leaderboard />} />
-          <Route path="/challenges/*" element={<ChallengesFlow />} />
-          <Route path="/learn" element={<LearnHome />} />
-          <Route path="/learn/:conceptId" element={<LearnLesson />} />
-          <Route path="/rapid-fire" element={<RapidFireFlow />} />
+            <Route path="/practice/*" element={<PracticeFlow />} />
+            <Route path="/cbt/*" element={<CbtFlow />} />
+            <Route path="/review/session" element={<ReviewSession />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/edit" element={<EditProfile />} />
+            <Route path="/profile/notifications" element={<NotificationSettings />} />
+            <Route path="/profile/leaderboard" element={<Leaderboard />} />
+            <Route path="/challenges/*" element={<ChallengesFlow />} />
+            <Route path="/learn" element={<LearnHome />} />
+            <Route path="/learn/:conceptId" element={<LearnLesson />} />
+            <Route path="/rapid-fire" element={<RapidFireFlow />} />
+          </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

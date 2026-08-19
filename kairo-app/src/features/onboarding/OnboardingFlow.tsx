@@ -13,6 +13,7 @@ import { EnableNotifications } from './EnableNotifications';
 import type { OnboardingData } from './data';
 import {
   getEngine, beginOnboarding, submitOnboardingProfile, getDiagnosticQuestions, completeOnboardingFlow,
+  restoreSession, isOnboarded,
   type OnboardingKaiStep, type DiagnosticAnswer,
 } from '../../lib/kairoEngine';
 import type { EngineFlatQuestion } from '../../lib/engineAdapter';
@@ -38,11 +39,35 @@ export function OnboardingFlow() {
   const [diagnosticQuestions, setDiagnosticQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [diagnosticSummary, setDiagnosticSummary] = useState<{ total: number; correct: number; accuracy: number; message: string } | null>(null);
   const startedGoogleOnboarding = useRef(false);
+  // Landing here with a googleName means GoogleAuthCallback already
+  // decided this is a genuinely new student — nothing to restore/recheck.
+  // Any other arrival (a stale bookmark, back-navigation, or a direct
+  // link to /onboarding) might belong to an already signed-in, already
+  // onboarded student, so that has to be ruled out before showing the
+  // intro carousel again.
+  const [checkingExisting, setCheckingExisting] = useState(!googleName);
 
   useEffect(() => {
     if (!googleName || startedGoogleOnboarding.current) return;
     startedGoogleOnboarding.current = true;
     beginOnboarding(googleName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (googleName) return;
+    let cancelled = false;
+    restoreSession().catch(() => false).then((restored) => {
+      if (cancelled) return;
+      if (restored && isOnboarded()) {
+        navigate('/home', { replace: true });
+        return;
+      }
+      setCheckingExisting(false);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -62,6 +87,10 @@ export function OnboardingFlow() {
 
   const total = SEQ.length;
   const stepIndex = SEQ.indexOf(screen) + 1;
+
+  if (checkingExisting) {
+    return <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }} />;
+  }
 
   let body: ReactNode = null;
   if (screen === 'intro') {
