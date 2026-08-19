@@ -405,6 +405,26 @@ were genuinely wrong:
   their compounds` — cement is an industrial material, not a metal
   compound; moved to `Chemistry and Industry`.
 
+### Follow-up — the topic realignment missed `kairo.concepts` entirely
+
+§5a fixed `kairo.questions.topic` but never touched `kairo.concepts.topic`
+— and the live app's topic picker (`kairo-app` `TopicSelect.tsx` ->
+`getRealTopics()`) reads from the engine's in-memory `ConceptNode` graph,
+populated from `kairo.concepts` via `loadContentCatalog()`, not from
+`kairo.questions` directly. So the site kept showing all 79
+pre-realignment topic strings for Chemistry even after the questions table
+was clean and even after a hard cache clear (correctly so — it was never
+a caching bug). Migration `align_chemistry_concepts_topic_to_syllabus`
+applies the identical remap to `kairo.concepts.topic` (79 → 18 distinct
+values, verified) and adds the matching
+`concepts_chemistry_topic_syllabus_check` constraint.
+`kairo.concepts.id` is untouched — it's the join target for
+`questions.concepts_tested[].conceptId` and a few FKs, and only the
+display-level topic string needed to change, not the row identity, so no
+relinking was necessary. This is a pure data fix with no `kairo-app` code
+change, so it doesn't need a new deploy — a fresh page load (post-cache-
+clear or not) picks it up directly from Supabase.
+
 ## 6. What is still NOT done
 
 - **Anti-cheat / write validation on `kairo.attempts` and
