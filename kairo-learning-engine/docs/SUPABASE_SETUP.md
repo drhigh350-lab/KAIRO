@@ -281,6 +281,104 @@ session. This pass closed that end to end:
   content yet simply seeds 0 concepts rather than fabricating
   placeholders. `completeOnboarding()` is now `async` to match.
 
+## 5a. Chemistry topic/cognitive-level cleanup, and a repeatable Python generation path
+
+A separate branch (`claude/jamb-utme-qim-processing-iw2t9h`) had been doing
+JAMB Chemistry content work in isolation, unaware this repo had already
+been restructured into this monorepo (`kairo-app` + `kairo-learning-engine`)
+with its own active, migration-file-based seeding pipeline (see the `Seed
+JAMB ...`/`Seed real Chemistry content ...` commits, #23-#28). That
+isolation produced two real, live drifts against the actual `kairo`
+project (TechMed-Daily, `unbgborbhxzsotaieiun`) this pass reconciled:
+
+- **`cognitive_level` taxonomy conflict.** That branch's tutor prompt used
+  a three-way `recall | comprehension | application` split and, finding
+  the live `questions_cognitive_level_check` constraint didn't allow
+  `comprehension`, added a migration to allow it — the opposite of this
+  codebase's actual direction, where `Question.js`/`ExplanationEngine.js`
+  had already settled on `recall | application | analysis | synthesis`
+  with no `comprehension` branch. Resolved in favor of this codebase's
+  version: the 211 rows (across subjects) that had been written with
+  `cognitive_level = 'comprehension'` were remapped to `'application'`
+  directly against the live table, and the constraint was reverted to its
+  original `recall | application | analysis | synthesis` list — net
+  change against this repo's own migration history is zero, so no new
+  migration file was needed for this part.
+- **Chemistry `topic` drift from the JAMB syllabus.** Chemistry had
+  accumulated 84 distinct `topic` strings — spelling variants of the same
+  topic, plus genuinely off-syllabus buckets (`"Electrochemistry"`,
+  `"Nuclear Chemistry"`, `"Qualitative Analysis"`) — instead of the JAMB
+  syllabus's 18 official major topics. Migration
+  `align_chemistry_topics_to_jamb_syllabus` remaps every Chemistry row's
+  `topic` to strictly one of those 18 (the old, more specific value moves
+  to `subtopic` wherever `subtopic` was empty — real subtopic content is
+  never overwritten) and adds
+  `questions_chemistry_topic_syllabus_check`, a DB-level guarantee that a
+  future write — from this repo's scripts or any other pipeline — can't
+  reintroduce an off-syllabus Chemistry topic. Verified: 1,268 Chemistry
+  rows now use exactly the 18 syllabus topics, 0 remaining.
+  **Known limitation:** this fixes wrong-*bucket* drift, not
+  content-level misclassification that predates it (e.g. a
+  percentage-composition/molar-mass question was tagged `"Organic
+  Chemistry"` in the source content itself — the remap correctly turned
+  that into `"Organic Compounds"`, the right bucket for that wrong tag,
+  but the question is really stoichiometry). Catching that class of error
+  needs a per-question content audit, not a topic-string remap.
+- **56 duplicate Chemistry questions** (same stem, two ids) from an
+  earlier `--apply` run whose id-generation script generated random ids
+  for questions that already existed under this repo's own seeded ids —
+  cleaned up directly against the live table (not a migration file: it
+  targeted specific ids from an untracked prior run a fresh environment
+  wouldn't have). Verified zero `kairo.attempts`/`bookmarks`/
+  `question_reports` references before deleting each row; 4 pairs had
+  real `attempts` rows, so those kept the attempt-linked id and dropped
+  the newer duplicate instead of the other way around. 1,324 → 1,268
+  Chemistry rows.
+- **Also found, not rolled back:** roughly 52 of those 56 duplicate pairs
+  were resolved in favor of the *wrong* convention — this codebase's own
+  established style (numeric `concepts_tested[].weight`, `"Answer a real
+  JAMB {year} question on {subtopic}."` as the `learning_objective`
+  template — both directly visible in e.g. migration
+  `20260816082400_seed_chemistry_2004_2007_concepts.sql`) was mistaken for
+  a bug at the time and the *other* branch's style (`weight: 'primary'`,
+  `"Understand and apply principles of {subtopic}"`) was kept instead.
+  Functionally harmless — `isPrimaryConceptLink()` already accepts both
+  weight shapes — but roughly 52 questions are stylistically inconsistent
+  with the rest of the catalog. Not fixed in this pass (the duplicate
+  content itself was equivalent either way, so nothing was lost); flagged
+  for a possible follow-up normalization of `learning_objective` wording.
+
+**`scripts/qim/generate_qim_batch.py`** (new) is a repeatable, token-cheap
+path for turning raw JAMB/UTME past-question JSON into QIM-shaped question
+JSON, ported in from the isolated branch and reconciled with this
+codebase's real conventions (the `cognitiveLevel` enum and
+`learningObjective` template above). Rather than doing this work
+turn-by-turn in a chat session — where every turn re-sends the entire
+growing conversation as input tokens — it calls the Claude Batches API
+directly: one stateless request per chunk of raw questions, the tutor
+system prompt `cache_control`'d so it's billed once per cache window, and
+structured output forced via `tool_choice` so there's no free-text JSON to
+parse or retry. `topic` is sent as a hard `enum` per subject
+(`SYLLABUS_TOPICS`, Chemistry populated with the JAMB 18 — add a
+subject's list there before generating content for it) so the model can't
+return an off-syllabus topic in the first place, matching the DB
+constraint above. Output matches `scripts/import-question-bank.js`'s QIM
+shape, feeding into a newly-ported **`scripts/seed-content-catalog.js`**
+(this repo didn't have an equivalent before — its existing seeding has
+been hand/AI-authored SQL migration files directly; this is an additional,
+optional path for the same `kairo.questions`/`kairo.concepts` tables, not
+a replacement for that convention). Made defensive on the way in: every
+`kairo.questions` column with a DB-side default now gets a real,
+schema-legal value in `questionToRow()` regardless of what the input JSON
+provides, since a Supabase bulk insert of an array with inconsistent keys
+turns a merely-*missing* key into an explicit `NULL` for that row rather
+than falling through to the column default — the original cause of a
+one-column-at-a-time `NOT NULL` failure loop this pass also fixed. A
+missing id gets a deterministic fallback (hash of
+subject+examBody+year+stem, not random), and rows still missing something
+with no safe default (subject/topic/stem/options/correct_option) are
+skipped and reported rather than failing their whole 100-row chunk.
+
 ## 6. What is still NOT done
 
 - **Anti-cheat / write validation on `kairo.attempts` and
