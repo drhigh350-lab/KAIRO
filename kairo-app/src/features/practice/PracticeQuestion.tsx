@@ -78,7 +78,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, kaiNote, explanation, nextStepNote }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(() => isQuestionBookmarked(question.id));
@@ -280,7 +280,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
               </Section>
             )}
 
-            <KaiPanel note={kaiNote ?? question.kai} tone="dark" onAction={handleKaiFollowupAction} />
+            <KaiPanel tone="dark" onAction={handleKaiFollowupAction} comingSoon />
 
             <ConfidenceRating value={confidence} onChange={setConfidence} tone="dark" />
           </div>
