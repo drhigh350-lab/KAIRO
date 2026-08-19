@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KairoMark, KairoWordmark } from '../../components';
+import { KairoWordmark } from '../../components';
 import { restoreSession, isOnboarded } from '../../lib/kairoEngine';
 
 export function Splash() {
@@ -39,9 +39,8 @@ export function Splash() {
         overflow: 'hidden',
       }}
     >
-      <KairoMark tone="white" size={56} />
-      <KairoWordmark tone="white" width={148} />
-      <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '.18em', color: 'var(--dark-accent-blue)', marginTop: -8 }}>SEIZE THE MOMENT</div>
+      <KairoWordmark tone="white" width={260} />
+      <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--dark-text-heading)', textAlign: 'center', letterSpacing: '.01em' }}>Seize the Moment</div>
       <div style={{ display: 'flex', gap: 8, marginTop: 28 }}>
         {[0, 1, 2].map((i) => (
           <div key={i} style={{
