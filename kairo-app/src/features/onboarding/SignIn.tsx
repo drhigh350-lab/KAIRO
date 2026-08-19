@@ -61,7 +61,7 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
       </div>
       <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Input tone="dark" label="Email Address" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16v16H4zM4 6l8 7 8-7" /></svg>} />
-        <Input tone="dark" label="Password" type="password" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} error={error || undefined} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></svg>} />
+        <Input tone="dark" label="Password" type="password" passwordToggle placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} error={error || undefined} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></svg>} />
         <div style={{ textAlign: 'right', fontSize: 13 }}><a href="#" style={{ color: 'var(--dark-accent-blue)' }}>Forgot password?</a></div>
         <Button variant="darkAccent" size="lg" fullWidth disabled={!canSubmit} onClick={handleSubmit}>{submitting ? 'Signing in…' : 'Sign In'}</Button>
         <OrDivider tone="dark" />

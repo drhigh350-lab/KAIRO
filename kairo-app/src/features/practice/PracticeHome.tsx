@@ -84,7 +84,7 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
             {insights?.eliteScore != null && (
               <div>
                 <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Kairo Score</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)', marginTop: 2 }}>{insights.eliteScore}</div>
+                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)', marginTop: 2 }}>{Math.round(insights.eliteScore)}</div>
               </div>
             )}
             {streak && (

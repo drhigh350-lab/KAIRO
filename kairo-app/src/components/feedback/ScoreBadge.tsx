@@ -5,15 +5,19 @@ export interface ScoreBadgeProps {
 }
 
 export function ScoreBadge({ score, delta, dark = false }: ScoreBadgeProps) {
+  // EliteScore.calculate() stores one decimal of precision (needed for
+  // trend detection over small session-to-session moves) — the UI is
+  // never allowed to show it. Rounded here, once, so every consumer of
+  // this component gets a whole-number Kairo Score for free.
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, fontFamily: 'var(--font-body)' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)' }}>{score}</span>
+        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)' }}>{Math.round(score)}</span>
         <span style={{ fontSize: 'var(--fs-caption)', color: dark ? 'var(--dark-text-muted)' : 'var(--text-muted)' }}>KAIRO Score</span>
       </div>
       {delta != null && (
         <span style={{ fontSize: 'var(--fs-caption)', color: delta >= 0 ? 'var(--state-success)' : 'var(--state-danger)', fontWeight: 600 }}>
-          {delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}
+          {delta >= 0 ? '↑' : '↓'} {Math.round(Math.abs(delta))}
         </span>
       )}
     </div>

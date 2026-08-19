@@ -8,7 +8,6 @@ export function Profile() {
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
   const profile = getProfileSummary();
-  const signedIn = !!getEngine();
   const badges = getEngine()?.getBadges();
   const earnedBadges: { id: string; name: string }[] = badges?.earned ?? [];
 
@@ -37,26 +36,22 @@ export function Profile() {
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--dark-text-heading)' }}>{firstName}</div>
             <div style={{ fontSize: 13, color: 'var(--dark-text-muted)' }}>
-              {signedIn
-                ? (daysToGo != null ? `UTME Candidate · ${daysToGo} days to go` : 'UTME Candidate')
-                : 'Not signed in'}
+              {daysToGo != null ? `UTME Candidate · ${daysToGo} days to go` : 'UTME Candidate'}
             </div>
           </div>
-          {signedIn && (
-            <button type="button" onClick={() => navigate('/profile/edit')} aria-label="Edit profile" style={{
-              width: 36, height: 36, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', cursor: 'pointer', flexShrink: 0,
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>
-            </button>
-          )}
+          <button type="button" onClick={() => navigate('/profile/edit')} aria-label="Edit profile" style={{
+            width: 36, height: 36, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', cursor: 'pointer', flexShrink: 0,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>
+          </button>
         </Card>
-        {signedIn && profile?.stats && (
+        {profile?.stats && (
           <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginTop: 4 }}>{profile.stats.eliteScore}</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginTop: 4 }}>{Math.round(profile.stats.eliteScore)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>LEVEL {profile.stats.level?.level ?? 1}</div>
@@ -79,7 +74,7 @@ export function Profile() {
             </div>
           </Card>
         )}
-        <Card onClick={signedIn ? () => navigate('/profile/edit') : undefined} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: signedIn ? 'pointer' : 'default' }}>
+        <Card onClick={() => navigate('/profile/edit')} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>What I'm Aiming For</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--dark-text-muted)' }}>Target University</span><span style={{ fontWeight: 600, color: 'var(--dark-text-heading)' }}>{profile?.targetUniversity || 'Not set yet'}</span></div>
@@ -111,15 +106,9 @@ export function Profile() {
           <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
         </Card>
 
-        {signedIn ? (
-          <Button variant="secondary" size="lg" fullWidth disabled={signingOut} onClick={handleSignOut}>
-            {signingOut ? 'Signing Out…' : 'Sign Out'}
-          </Button>
-        ) : (
-          <Button variant="darkAccent" size="lg" fullWidth onClick={() => navigate('/onboarding')}>
-            Sign In
-          </Button>
-        )}
+        <Button variant="secondary" size="lg" fullWidth disabled={signingOut} onClick={handleSignOut}>
+          {signingOut ? 'Signing Out…' : 'Sign Out'}
+        </Button>
       </div>
     </div>
   );

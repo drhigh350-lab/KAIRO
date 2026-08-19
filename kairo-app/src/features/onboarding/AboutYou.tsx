@@ -75,7 +75,7 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
 
       <div style={{ position: 'relative' }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 10 }}>What course are you aiming for?</div>
-        <Input tone="dark" placeholder="Search for your course" value={query} onFocus={() => setShowList(true)} onChange={(e) => { setQuery(e.target.value); setShowList(true); }}
+        <Input tone="dark" placeholder="Search for your course" value={query} onFocus={() => setShowList(true)} onChange={(e) => { setQuery(e.target.value); setShowList(true); }} onClear={() => pickCourse(null)}
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>} />
         {showList && (
           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-md)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)', maxHeight: 260, overflowY: 'auto', zIndex: 5 }}>
@@ -106,7 +106,6 @@ export function AboutYou({ step, total, onBack, data, setData, onContinue }: Abo
             {filtered.length === 0 && <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--dark-text-muted)' }}>No matching course.</div>}
           </div>
         )}
-        {data.course && !showList && <div style={{ marginTop: 8 }}><SkipLink tone="dark" onClick={() => pickCourse(null)}>Clear selection</SkipLink></div>}
         {!data.course && <div style={{ marginTop: 10 }}><SkipLink tone="dark" onClick={() => setShowList(false)}>Skip for now</SkipLink></div>}
       </div>
 

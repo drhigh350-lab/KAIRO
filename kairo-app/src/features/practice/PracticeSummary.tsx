@@ -119,7 +119,7 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
           <div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
-              {engineSummary?.eliteScore ? engineSummary.eliteScore.total : '—'}
+              {engineSummary?.eliteScore ? Math.round(engineSummary.eliteScore.total) : '—'}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>

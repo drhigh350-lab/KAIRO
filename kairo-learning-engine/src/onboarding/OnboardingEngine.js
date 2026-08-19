@@ -81,7 +81,7 @@ export class OnboardingEngine {
         id: 'diagnostic_intro',
         type: 'message',
         title: 'Quick Check-In',
-        body: "I'm going to ask you 5 short questions across your subjects. Not a test — just so I know where to begin. There are no wrong answers here.",
+        body: "Let's find out exactly what you already know — and what needs work. 5 quick questions, no wrong answers.",
         action: 'start_diagnostic'
       },
       {
@@ -143,24 +143,17 @@ export class OnboardingEngine {
    * concepts here rather than fabricating placeholder ones.
    */
   async buildInitialPlan() {
-    const { subjects, targetCourse, examDate, diagnosticResults } = this.data;
+    const { subjects, targetCourse, examDate } = this.data;
 
     const { conceptsLoaded } = await this.engine.loadContentCatalog({ subjects });
 
-    // Process diagnostic results into the knowledge graph
-    for (const result of diagnosticResults || []) {
-      if (result.conceptId) {
-        this.engine.submitAnswer({
-          conceptId: result.conceptId,
-          correct: result.correct,
-          responseTimeMs: result.responseTimeMs || 15000,
-          selectedOption: result.selectedOption,
-          correctOption: result.correctOption,
-          questionId: result.questionId,
-          questionDifficulty: 1
-        });
-      }
-    }
+    // Diagnostic answers are recorded live, one submitAnswer() call per
+    // question as the student actually answers it (see the app's
+    // submitDiagnosticAnswer()) — this used to also replay every answer
+    // here in bulk, which double-recorded each attempt (once live, once
+    // again here) and skewed the very first retention-state/confidence
+    // numbers a student's knowledge map ever gets. this.data.diagnosticResults
+    // is still read directly by _summarizeDiagnostic() below for its tally.
 
     // Set profile data
     this.engine.profile.name = this.data.name;
@@ -168,6 +161,13 @@ export class OnboardingEngine {
     this.engine.profile.targetUniversity = this.data.targetUniversity;
     this.engine.profile.examDate = examDate ? new Date(examDate).getTime() : null;
     this.engine.profile.targetSubjects = subjects || [];
+    // The one durable "has this student actually taken the diagnostic"
+    // signal — set only here, at the genuine end of the flow, so it stays
+    // false even if profile fields above get saved early (e.g. right
+    // after the "About You" step, before the diagnostic runs) elsewhere
+    // in the flow. A route guard checks this, not targetSubjects, so
+    // dashboard access stays blocked until the diagnostic is really done.
+    this.engine.profile.diagnosticCompleted = true;
 
     // Generate personalized first session
     const plan = this.engine.startSession();
@@ -180,17 +180,36 @@ export class OnboardingEngine {
     };
   }
 
+  /**
+   * Three tiers by real accuracy, not a single pass/fail cutoff — each
+   * framed as diagnosis rather than judgment (Failure/Discouragement and
+   * Confidence frameworks: a low score is useful data, not a verdict).
+   * Average response time is a light secondary signal, only surfaced when
+   * it's genuinely fast alongside a strong result — with just 5 questions,
+   * pace alone isn't reliable enough to drive the message on its own.
+   */
   _summarizeDiagnostic() {
     const results = this.data.diagnosticResults || [];
     const correct = results.filter(r => r.correct).length;
-    return {
-      total: results.length,
-      correct,
-      accuracy: results.length > 0 ? Math.round((correct / results.length) * 100) : 0,
-      message: correct >= 3
-        ? "You have a solid foundation. We'll build from here."
-        : "No worries — we'll start with the basics and move up steadily."
-    };
+    const total = results.length;
+    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const avgResponseTimeMs = total > 0
+      ? Math.round(results.reduce((sum, r) => sum + (r.responseTimeMs || 0), 0) / total)
+      : 0;
+    const fastPace = avgResponseTimeMs > 0 && avgResponseTimeMs < 8000;
+
+    let message;
+    if (accuracy >= 80) {
+      message = fastPace
+        ? "Strong start, and quick too. Kairo will move fast and keep challenging you."
+        : "Strong start. Kairo will move fast and keep challenging you.";
+    } else if (accuracy >= 40) {
+      message = "You've got a real foundation here, with a few clear gaps. That's exactly what Kairo needs to build your plan.";
+    } else {
+      message = `A ${correct}/${total} right now is actually useful — it shows exactly where to focus before the exam. Let's fix the biggest gap first.`;
+    }
+
+    return { total, correct, accuracy, avgResponseTimeMs, message };
   }
 
   isComplete() {
