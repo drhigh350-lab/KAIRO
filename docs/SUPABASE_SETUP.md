@@ -707,6 +707,72 @@ dry-run mode (no `--apply`, nothing written to Supabase) and correctly
 produced `Would upsert 1 concepts and 1 questions`, confirming the two
 scripts' shapes actually match end-to-end, not just on paper.
 
+## 5k. Twelfth pass — deduplicated the JAMB Chemistry archive, locked `topic` to the syllabus
+
+Two follow-ups after §5j's fix landed and a real seeding run (774 questions)
+went live.
+
+**Deduplication.** The pre-fix `--apply` run(s) left 56 Chemistry questions
+stored twice — same stem, two different ids — because a hand-written
+`fix_ids.cjs` (used before the §5j fix existed) generated random ids for
+rows that already existed under the old ad-hoc seed's flat `chemistry_0NNN`
+ids; my `id || deriveId()` fallback in `seed-content-catalog.js` only fills
+a *missing* id, so it couldn't un-poison an id that was already set.
+Verified before touching anything: every one of the 56 pairs was exactly
+one `chemistry_0NNN`-pattern id plus one non-matching id (regex-checked
+across all pairs, zero exceptions), and checked every id against
+`kairo.attempts`/`bookmarks`/`question_reports` for real FK references
+before deleting anything. 4 pairs had real attempts pointing at the old-style
+id (`confdeltype = 'a'`, i.e. `NO ACTION` — a blind delete would have
+errored on these) — for those 4, kept the old id and deleted the newer
+duplicate instead; for the other 52, deleted the old id and kept the newer
+one (better data shape: `concepts_tested` weight `'primary'` string, not
+the ad-hoc seed's numeric `1`). Zero attempts/bookmarks/reports referenced
+any of the final 56 rows actually deleted (re-verified immediately before
+the `DELETE`). Chemistry: 1,324 → 1,268 rows, 0 duplicate stems remaining.
+
+**Topic/subtopic syllabus alignment.** Chemistry had accumulated 84
+distinct `topic` strings — spelling variants of the same topic
+(`"Metals & Their Compounds"` / `"Metals and their Compounds"` / `"Metals
+and Their Compounds"`, three different ways of writing one topic) and
+genuinely off-syllabus buckets (`"Electrochemistry"`, `"Nuclear
+Chemistry"`, `"Qualitative Analysis"`, etc.) sitting where the user's JAMB
+syllabus's 18 major topics should be. Remapped every row: `topic` is now
+strictly one of the 18 syllabus major topics; the more specific value that
+used to live in `topic` moves to `subtopic` (via `subtopic =
+COALESCE(subtopic, topic)`, evaluated against the pre-update row, so it
+never overwrites a `subtopic` that already had real content — most rows
+already did). Two topic values ("Air and Water", "Water and Solutions")
+covered content that genuinely splits across two different syllabus
+majors — resolved those by reading actual subtopic/stem content per row
+rather than picking one bucket for the whole group. Result: exactly 18
+distinct `topic` values for Chemistry, 1,268 rows total (unchanged, this
+pass only ever updated `topic`/`subtopic`, never touched row count).
+
+Known limitation, stated plainly rather than glossed over: this fixes
+*structural* drift (wrong bucket string) but not *content-level*
+misclassification that predates this pass — e.g. one spot-checked question
+about calculating a molecular formula from percentage composition was
+tagged `"Organic Chemistry"` in the source content itself, which the remap
+correctly turned into `"Organic Compounds"` (right bucket for that wrong
+string) but the question is actually stoichiometry, so it's still filed
+under the wrong syllabus major. Catching that class of error needs a
+per-question content audit, not a topic-string remap — not done here.
+
+**Made it structurally enforced, not just prompt-instructed.** Added
+`kairo.questions_chemistry_topic_syllabus_check`
+(`subject <> 'Chemistry' OR topic = ANY(<18 values>)`) — a DB-level
+guarantee that survives even a future ad-hoc pipeline that never reads
+this repo's scripts at all (exactly the kind of pipeline that produced the
+764/774-question run and the id-collision drift above — its provenance is
+still unknown). `scripts/qim/generate_qim_batch.py` also now carries
+`SYLLABUS_TOPICS` (Chemistry populated with the 18 majors; add a subject's
+list there before generating content for it) and builds the Batches API
+tool schema with `topic` as a hard `enum` of that list per chunk
+(`build_tool()`/`topics_for_chunk()`) rather than only telling the model
+not to invent topics — a subject with no entry in `SYLLABUS_TOPICS` falls
+back to a free-text `topic`, unenforced, until its syllabus list is added.
+
 ## 6. What is still NOT done
 
 - ~~The onboarding subject picker offers 8 subjects but only 4 have

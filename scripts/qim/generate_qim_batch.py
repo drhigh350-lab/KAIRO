@@ -73,6 +73,39 @@ MISCONCEPTION_IDS = [
     "misread_graph", "overgeneralized_rule",
 ]
 
+# `topic` must be one of a subject's syllabus major topics -- everything
+# more specific (e.g. "Nitrogen and its compounds" under "Non-metals and
+# their compounds") goes in `subtopic`, never `topic`. Enforced two ways:
+# the tool schema below makes `topic` an enum of exactly this list when the
+# chunk's subject has an entry here, and kairo.questions itself carries a
+# matching CHECK constraint (questions_chemistry_topic_syllabus_check) --
+# so even a request that bypasses this script entirely can't write a
+# non-syllabus topic for a subject listed here. Add a subject's official
+# syllabus topic list here before generating content for it; an unlisted
+# subject falls back to a free-text topic (not yet locked down).
+SYLLABUS_TOPICS = {
+    "chemistry": [
+        "Separation of mixtures and purification of chemical substances",
+        "Chemical combination",
+        "Kinetic theory of matter and Gas Laws",
+        "Atomic structure and bonding",
+        "Air",
+        "Water",
+        "Solubility",
+        "Environmental Pollution",
+        "Acids, bases and salts",
+        "Oxidation and reduction",
+        "Electrolysis",
+        "Energy changes",
+        "Rates of Chemical Reaction",
+        "Chemical equilibria",
+        "Non-metals and their compounds",
+        "Metals and their compounds",
+        "Organic Compounds",
+        "Chemistry and Industry",
+    ],
+}
+
 SYSTEM_PROMPT = """You are a sharp, experienced TECHMED tutor processing raw JAMB/UTME \
 past-question data into Kairo's Question Intelligence Model (QIM) schema.
 
@@ -92,7 +125,13 @@ you're calculating before doing the math.
 for a complex calculation.
 
 Structural Rules
-1. Classify subject, topic, and a SPECIFIC subtopic.
+1. Classify subject, topic, and a SPECIFIC subtopic. `topic` must be exactly one of \
+the subject's official syllabus major topics -- if the tool schema constrains `topic` \
+to an enum, treat that enum as the complete and only valid list, no exceptions. \
+Anything more specific than a major topic (e.g. "Nitrogen and its compounds" under \
+the major topic "Non-metals and their compounds") is a `subtopic`, never a `topic` -- \
+subtopics can be as broad or as narrow as the content genuinely calls for, as long as \
+`topic` itself stays a syllabus major topic.
 2. Determine the correct answer from first principles. Do not guess.
 3. Assign difficultyRating (1-3) and cognitiveLevel (exactly one of: "recall", \
 "comprehension", "application").
@@ -110,7 +149,15 @@ carrying a `sourceIndex`. Call emit_qim_batch exactly once, and account for ever
 single question in the batch -- each one goes into either `questions` or \
 `unprocessable`, never omitted.""".format(misconceptions=", ".join(MISCONCEPTION_IDS))
 
-TOOL = {
+def build_tool(topics=None):
+    """Build the emit_qim_batch tool schema. When `topics` is given (the
+    subject's syllabus major-topic list), `topic` becomes a hard enum --
+    the model literally cannot return a non-syllabus value, rather than
+    just being told not to."""
+    topic_schema = {"type": "string"}
+    if topics:
+        topic_schema["enum"] = topics
+    return {
     "name": "emit_qim_batch",
     "description": (
         "Emit the processed QIM question objects for this batch, plus any source "
@@ -130,7 +177,7 @@ TOOL = {
                             "description": "Index of the raw question this came from, matching the input batch.",
                         },
                         "subject": {"type": "string"},
-                        "topic": {"type": "string"},
+                        "topic": topic_schema,
                         "subtopic": {"type": "string"},
                         "difficultyRating": {"type": "integer", "minimum": 1, "maximum": 3},
                         "cognitiveLevel": {
@@ -253,6 +300,16 @@ def to_qim_question(item, raw_item, exam_body, year):
     }
 
 
+def topics_for_chunk(chunk_items):
+    """Look up the syllabus topic list for a chunk's subject(s). A chunk is
+    expected to be single-subject in practice; if it somehow isn't, no
+    enum is applied rather than guessing which subject's list to use."""
+    subjects = {str(r.get("subject", "")).strip().lower() for r in chunk_items}
+    if len(subjects) == 1:
+        return SYLLABUS_TOPICS.get(next(iter(subjects)))
+    return None
+
+
 def build_requests(chunks, model):
     requests = []
     for ci, c in enumerate(chunks):
@@ -267,7 +324,7 @@ def build_requests(chunks, model):
                     "cache_control": {"type": "ephemeral"},
                 }],
                 "messages": [{"role": "user", "content": raw_to_prompt(c)}],
-                "tools": [TOOL],
+                "tools": [build_tool(topics_for_chunk(c))],
                 "tool_choice": {"type": "tool", "name": "emit_qim_batch"},
             },
         })
