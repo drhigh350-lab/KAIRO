@@ -33,7 +33,7 @@ const quickActions: { label: string; d: string; color: string; to: string; entry
   // Practice — this is the one proactive way in, so a student can go
   // understand something on their own initiative, not only when Kairo
   // interrupts them with it.
-  { label: 'Understand a Concept', d: 'M12 4.5C9.5 2.5 6 2.5 4 4v14c2-1.5 5.5-1.5 8 .5 2.5-2 6-2 8-.5V4c-2-1.5-5.5-1.5-8 .5z', color: '#5FBF7A', to: '/learn' },
+  { label: 'Get Unstuck', d: 'M12 4.5C9.5 2.5 6 2.5 4 4v14c2-1.5 5.5-1.5 8 .5 2.5-2 6-2 8-.5V4c-2-1.5-5.5-1.5-8 .5z', color: '#5FBF7A', to: '/learn' },
 ];
 
 export function HomeDashboard() {

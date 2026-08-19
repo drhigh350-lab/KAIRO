@@ -100,7 +100,13 @@ export interface KaiPanelProps {
 }
 export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
   const dark = tone === 'dark';
-  const [expanded, setExpanded] = useState(false);
+  // Sidelined into a popup rather than an inline expansion — this kept
+  // pushing the actual next-question flow down the screen every time a
+  // student tapped it, exactly the clutter the product explicitly avoids
+  // elsewhere (no games/leaderboards-style density). The interaction
+  // itself (six follow-up actions, a loading state, a result) is
+  // unchanged, just contained.
+  const [popupOpen, setPopupOpen] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -137,17 +143,18 @@ export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
         <div style={{ fontSize: 13, color: dark ? 'var(--dark-text-body)' : 'var(--text-body)', lineHeight: 1.55 }}>{note}</div>
       </div>
       {onAction && (
-        <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} style={{
+        <button type="button" onClick={() => setPopupOpen(true)} style={{
           marginTop: 12, fontSize: 12, fontWeight: 700, color: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
           background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
         }}>
           Ask Kai for more
-          <span style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-base)' }}><ChevronRight /></span>
+          <ChevronRight />
         </button>
       )}
-      {onAction && expanded && (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+      {onAction && popupOpen && (
+        <Modal onClose={() => setPopupOpen(false)} tone={tone}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: dark ? 'var(--dark-text-heading)' : 'var(--text-heading)', marginBottom: 14 }}>Ask Kai</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {actions.map((a) => (
               <button type="button" key={a} disabled={loading} onClick={() => handleActionClick(a)} style={{
                 fontSize: 12, fontWeight: 600, color: dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)', background: dark ? 'var(--dark-bg-surface)' : '#fff', border: `1px solid ${activeAction === a ? (dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)') : (dark ? 'var(--dark-border)' : 'var(--color-border-subtle)')}`,
@@ -163,7 +170,7 @@ export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
               color: error ? 'var(--dark-danger, #e5484d)' : (dark ? 'var(--dark-text-body)' : 'var(--text-body)'),
             }}>{error || result}</div>
           )}
-        </>
+        </Modal>
       )}
     </div>
   );
