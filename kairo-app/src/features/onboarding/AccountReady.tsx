@@ -6,6 +6,8 @@ export interface AccountReadyProps {
   step: number;
   total: number;
   onBack: () => void;
+  /** Jumps straight back to the "About You" step to correct something — distinct from onBack's plain history pop, since a student landing here has just entered several fields and may want to fix one without re-walking the whole flow. */
+  onEdit: () => void;
   data: OnboardingData;
   onStart: () => void;
 }
@@ -15,7 +17,7 @@ function formatExamDate(iso: string | null): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-export function AccountReady({ step, total, onBack, data, onStart }: AccountReadyProps) {
+export function AccountReady({ step, total, onBack, onEdit, data, onStart }: AccountReadyProps) {
   const firstName = (data.name || '').split(' ')[0] || 'there';
   return (
     <div style={{ padding: '20px 24px 32px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 26, flex: 1, background: 'var(--dark-bg-canvas)' }}>
@@ -23,11 +25,18 @@ export function AccountReady({ step, total, onBack, data, onStart }: AccountRead
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 18 }}>
         <KaiMark size={72} check tone="white" />
         <div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--dark-text-heading)' }}>You're all set, {firstName}.</div>
-          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 10, lineHeight: 1.55, maxWidth: 300 }}>Kairo will guide you one question at a time until you're ready for UTME.</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--dark-text-heading)' }}>Here's what I've got, {firstName}.</div>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 10, lineHeight: 1.55, maxWidth: 300 }}>Quick look before we find out what you already know.</div>
         </div>
       </div>
-      <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18, display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
+        <button type="button" onClick={onEdit} aria-label="Edit your details" style={{
+          position: 'absolute', top: 14, right: 14, width: 30, height: 30, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)',
+          borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', color: 'var(--dark-accent-blue)', padding: 0,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>
+        </button>
         <SummaryRow label="Name" value={data.name || '—'} />
         <SummaryRow label="Course" value={data.course ? data.course.name : 'Not set yet'} />
         <SummaryRow label="Exam Date" value={formatExamDate(data.examDate)} />
@@ -40,7 +49,7 @@ export function AccountReady({ step, total, onBack, data, onStart }: AccountRead
           ) : <div style={{ fontSize: 13, color: 'var(--dark-text-faint)' }}>Not chosen yet</div>}
         </div>
       </div>
-      <Button variant="darkAccent" size="lg" fullWidth onClick={onStart}>Start Learning</Button>
+      <Button variant="darkAccent" size="lg" fullWidth onClick={onStart}>Continue</Button>
     </div>
   );
 }

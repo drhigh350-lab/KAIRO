@@ -81,7 +81,7 @@ export class OnboardingEngine {
         id: 'diagnostic_intro',
         type: 'message',
         title: 'Quick Check-In',
-        body: "I'm going to ask you 5 short questions across your subjects. Not a test — just so I know where to begin. There are no wrong answers here.",
+        body: "Let's find out exactly what you already know — and what needs work. 5 quick questions, no wrong answers.",
         action: 'start_diagnostic'
       },
       {
@@ -180,17 +180,36 @@ export class OnboardingEngine {
     };
   }
 
+  /**
+   * Three tiers by real accuracy, not a single pass/fail cutoff — each
+   * framed as diagnosis rather than judgment (Failure/Discouragement and
+   * Confidence frameworks: a low score is useful data, not a verdict).
+   * Average response time is a light secondary signal, only surfaced when
+   * it's genuinely fast alongside a strong result — with just 5 questions,
+   * pace alone isn't reliable enough to drive the message on its own.
+   */
   _summarizeDiagnostic() {
     const results = this.data.diagnosticResults || [];
     const correct = results.filter(r => r.correct).length;
-    return {
-      total: results.length,
-      correct,
-      accuracy: results.length > 0 ? Math.round((correct / results.length) * 100) : 0,
-      message: correct >= 3
-        ? "You have a solid foundation. We'll build from here."
-        : "No worries — we'll start with the basics and move up steadily."
-    };
+    const total = results.length;
+    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const avgResponseTimeMs = total > 0
+      ? Math.round(results.reduce((sum, r) => sum + (r.responseTimeMs || 0), 0) / total)
+      : 0;
+    const fastPace = avgResponseTimeMs > 0 && avgResponseTimeMs < 8000;
+
+    let message;
+    if (accuracy >= 80) {
+      message = fastPace
+        ? "Strong start, and quick too. Kairo will move fast and keep challenging you."
+        : "Strong start. Kairo will move fast and keep challenging you.";
+    } else if (accuracy >= 40) {
+      message = "You've got a real foundation here, with a few clear gaps. That's exactly what Kairo needs to build your plan.";
+    } else {
+      message = `A ${correct}/${total} right now is actually useful — it shows exactly where to focus before the exam. Let's fix the biggest gap first.`;
+    }
+
+    return { total, correct, accuracy, avgResponseTimeMs, message };
   }
 
   isComplete() {
