@@ -113,6 +113,15 @@ export class KairoEngine {
 
     this.currentSession = null;
     this.sessionStartTime = null;
+
+    // Hydration state — a caller gating access on auth/onboarding status
+    // (e.g. a route guard) needs a safe thing to await: `ready` stays
+    // false until init() has actually read IndexedDB, and _initPromise
+    // memoizes init() so calling it from more than one place (app boot
+    // + a guard, or two components mounting concurrently) never re-runs
+    // the IndexedDB load concurrently or rebuilds subsystems mid-hydration.
+    this.ready = false;
+    this._initPromise = null;
   }
 
   /**
@@ -162,7 +171,19 @@ export class KairoEngine {
     this.profile.learn = this.learn.toJSON();
   }
 
+  /**
+   * Memoized — safe to call from multiple places (app boot, a route
+   * guard, etc.) without re-reading IndexedDB or re-running hydration
+   * concurrently. Every caller gating auth/onboarding-sensitive access
+   * on engine state must await this before trusting this.ready or
+   * reading this.profile/this.onboarding.
+   */
   async init() {
+    if (!this._initPromise) this._initPromise = this._doInit();
+    return this._initPromise;
+  }
+
+  async _doInit() {
     await this.store.init();
     const savedProfile = await this.store.loadProfile(this.profile.studentId);
     if (savedProfile) {
@@ -201,6 +222,8 @@ export class KairoEngine {
       this.graph = KnowledgeGraph.fromJSON(savedGraph);
       this.decayModel.refreshAll(this.graph);
     }
+
+    this.ready = true;
   }
 
   /**
