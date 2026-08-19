@@ -10,12 +10,14 @@ interface Beat {
   title: string;
   body: string;
   img: string | null;
+  /** True for a transparent character illustration (no background to crop/cover) — false/omitted for a rectangular photo. */
+  bare?: boolean;
 }
 
 const beats: Beat[] = [
   { title: 'Built to Last.', body: "Preparation isn't built in one night. Every question you answer, every mistake you correct, every day you return — moves you closer to your goal.", img: '/assets/illustration-student-studying.png' },
   { title: 'Learn by Doing.', body: "Kairo doesn't replace your teacher. It helps you understand concepts through carefully selected questions, clear explanations, and consistent practice.", img: null },
-  { title: 'Meet Kai.', body: 'Kai encourages you, explains difficult concepts, celebrates your progress, and keeps you moving — even on difficult days.', img: '/assets/illustration-kai-goat.jpg' },
+  { title: 'Meet Kai.', body: 'Kai encourages you, explains difficult concepts, celebrates your progress, and keeps you moving — even on difficult days.', img: '/assets/illustration-kai-goat.png', bare: true },
   { title: 'Small Steps. Big Results.', body: "Your progress isn't measured by speed alone. Kairo helps you build consistency, improve accuracy, and become more confident over time.", img: null },
 ];
 
@@ -40,7 +42,9 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
         {beats.map((beat) => (
           <div key={beat.title} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16 }}>
             {beat.img && (
-              <img src={beat.img} alt="" style={{ maxHeight: 260, maxWidth: '100%', borderRadius: 16, objectFit: 'cover' }} />
+              <img src={beat.img} alt="" style={beat.bare
+                ? { maxHeight: 240, maxWidth: '100%' }
+                : { maxHeight: 260, maxWidth: '100%', borderRadius: 16, objectFit: 'cover' }} />
             )}
             <div>
               <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--dark-text-heading)', lineHeight: 1.2 }}>{beat.title}</div>
