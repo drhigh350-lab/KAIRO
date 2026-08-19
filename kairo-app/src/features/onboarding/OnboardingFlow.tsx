@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { IntroCarousel } from './IntroCarousel';
-import { Welcome } from './Welcome';
+import { LandingPage } from './LandingPage';
 import { SignIn } from './SignIn';
 import { SignUp } from './SignUp';
 import { AboutYou } from './AboutYou';
@@ -18,7 +17,7 @@ import {
 } from '../../lib/kairoEngine';
 import type { EngineFlatQuestion } from '../../lib/engineAdapter';
 
-type Screen = 'intro' | 'welcome' | 'signin' | 'signup' | 'about' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'ready' | 'notifications';
+type Screen = 'landing' | 'signin' | 'signup' | 'about' | 'ready' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'notifications';
 
 // segmented indicator covers Sign Up -> Account Ready
 const SEQ: Screen[] = ['signup', 'about', 'ready'];
@@ -30,7 +29,7 @@ export function OnboardingFlow() {
   // first-time Google sign-in — land straight on 'about' with the real Google name instead
   // of re-showing intro/welcome/signup for someone who's already authenticated.
   const googleName = (location.state as { googleName?: string } | null)?.googleName;
-  const [screen, setScreen] = useState<Screen>(googleName ? 'about' : 'intro');
+  const [screen, setScreen] = useState<Screen>(googleName ? 'about' : 'landing');
   const [history, setHistory] = useState<Screen[]>([]);
   const [data, setData] = useState<OnboardingData>({ name: googleName || '', email: '', examDate: null, course: null, subjects: [] });
   const [diagnosticIntroStep, setDiagnosticIntroStep] = useState<OnboardingKaiStep>({});
@@ -93,10 +92,8 @@ export function OnboardingFlow() {
   }
 
   let body: ReactNode = null;
-  if (screen === 'intro') {
-    body = <IntroCarousel onDone={() => go('welcome')} />;
-  } else if (screen === 'welcome') {
-    body = <Welcome onSignUp={() => go('signup')} onSignIn={() => go('signin')} />;
+  if (screen === 'landing') {
+    body = <LandingPage onGetStarted={() => go('signup')} onSignIn={() => go('signin')} />;
   } else if (screen === 'signin') {
     body = (
       <SignIn
@@ -138,10 +135,27 @@ export function OnboardingFlow() {
         data={data}
         setData={setData}
         onContinue={() => {
+          // Saves name/course/exam date/subjects to the account immediately
+          // (submitOnboardingProfile) and fetches Kai's real diagnostic-intro
+          // copy now, so it's ready by the time the student reaches that
+          // screen — but the profile card (AccountReady) comes first, right
+          // after entering this info, so a student can review/correct it
+          // before ever sitting the diagnostic.
           const introStep = submitOnboardingProfile(data.course?.name ?? 'Not sure yet', data.examDate ?? '', data.subjects);
           setDiagnosticIntroStep(introStep);
-          go('diagnosticIntro');
+          go('ready');
         }}
+      />
+    );
+  } else if (screen === 'ready') {
+    body = (
+      <AccountReady
+        step={stepIndex}
+        total={total}
+        onBack={back}
+        onEdit={() => go('about')}
+        data={data}
+        onStart={() => go('diagnosticIntro')}
       />
     );
   } else if (screen === 'diagnosticIntro') {
@@ -198,17 +212,7 @@ export function OnboardingFlow() {
       />
     );
   } else if (screen === 'diagnosticResults' && diagnosticSummary) {
-    body = <DiagnosticResults summary={diagnosticSummary} onContinue={() => go('ready')} />;
-  } else if (screen === 'ready') {
-    body = (
-      <AccountReady
-        step={stepIndex}
-        total={total}
-        onBack={back}
-        data={data}
-        onStart={() => go('notifications')}
-      />
-    );
+    body = <DiagnosticResults summary={diagnosticSummary} onContinue={() => go('notifications')} />;
   } else if (screen === 'notifications') {
     body = (
       <EnableNotifications
