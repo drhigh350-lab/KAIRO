@@ -379,6 +379,32 @@ subject+examBody+year+stem, not random), and rows still missing something
 with no safe default (subject/topic/stem/options/correct_option) are
 skipped and reported rather than failing their whole 100-row chunk.
 
+### Follow-up — content-level topic audit
+
+§5a's syllabus alignment fixed wrong-*bucket* topic strings; it explicitly
+did not catch cases where the bucket was a valid syllabus topic but the
+wrong one for the actual content. Closed the gap with a keyword-vs-
+assigned-topic scan across all 1,268 Chemistry stems (pure SQL, no LLM
+calls — cheap on purpose) that surfaced 59 candidates, each reviewed by
+hand rather than auto-corrected (most were false positives from real
+keyword overlap between topics — a stoichiometry question that happens to
+mention "s.t.p." isn't a gas-laws question just because it shares that
+term). Migration
+`fix_chemistry_content_level_topic_misclassifications` fixes the 7 that
+were genuinely wrong:
+
+- 5 "find the empirical/molecular formula from % composition or molar
+  mass" questions tagged `Organic Compounds` — a general stoichiometry
+  technique, not organic-chemistry-specific knowledge, confirmed by 5
+  near-identical questions sharing the exact same subtopic that were
+  already correctly tagged `Chemical combination`. Moved to match.
+- 1 question about proving air is a mixture, tagged `Kinetic theory of
+  matter and Gas Laws` (subtopic had drifted to "Elements, Compounds and
+  Mixtures" during §5a's realignment) — moved to `Air`.
+- 1 question about cement's percentage composition, tagged `Metals and
+  their compounds` — cement is an industrial material, not a metal
+  compound; moved to `Chemistry and Industry`.
+
 ## 6. What is still NOT done
 
 - **Anti-cheat / write validation on `kairo.attempts` and
