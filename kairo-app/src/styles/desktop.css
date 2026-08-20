@@ -1,0 +1,43 @@
+/* Desktop-only multi-column layouts for the hub/browsing screens that opt
+   into AppShell's `wide` shell (Home, Profile, Insights, Review — see
+   App.tsx's WIDE_ROUTES). Every rule that changes layout is scoped behind
+   the same min-width the wide shell itself activates at, so nothing
+   changes for mobile or for the narrow, focused question-answering
+   screens. `display`/`gap` live here (not as inline styles on these
+   specific wrapper elements) on purpose — an inline `style` attribute
+   always wins over an external class in the cascade, so the mobile-first
+   flex-column base has to be defined here too, or the desktop grid rule
+   below could never actually override it. */
+
+.desktop-grid, .desktop-main, .desktop-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Quick-action / subject-picker style button grids: fixed 2-up at every
+   width reads as cramped once there's real desktop room — grid-template-
+   columns lives here (not inline) at both tiers so the >=900px override
+   below can actually take effect; an inline style would always win over
+   it regardless of the media query. */
+.desktop-reflow-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 900px) {
+  .desktop-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    align-items: start;
+    gap: 28px;
+  }
+  .desktop-sidebar {
+    position: sticky;
+    top: calc(20px + var(--safe-top));
+  }
+  .desktop-reflow-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}

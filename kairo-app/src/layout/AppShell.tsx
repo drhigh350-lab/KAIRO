@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 
 export interface AppShellProps {
   children: ReactNode;
+  /** Set by App.tsx for hub/browsing screens (Home, Profile, Practice Home, Insights, Review) — a genuine multi-column desktop layout instead of the single reading-width column every focused question-answering screen keeps. */
+  wide?: boolean;
 }
 
 /**
@@ -14,6 +16,6 @@ export interface AppShellProps {
  * On wide viewports the content column caps at a comfortable reading width
  * (see layout.css) — a responsive expansion, not a separate design.
  */
-export function AppShell({ children }: AppShellProps) {
-  return <div className="app-shell">{children}</div>;
+export function AppShell({ children, wide = false }: AppShellProps) {
+  return <div className={wide ? 'app-shell app-shell--wide' : 'app-shell'}>{children}</div>;
 }

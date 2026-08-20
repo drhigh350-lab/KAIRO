@@ -22,6 +22,18 @@
   }
 }
 
+/* Hub/dashboard screens opt into this (App.tsx toggles it per route) —
+   real desktop use of the extra width via multi-column layouts, rather
+   than the same single 420px column stretched out with dead space either
+   side. Only the browsing/overview screens use it; anywhere a student is
+   actively answering one question at a time stays at the narrower,
+   focused --container-max. */
+@media (min-width: 900px) {
+  .app-shell.app-shell--wide {
+    max-width: var(--container-max-wide);
+  }
+}
+
 .app-topbar {
   position: sticky;
   top: 0;
