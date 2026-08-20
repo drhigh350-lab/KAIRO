@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
-import { ScreenHeader, ChevronRight } from '../learning/shared';
+import { ScreenHeader, ChevronRight, KairoScoreInfo } from '../learning/shared';
 import { getEngine, getProfileSummary, signOutAndDisconnect } from '../../lib/kairoEngine';
 
 export function Profile() {
@@ -50,7 +50,10 @@ export function Profile() {
           <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
+                  <KairoScoreInfo iconColor="rgba(255,255,255,0.75)" />
+                </div>
                 <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginTop: 4 }}>{Math.round(profile.stats.eliteScore)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>

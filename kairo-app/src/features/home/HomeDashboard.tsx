@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
-import { Modal } from '../learning/shared';
+import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getTodayFocus, setDailyGoal, hasCompletedTodaysRecommendation } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getTodayFocus, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation } from '../../lib/kairoEngine';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -72,6 +72,11 @@ export function HomeDashboard() {
   const earnedBadges: EarnedBadge[] = getEngine()?.getBadges()?.earned ?? [];
   const latestBadge = earnedBadges.length ? earnedBadges[earnedBadges.length - 1] : null;
   const [todayProgress, setTodayProgress] = useState(getTodayProgress());
+  // Home is one of only three places the total Kairo Score is allowed to
+  // show (with Profile and Insights) — everywhere else shows session-scoped
+  // gained points instead, so this doesn't repeat a slow-moving 0-100
+  // number where "what did I just earn" is the more useful question.
+  const insights = getInsightsSummary();
   // The engine's own real reasoning for today's recommended concept —
   // replaces a static sentence that used to be identical for every student
   // regardless of macro-state, decay urgency, or exam proximity.
@@ -185,6 +190,16 @@ export function HomeDashboard() {
           </button>
         </div>
       </div>
+
+      {insights?.eliteScore != null && (
+        <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 }}>Kairo Score</span>
+            <KairoScoreInfo />
+          </div>
+          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--dark-text-heading)' }}>{Math.round(insights.eliteScore)}</span>
+        </Card>
+      )}
 
       {showGoalModal && (
         <Modal onClose={() => setShowGoalModal(false)} tone="dark">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, ProgressBar, ScoreBadge } from '../../components';
 import { getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped } from '../../lib/kairoEngine';
 import { generateKaiText } from '../../lib/kaiAi';
+import { KairoScoreInfo } from '../learning/shared';
 
 const trendCopy: Record<string, string> = {
   rising: "Your score moved up mostly because you're getting harder questions right more often, not just more questions overall.",
@@ -67,7 +68,10 @@ export function Insights() {
 
       {hasScore ? (
         <Card style={{ textAlign: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-          <ScoreBadge dark score={insights.eliteScore} />
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <ScoreBadge dark score={insights.eliteScore} />
+            <span style={{ marginLeft: 6, marginTop: 2 }}><KairoScoreInfo /></span>
+          </div>
           <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 12 }}>{trendCopy[insights.scoreTrend] ?? trendCopy.insufficient_data}</div>
         </Card>
       ) : (

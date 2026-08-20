@@ -395,3 +395,36 @@ export function Modal({ children, onClose, tone = 'light' }: ModalProps) {
     </div>
   );
 }
+
+/**
+ * Small "ⓘ" affordance for wherever the Kairo Score is shown (Home, Profile,
+ * Insights — the only three screens it's allowed to appear on) — explains
+ * the real calculation in plain language (EliteScore.js's actual weighting)
+ * instead of leaving a bare number that looks arbitrary. `iconColor` exists
+ * because the button sits on both a plain dark surface and Profile's blue
+ * gradient card, which need different contrast.
+ */
+export function KairoScoreInfo({ iconColor = 'var(--dark-text-faint)' }: { iconColor?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label="How your Kairo Score is calculated" style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, flexShrink: 0,
+        background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: iconColor,
+      }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 16v-5M12 8h.01" /></svg>
+      </button>
+      {open && (
+        <Modal onClose={() => setOpen(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 10 }}>How your Kairo Score works</div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65 }}>
+            It blends three things: how many questions you get right, how much of what you learn actually sticks over time, and how often you show up to practice.
+          </div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.65, marginTop: 10 }}>
+            It only ever goes up, and it moves slowly on purpose — one session won't swing it much, but showing up consistently will.
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
