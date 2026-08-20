@@ -48,6 +48,31 @@ export class RecommendationEngine {
     return this.sessionQueue.slice(); // return copy
   }
 
+  /**
+   * Every concept in one subject+topic, scored and interleaved the same
+   * way buildSessionPlan() does across the whole graph (urgent decay
+   * first, active gaps next, interleaved with concepts already Held/
+   * Reinforced — i.e. genuine active retrieval of both past-struggled
+   * and past-passed items, not just a blind replay). Used for a
+   * recommendation anchored to one specific concept (a Home MissionCard
+   * tap) — the whole session should stay on that concept's topic
+   * instead of drifting into the general cross-subject queue after the
+   * first question. Not capped to any question count; a caller cycles
+   * through this list to reach its own minimum, since a topic can have
+   * fewer distinct concepts than questions wanted but a deeper pool per
+   * concept.
+   */
+  buildTopicSessionPlan(subject, topic) {
+    const inTopic = Array.from(this.graph.nodes.values())
+      .filter(c => c.subject === subject && c.topic === topic);
+    const scored = inTopic.map(c => ({
+      concept: c,
+      score: this._sessionPriorityScore(c)
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return this._interleaveQueue(scored.map(s => s.concept.id));
+  }
+
   _sessionPriorityScore(concept) {
     let score = 0;
 

@@ -90,6 +90,16 @@ export function PracticeFlow() {
   const [hasHistory, setHasHistory] = useState(false);
   const [qIndex, setQIndex] = useState(init.qIndex);
   const [results, setResults] = useState<PracticeResult[]>(init.results);
+  // Whether this session has already had its one in-session remediation
+  // pass (missed questions resurfaced once, right before the final score
+  // is calculated) — reset alongside results whenever a session actually
+  // restarts, via resetResults() below, so a genuinely new session always
+  // gets its own remediation chance.
+  const [remediationDone, setRemediationDone] = useState(false);
+  function resetResults() {
+    setResults([]);
+    setRemediationDone(false);
+  }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
   const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
@@ -344,6 +354,33 @@ export function PracticeFlow() {
     if (!engineQuestions) return;
     const kairo = getEngine();
     if (qIndex + 1 >= engineQuestions.length) {
+      // In-session remediation, once per session: resurface any missed
+      // questions right here, before the session ends and the final
+      // score is calculated — a student gets one immediate corrective
+      // shot instead of only finding out about a miss after the score
+      // (and streak/Kairo Score) is already locked in.
+      if (!remediationDone) {
+        const missedConceptIds = Array.from(new Set(
+          newResults
+            .map((r, i) => (!r.correct ? engineQuestions[i]?.conceptId : null))
+            .filter((id): id is string => !!id)
+        ));
+        if (missedConceptIds.length > 0) {
+          const seenIds = engineQuestions.map((q) => q.id);
+          const remediationQs: EngineFlatQuestion[] = [];
+          for (const cid of missedConceptIds) {
+            const q = getRecommendedNextQuestion(cid, seenIds);
+            if (q) { remediationQs.push(q); seenIds.push(q.id); }
+          }
+          if (remediationQs.length > 0) {
+            setRemediationDone(true);
+            setEngineQuestions([...engineQuestions, ...remediationQs]);
+            setQIndex(qIndex + 1);
+            return;
+          }
+        }
+        setRemediationDone(true);
+      }
       setHasHistory(true);
       clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
       if (kairo) {
@@ -381,7 +418,7 @@ export function PracticeFlow() {
     } else if (key === 'challenge') {
       setDifficulty('hard');
       setQIndex(0);
-      setResults([]);
+      resetResults();
       go('practiceQuestion');
     } else if (key === 'cbt') {
       navigate('/cbt');
@@ -409,7 +446,7 @@ export function PracticeFlow() {
           setDifficulty('adaptive');
           setLength(5);
           setQIndex(0);
-          setResults([]);
+          resetResults();
           setEntryFlow('suggested');
           startSuggested();
           go('practiceQuestion');
@@ -465,7 +502,7 @@ export function PracticeFlow() {
             setTopic(null);
             setSubtopic(null);
             setQIndex(0);
-            setResults([]);
+            resetResults();
             const isGenericSubject = activeSubject.key === 'mixed' || activeSubject.key === 'weak';
             const subjectFilter = isGenericSubject ? [] : [activeSubject.label];
             startEngineCustomSession(subjectFilter, type === 'weak', len, d);
@@ -496,13 +533,13 @@ export function PracticeFlow() {
         onPick={(s) => {
           setSubtopic(s);
           setQIndex(0);
-          setResults([]);
+          resetResults();
           startTopicSession(activeSubject.label, topic, s);
           go('practiceQuestion');
         }}
         onSkip={() => {
           setQIndex(0);
-          setResults([]);
+          resetResults();
           startTopicSession(activeSubject.label, topic);
           go('practiceQuestion');
         }}

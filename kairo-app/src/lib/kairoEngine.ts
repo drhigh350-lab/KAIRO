@@ -285,6 +285,9 @@ export interface SuggestedSessionResult {
   kaiMessage?: string;
 }
 
+/** A recommendation anchored to one specific concept stays on that concept's whole topic for at least this many questions, never drifting into the general mixed queue after the first one. */
+const TOPIC_SESSION_MIN_QUESTIONS = 10;
+
 /**
  * Starts a real adaptive session (mode 'standard' — the DB's mode check
  * constraint doesn't have a 'suggested' value) across whichever of the
@@ -292,18 +295,48 @@ export interface SuggestedSessionResult {
  * questions for the concepts the RecommendationEngine actually queued.
  *
  * `anchorConceptId` — Home's MissionCard names one specific concept via
- * getTodayFocus() and explains *why* it's recommended, but this function
- * used to rerun RecommendationEngine.buildSessionPlan() from scratch with
- * no guarantee that concept was even in the resulting queue (different
- * instance, can legitimately rank a different concept top). Fetching it
- * first — before the normal adaptive loop — makes the session the student
- * actually gets match the reasoning they were just shown. Deduplicated by
- * concept id (not just question id) so the anchor isn't asked about twice.
+ * getTodayFocus() and explains *why* it's recommended. The whole session
+ * now stays scoped to that concept's subject+topic (RecommendationEngine.
+ * buildTopicSessionPlan — every concept in the topic, prioritized and
+ * interleaved the same way the general queue is, so it mixes concepts
+ * the student has struggled with and ones they've already passed, real
+ * active retrieval rather than a blind replay) for at least
+ * TOPIC_SESSION_MIN_QUESTIONS questions, cycling back through the
+ * topic's concepts to pull a second distinct question per concept where
+ * the pool allows. Previously only the *first* question was anchored —
+ * everything after it came from the general cross-subject queue, so a
+ * student who tapped "Simple Interest is fading" could end up practising
+ * five unrelated topics instead. Falls back to the general queue only if
+ * the topic genuinely has no real questions at all.
  */
 export async function startSuggestedSession(limit = 5, anchorConceptId?: string | null): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(kairo.profile.targetSubjects || []);
+
+  if (anchorConceptId) {
+    const anchorConcept = kairo.graph.getConcept(anchorConceptId);
+    if (anchorConcept) {
+      const { kaiMessage } = kairo.startSession({ mode: 'standard' });
+      const topicConceptIds: string[] = kairo.recommendation.buildTopicSessionPlan(anchorConcept.subject, anchorConcept.topic);
+      const ordered = [anchorConceptId, ...topicConceptIds.filter((id: string) => id !== anchorConceptId)];
+      kairo.currentSession.plan = ordered;
+
+      const questions: Engine[] = [];
+      const seenIds: string[] = [];
+      for (let pass = 0; pass < 4 && questions.length < TOPIC_SESSION_MIN_QUESTIONS; pass++) {
+        const before = questions.length;
+        for (const conceptId of ordered) {
+          if (questions.length >= TOPIC_SESSION_MIN_QUESTIONS) break;
+          const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+          if (q) { questions.push(q); seenIds.push(q.id); }
+        }
+        if (questions.length === before) break; // no real questions left in this topic — stop rather than loop
+      }
+      if (questions.length > 0) return { questions, kaiMessage };
+      // Genuinely nothing real for this topic — fall through to the general queue below.
+    }
+  }
 
   const { queue, kaiMessage } = kairo.startSession({ mode: 'standard' });
   const questions: Engine[] = [];
