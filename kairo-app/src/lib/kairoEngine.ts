@@ -830,6 +830,16 @@ export function getStreakStatus(): Engine | null {
   return kairo ? kairo.getStreakStatus() : null;
 }
 
+/** Whether today's daily recommendation session has already been completed — streak.lastSessionDate is only ever set by a 'standard'-mode (recommendation) session finishing (see endSession()'s streak gate), so a same-calendar-day match here is exactly that, not just any practice today. Drives the Home flame indicator. */
+export function hasCompletedTodaysRecommendation(): boolean {
+  const kairo = getEngine();
+  const lastSessionDate = kairo?.getStreakStatus()?.lastSessionDate;
+  if (!lastSessionDate) return false;
+  const last = new Date(lastSessionDate);
+  const now = new Date();
+  return last.getFullYear() === now.getFullYear() && last.getMonth() === now.getMonth() && last.getDate() === now.getDate();
+}
+
 // ─────────────────────────────────────────────
 // CBT Exam Mode — real questions via kairo.cbt (CBTExamMode), sourced
 // from the same local question queue ensureContentLoaded() already

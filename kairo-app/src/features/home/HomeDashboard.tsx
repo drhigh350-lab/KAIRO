@@ -5,7 +5,7 @@ import { Modal } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getTodayFocus, setDailyGoal } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getTodayFocus, setDailyGoal, hasCompletedTodaysRecommendation } from '../../lib/kairoEngine';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -22,6 +22,20 @@ function greeting(): string {
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** Dimmed until today's daily recommendation is completed, then burns bright — a single at-a-glance "have I shown up today" signal, distinct from the multi-day streak count itself. */
+function FlameIndicator({ lit }: { lit: boolean }) {
+  return (
+    <div title={lit ? "Today's recommendation done" : "Today's recommendation not done yet"} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+      background: lit ? 'rgba(224,160,57,0.18)' : 'var(--dark-bg-surface)', border: `1.5px solid ${lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-border)'}`,
+    }}>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill={lit ? 'var(--kairo-gold-500, #e0a039)' : 'none'} stroke={lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-text-faint)'} strokeWidth="2">
+        <path d="M12 2c1 4-4 5-4 9a4 4 0 008 0c1.5 1 2 3 2 4a6 6 0 01-12 0c0-5 3-6 3-9 0-1.5.5-3 3-4z" />
+      </svg>
+    </div>
+  );
 }
 
 const quickActions: { label: string; d: string; color: string; to: string; entry?: string }[] = [
@@ -96,19 +110,19 @@ export function HomeDashboard() {
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ width: 34 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <KairoWordmark tone="white" width={110} />
-          <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.1em', color: 'var(--dark-accent-blue)', marginTop: 2 }}>SEIZE THE MOMENT</div>
-        </div>
+        <KairoWordmark tone="white" width={100} />
         <button type="button" onClick={() => navigate('/profile')} aria-label="Open profile" style={{
           width: 34, height: 34, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-7px',
           borderRadius: '50%', background: 'var(--dark-bg-surface)', border: '2px solid var(--dark-accent-blue)', cursor: 'pointer', padding: 0,
         }} />
       </div>
 
-      <div>
-        <div style={{ fontSize: 16, color: 'var(--dark-text-heading)', fontWeight: 600 }}>{greeting()}, {firstName} 👋</div>
-        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, color: 'var(--dark-text-heading)', fontWeight: 600 }}>{greeting()}, {firstName} 👋</div>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
+        </div>
+        <FlameIndicator lit={hasCompletedTodaysRecommendation()} />
       </div>
 
       {daysToGo != null && (
