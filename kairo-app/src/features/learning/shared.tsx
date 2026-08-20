@@ -93,12 +93,15 @@ export function OptionRow({ label, selected, onClick, subtitle, tone = 'light' }
 }
 
 export interface KaiPanelProps {
-  note: ReactNode;
-  /** Real, async — resolves to Kai's generated response for that specific action, or null on failure. Omitting this leaves the action buttons hidden entirely (no dead buttons with no effect). */
+  /** Omit when the caller already shows this content elsewhere (e.g. Practice's AnswerFeedback already carries the explanation) — rendering it twice read as Kai repeating itself verbatim. */
+  note?: ReactNode;
+  /** Real, async — resolves to Kai's generated response for that specific action, or null on failure. Ignored while comingSoon is set. */
   onAction?: (action: string) => Promise<string | null>;
   tone?: 'light' | 'dark';
+  /** Shows the "Ask Kai for more" entry point and a "Coming soon" popup instead of the real action grid — the interaction isn't fully integrated yet, but the entry point stays visible so it's a one-line flip to turn back on. */
+  comingSoon?: boolean;
 }
-export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
+export function KaiPanel({ note, onAction, tone = 'light', comingSoon = false }: KaiPanelProps) {
   const dark = tone === 'dark';
   // Sidelined into a popup rather than an inline expansion — this kept
   // pushing the actual next-question flow down the screen every time a
@@ -112,6 +115,7 @@ export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const actions = ['Explain again', 'Give another example', 'Simplify', 'Teach from scratch', 'Show formula', 'Show memory trick'];
+  const showButton = comingSoon || !!onAction;
 
   async function handleActionClick(a: string) {
     if (!onAction || loading) return;
@@ -134,24 +138,38 @@ export function KaiPanel({ note, onAction, tone = 'light' }: KaiPanelProps) {
     }
   }
 
+  if (!note && !showButton) return null;
+
   return (
-    <div style={{ background: dark ? 'var(--dark-bg-elevated)' : 'var(--kairo-blue-100)', borderRadius: 'var(--radius-lg)', padding: 16, fontFamily: 'var(--font-body)' }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)'}`, flexShrink: 0, position: 'relative' }}>
-          <div style={{ position: 'absolute', width: '60%', height: '60%', top: '20%', left: '20%', borderRadius: '50%', background: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-navy-900)' }} />
+    <div style={note ? { background: dark ? 'var(--dark-bg-elevated)' : 'var(--kairo-blue-100)', borderRadius: 'var(--radius-lg)', padding: 16, fontFamily: 'var(--font-body)' } : { fontFamily: 'var(--font-body)' }}>
+      {note && (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)'}`, flexShrink: 0, overflow: 'hidden', background: dark ? 'var(--dark-bg-surface)' : '#fff' }}>
+            <img src="/assets/kai-avatar.png" alt="Kai" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+          <div style={{ fontSize: 13, color: dark ? 'var(--dark-text-body)' : 'var(--text-body)', lineHeight: 1.55 }}>{note}</div>
         </div>
-        <div style={{ fontSize: 13, color: dark ? 'var(--dark-text-body)' : 'var(--text-body)', lineHeight: 1.55 }}>{note}</div>
-      </div>
-      {onAction && (
+      )}
+      {showButton && (
         <button type="button" onClick={() => setPopupOpen(true)} style={{
-          marginTop: 12, fontSize: 12, fontWeight: 700, color: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          marginTop: note ? 12 : 0, fontSize: 12, fontWeight: 700, color: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-700)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
           background: 'none', border: 'none', padding: 0, minHeight: 'var(--touch-min)', fontFamily: 'inherit',
         }}>
           Ask Kai for more
           <ChevronRight />
         </button>
       )}
-      {onAction && popupOpen && (
+      {showButton && popupOpen && comingSoon && (
+        <Modal onClose={() => setPopupOpen(false)} tone={tone}>
+          <div style={{ textAlign: 'center', padding: '4px 0 8px' }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: dark ? 'var(--dark-text-heading)' : 'var(--text-heading)', marginBottom: 8 }}>Coming soon</div>
+            <div style={{ fontSize: 13, color: dark ? 'var(--dark-text-muted)' : 'var(--text-muted)', lineHeight: 1.55 }}>
+              Kai will soon be able to explain this differently, give another example, or simplify it further — right from here.
+            </div>
+          </div>
+        </Modal>
+      )}
+      {showButton && popupOpen && !comingSoon && (
         <Modal onClose={() => setPopupOpen(false)} tone={tone}>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: dark ? 'var(--dark-text-heading)' : 'var(--text-heading)', marginBottom: 14 }}>Ask Kai</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -375,5 +393,38 @@ export function Modal({ children, onClose, tone = 'light' }: ModalProps) {
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Small "ⓘ" affordance for wherever the Kairo Score is shown (Home, Profile,
+ * Insights — the only three screens it's allowed to appear on) — explains
+ * the real calculation in plain language (EliteScore.js's actual weighting)
+ * instead of leaving a bare number that looks arbitrary. `iconColor` exists
+ * because the button sits on both a plain dark surface and Profile's blue
+ * gradient card, which need different contrast.
+ */
+export function KairoScoreInfo({ iconColor = 'var(--dark-text-faint)' }: { iconColor?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label="How your Kairo Score is calculated" style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, flexShrink: 0,
+        background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: iconColor,
+      }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 16v-5M12 8h.01" /></svg>
+      </button>
+      {open && (
+        <Modal onClose={() => setOpen(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 10 }}>How your Kairo Score works</div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65 }}>
+            It blends three things: how many questions you get right, how much of what you learn actually sticks over time, and how often you show up to practice.
+          </div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.65, marginTop: 10 }}>
+            It only ever goes up, and it moves slowly on purpose — one session won't swing it much, but showing up consistently will.
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }

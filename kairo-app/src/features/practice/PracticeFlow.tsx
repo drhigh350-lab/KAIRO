@@ -6,14 +6,20 @@ import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation } from './PracticeQuestion';
-import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
+import { PracticeSummary, type PracticeResult, type PracticeSummaryAction } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, type WeakTopicSummary } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
+
+// Mixed Practice / a weak-topic boost both request "every real question
+// available" now rather than a student-picked count — this is a ceiling
+// safely above any seeded subject's real question bank, not a target the
+// engine is expected to actually reach.
+const UNCAPPED_LIMIT = 500;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
@@ -90,9 +96,18 @@ export function PracticeFlow() {
   const [hasHistory, setHasHistory] = useState(false);
   const [qIndex, setQIndex] = useState(init.qIndex);
   const [results, setResults] = useState<PracticeResult[]>(init.results);
+  // Whether this session has already had its one in-session remediation
+  // pass (missed questions resurfaced once, right before the final score
+  // is calculated) — reset alongside results whenever a session actually
+  // restarts, via resetResults() below, so a genuinely new session always
+  // gets its own remediation chance.
+  const [remediationDone, setRemediationDone] = useState(false);
+  function resetResults() {
+    setResults([]);
+    setRemediationDone(false);
+  }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
-  const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
   const [lastErrorTag, setLastErrorTag] = useState<string | null>(null);
   const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
   const [kaiNote, setKaiNote] = useState<string | null>(null);
@@ -106,6 +121,15 @@ export function PracticeFlow() {
   useEffect(() => {
     setResumeSnapshot(getPracticeSessionSnapshot(getEngine()?.profile?.studentId));
   }, []);
+  // Real most-failed topics for the Hub's "Weak Areas" picker — scoped to
+  // whatever subject the Hub is already showing (undefined/"all" for the
+  // generic Mixed/Weak entry points), refetched on every Hub visit since
+  // it's a cheap synchronous read, not a network call.
+  const [weakTopics, setWeakTopics] = useState<WeakTopicSummary[]>([]);
+  // Set once a session with no student-picked question count actually
+  // starts (Mixed Practice / a weak-topic boost) — tells PracticeQuestion
+  // to show completion percentage instead of "Question N of Total".
+  const [showPercent, setShowPercent] = useState(false);
 
   /** Recommended-by-Kairo session (Practice Module §2.2) — zero-input, real DDE-style queue. Shared by the initial-mount auto-start (arriving via entry:'suggested') and Practice Home's own "Start Session" tap. */
   function startSuggested(anchorConceptId?: string | null) {
@@ -151,11 +175,19 @@ export function PracticeFlow() {
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
   }
 
-  /** Topic Practice's final pick (or "practise all of this topic" skip) — same real session lifecycle, scoped to a subject/topic/subtopic. */
-  function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string) {
+  /**
+   * Topic Practice's final pick (or "practise all of this topic" skip), and
+   * the weak-topic boost from PracticeHub — same real session lifecycle,
+   * scoped to a subject/topic/subtopic. `limitOverride`/`difficultyOverride`
+   * exist because the caller may have just called setLength()/setDifficulty()
+   * moments earlier in the same handler — those state updates haven't
+   * committed yet, so reading `length`/`difficulty` here would still see the
+   * previous selection.
+   */
+  function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string, limitOverride?: number, difficultyOverride?: string) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    startTopicPracticeSession(subjectLabel, topicName, subtopicName, length || 10, difficulty ?? undefined)
+    startTopicPracticeSession(subjectLabel, topicName, subtopicName, limitOverride ?? (length || 10), difficultyOverride ?? (difficulty ?? undefined))
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions for this topic yet.");
@@ -170,6 +202,7 @@ export function PracticeFlow() {
   function resumeSession(snapshot: PracticeSessionSnapshot) {
     setEngineQuestions(null);
     setEngineLoadError(null);
+    setShowPercent(false);
     setEntryFlow(snapshot.entryFlow);
     setSubject({ key: snapshot.subjectKey, label: snapshot.subjectLabel });
     setTopic(snapshot.topic);
@@ -192,6 +225,12 @@ export function PracticeFlow() {
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not resume your session.'));
   }
+
+  useEffect(() => {
+    if (screen !== 'practiceHub') return;
+    const isGenericSubject = !subject || subject.key === 'mixed' || subject.key === 'weak';
+    setWeakTopics(getWeakTopics(isGenericSubject ? undefined : subject.label, 5));
+  }, [screen, subject]);
 
   function go(next: Screen) {
     setHistory((h) => [...h, screen]);
@@ -344,10 +383,42 @@ export function PracticeFlow() {
     if (!engineQuestions) return;
     const kairo = getEngine();
     if (qIndex + 1 >= engineQuestions.length) {
+      // In-session remediation, once per session: resurface any missed
+      // questions right here, before the session ends and the final
+      // score is calculated — a student gets one immediate corrective
+      // shot instead of only finding out about a miss after the score
+      // (and streak/Kairo Score) is already locked in.
+      if (!remediationDone) {
+        const missedConceptIds = Array.from(new Set(
+          newResults
+            .map((r, i) => (!r.correct ? engineQuestions[i]?.conceptId : null))
+            .filter((id): id is string => !!id)
+        ));
+        if (missedConceptIds.length > 0) {
+          const seenIds = engineQuestions.map((q) => q.id);
+          const remediationQs: EngineFlatQuestion[] = [];
+          for (const cid of missedConceptIds) {
+            const q = getRecommendedNextQuestion(cid, seenIds);
+            if (q) { remediationQs.push(q); seenIds.push(q.id); }
+          }
+          if (remediationQs.length > 0) {
+            setRemediationDone(true);
+            setEngineQuestions([...engineQuestions, ...remediationQs]);
+            setQIndex(qIndex + 1);
+            return;
+          }
+        }
+        setRemediationDone(true);
+      }
       setHasHistory(true);
       clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
       if (kairo) {
-        kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
+        // Score/streak/level/badges/persistence still all run — just not
+        // awaited or shown here. PracticeSummary displays a locally
+        // computed gained-score instead, so the summary never waits on
+        // this (previously slow: IndexedDB graph write + a real Supabase
+        // sync round trip) before rendering.
+        kairo.endSession().catch(() => {});
       }
       go('practiceSummary');
     } else {
@@ -375,13 +446,25 @@ export function PracticeFlow() {
       setSubject({ key: 'weak', label: 'Weak Areas' });
       setEntryFlow('weak');
       go('practiceHub');
-    } else if (key === 'retry') {
-      setQIndex(0);
-      go('practiceQuestion');
+    } else if (key === 'topic') {
+      // Continue on the exact topic just practised where one is known;
+      // otherwise (a mixed/weak-areas session has no single topic) send
+      // the student to pick one.
+      if (topic && activeSubject.key !== 'mixed' && activeSubject.key !== 'weak') {
+        setShowPercent(false);
+        resetResults();
+        setQIndex(0);
+        startTopicSession(activeSubject.label, topic, subtopic ?? undefined);
+        go('practiceQuestion');
+      } else {
+        setEntryFlow('topic');
+        go('subject');
+      }
     } else if (key === 'challenge') {
       setDifficulty('hard');
       setQIndex(0);
-      setResults([]);
+      setShowPercent(false);
+      resetResults();
       go('practiceQuestion');
     } else if (key === 'cbt') {
       navigate('/cbt');
@@ -409,7 +492,8 @@ export function PracticeFlow() {
           setDifficulty('adaptive');
           setLength(5);
           setQIndex(0);
-          setResults([]);
+          setShowPercent(false);
+          resetResults();
           setEntryFlow('suggested');
           startSuggested();
           go('practiceQuestion');
@@ -455,20 +539,35 @@ export function PracticeFlow() {
         subject={activeSubject}
         hasHistory={hasHistory}
         lockedType={lockedType}
+        weakTopics={weakTopics}
         onBack={back}
-        onStart={({ type, difficulty: d, length: len }) => {
+        onStart={({ type, difficulty: d, length: len, topic: pickedTopic, topicSubject }) => {
+          // len === 0 is PracticeHub's "no cap" sentinel (Mixed Practice /
+          // a weak-topic boost, both of which hide the length picker).
+          const uncapped = len === 0;
           setDifficulty(d);
-          setLength(len);
+          setLength(uncapped ? UNCAPPED_LIMIT : len);
+          setShowPercent(uncapped);
           if (type === 'topic') {
             go('topic');
+          } else if (pickedTopic && topicSubject) {
+            // A specific most-failed topic was picked — the whole session
+            // stays scoped to that one subject+topic (real active retrieval
+            // across it) instead of mixing every failed concept together.
+            setTopic(pickedTopic);
+            setSubtopic(null);
+            setQIndex(0);
+            resetResults();
+            startTopicSession(topicSubject, pickedTopic, undefined, UNCAPPED_LIMIT, d);
+            go('practiceQuestion');
           } else {
             setTopic(null);
             setSubtopic(null);
             setQIndex(0);
-            setResults([]);
+            resetResults();
             const isGenericSubject = activeSubject.key === 'mixed' || activeSubject.key === 'weak';
             const subjectFilter = isGenericSubject ? [] : [activeSubject.label];
-            startEngineCustomSession(subjectFilter, type === 'weak', len, d);
+            startEngineCustomSession(subjectFilter, type === 'weak', uncapped ? UNCAPPED_LIMIT : len, d);
             go('practiceQuestion');
           }
         }}
@@ -496,13 +595,15 @@ export function PracticeFlow() {
         onPick={(s) => {
           setSubtopic(s);
           setQIndex(0);
-          setResults([]);
+          setShowPercent(false);
+          resetResults();
           startTopicSession(activeSubject.label, topic, s);
           go('practiceQuestion');
         }}
         onSkip={() => {
           setQIndex(0);
-          setResults([]);
+          setShowPercent(false);
+          resetResults();
           startTopicSession(activeSubject.label, topic);
           go('practiceQuestion');
         }}
@@ -538,11 +639,12 @@ export function PracticeFlow() {
         kaiNote={kaiNote}
         explanation={explanation}
         nextStepNote={decisionNote}
+        showPercent={showPercent}
       />
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} engineSummary={sessionSummary} />;
+    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} entryFlow={entryFlow} />;
   }
   if (screen === 'practiceReview') {
     return <PracticeReview results={results} onBack={back} />;

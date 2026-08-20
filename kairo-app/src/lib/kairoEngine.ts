@@ -285,6 +285,9 @@ export interface SuggestedSessionResult {
   kaiMessage?: string;
 }
 
+/** A recommendation anchored to one specific concept stays on that concept's whole topic for at least this many questions, never drifting into the general mixed queue after the first one. */
+const TOPIC_SESSION_MIN_QUESTIONS = 10;
+
 /**
  * Starts a real adaptive session (mode 'standard' — the DB's mode check
  * constraint doesn't have a 'suggested' value) across whichever of the
@@ -292,18 +295,48 @@ export interface SuggestedSessionResult {
  * questions for the concepts the RecommendationEngine actually queued.
  *
  * `anchorConceptId` — Home's MissionCard names one specific concept via
- * getTodayFocus() and explains *why* it's recommended, but this function
- * used to rerun RecommendationEngine.buildSessionPlan() from scratch with
- * no guarantee that concept was even in the resulting queue (different
- * instance, can legitimately rank a different concept top). Fetching it
- * first — before the normal adaptive loop — makes the session the student
- * actually gets match the reasoning they were just shown. Deduplicated by
- * concept id (not just question id) so the anchor isn't asked about twice.
+ * getTodayFocus() and explains *why* it's recommended. The whole session
+ * now stays scoped to that concept's subject+topic (RecommendationEngine.
+ * buildTopicSessionPlan — every concept in the topic, prioritized and
+ * interleaved the same way the general queue is, so it mixes concepts
+ * the student has struggled with and ones they've already passed, real
+ * active retrieval rather than a blind replay) for at least
+ * TOPIC_SESSION_MIN_QUESTIONS questions, cycling back through the
+ * topic's concepts to pull a second distinct question per concept where
+ * the pool allows. Previously only the *first* question was anchored —
+ * everything after it came from the general cross-subject queue, so a
+ * student who tapped "Simple Interest is fading" could end up practising
+ * five unrelated topics instead. Falls back to the general queue only if
+ * the topic genuinely has no real questions at all.
  */
 export async function startSuggestedSession(limit = 5, anchorConceptId?: string | null): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   await ensureContentLoaded(kairo.profile.targetSubjects || []);
+
+  if (anchorConceptId) {
+    const anchorConcept = kairo.graph.getConcept(anchorConceptId);
+    if (anchorConcept) {
+      const { kaiMessage } = kairo.startSession({ mode: 'standard' });
+      const topicConceptIds: string[] = kairo.recommendation.buildTopicSessionPlan(anchorConcept.subject, anchorConcept.topic);
+      const ordered = [anchorConceptId, ...topicConceptIds.filter((id: string) => id !== anchorConceptId)];
+      kairo.currentSession.plan = ordered;
+
+      const questions: Engine[] = [];
+      const seenIds: string[] = [];
+      for (let pass = 0; pass < 4 && questions.length < TOPIC_SESSION_MIN_QUESTIONS; pass++) {
+        const before = questions.length;
+        for (const conceptId of ordered) {
+          if (questions.length >= TOPIC_SESSION_MIN_QUESTIONS) break;
+          const q = kairo.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+          if (q) { questions.push(q); seenIds.push(q.id); }
+        }
+        if (questions.length === before) break; // no real questions left in this topic — stop rather than loop
+      }
+      if (questions.length > 0) return { questions, kaiMessage };
+      // Genuinely nothing real for this topic — fall through to the general queue below.
+    }
+  }
 
   const { queue, kaiMessage } = kairo.startSession({ mode: 'standard' });
   const questions: Engine[] = [];
@@ -392,7 +425,33 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
   if (normalized.length > 0 && seededSubjects.length === 0) {
     return { questions: [] };
   }
-  const { queue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  // startCustomPractice's own queue is one entry per distinct concept
+  // (deduplicated, capped at `limit` concepts) — for an ordinary bounded
+  // session that's exactly right, but Mixed Practice's "no cap" request
+  // means every real question in scope, not one question per concept. Round-
+  // robin across each concept's actual remaining question pool (same
+  // approach startTopicPracticeSession already uses) so a concept with
+  // several seeded questions contributes more than one before the session
+  // considers it exhausted.
+  const { queue: conceptQueue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  const pools = conceptQueue.map((conceptId: string) => ({
+    conceptId,
+    remaining: kairo.questionGraph.getQuestionsForConcept(conceptId).length,
+  }));
+  const queue: string[] = [];
+  let addedThisPass = true;
+  while (queue.length < limit && addedThisPass) {
+    addedThisPass = false;
+    for (const pool of pools) {
+      if (queue.length >= limit) break;
+      if (pool.remaining > 0) {
+        queue.push(pool.conceptId);
+        pool.remaining--;
+        addedThisPass = true;
+      }
+    }
+  }
+
   const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];
   const seenIds: string[] = [];
@@ -405,6 +464,33 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
     }
   }
   return { questions };
+}
+
+export interface WeakTopicSummary {
+  subject: string;
+  topic: string;
+  incorrectAttempts: number;
+  failureRate: number;
+}
+
+/**
+ * Real most-failed topics (KairoEngine.getWeakTopics(), ranked by failure
+ * rate then miss count) — replaces "Weak Areas" repeating every question the
+ * student has ever missed with a short, selectable list of the topics
+ * actually hurting them. Empty (not an error) whenever there's no attempt
+ * history yet — callers should treat that the same as "not enough history
+ * for Weak Areas" they already handle via `hasHistory`.
+ */
+export function getWeakTopics(subjectLabel?: string, limit = 5): WeakTopicSummary[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  const subject = subjectLabel ? normalizeSubjectName(subjectLabel) : null;
+  return kairo.getWeakTopics({ subject, limit }).map((t: Engine) => ({
+    subject: t.subject,
+    topic: t.topic,
+    incorrectAttempts: t.incorrectAttempts,
+    failureRate: t.failureRate,
+  }));
 }
 
 // ─────────────────────────────────────────────
@@ -795,6 +881,16 @@ export function getConceptRetentionState(conceptId: string): string | null {
 export function getStreakStatus(): Engine | null {
   const kairo = getEngine();
   return kairo ? kairo.getStreakStatus() : null;
+}
+
+/** Whether today's daily recommendation session has already been completed — streak.lastSessionDate is only ever set by a 'standard'-mode (recommendation) session finishing (see endSession()'s streak gate), so a same-calendar-day match here is exactly that, not just any practice today. Drives the Home flame indicator. */
+export function hasCompletedTodaysRecommendation(): boolean {
+  const kairo = getEngine();
+  const lastSessionDate = kairo?.getStreakStatus()?.lastSessionDate;
+  if (!lastSessionDate) return false;
+  const last = new Date(lastSessionDate);
+  const now = new Date();
+  return last.getFullYear() === now.getFullYear() && last.getMonth() === now.getMonth() && last.getDate() === now.getDate();
 }
 
 // ─────────────────────────────────────────────

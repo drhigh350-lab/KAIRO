@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
@@ -33,6 +33,17 @@ import { getEngine, isOnboarded, restoreSession } from './lib/kairoEngine';
 // sitting in localStorage the whole time — this is what read as "my
 // progress reset" / "I have to sign in again" on every refresh.
 const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/insights', '/profile', '/challenges', '/learn', '/rapid-fire'];
+
+// Real multi-column desktop layouts exist only for these browsing/hub
+// screens (see AppShell's `wide` prop). Exact matches, not prefixes:
+// /practice and /cbt are single catch-all routes covering their whole
+// internal step machine (hub *and* the focused question screen share one
+// URL), so there's no way to tell them apart from the path alone — safer
+// to leave both at the narrow, focused width everywhere than to risk a
+// question screen rendering wide. /review/session (the focused review
+// flow) is a distinct path from /review (the hub) for exactly this
+// reason, so it's correctly excluded by an exact match here.
+const WIDE_ROUTES = ['/home', '/profile', '/insights', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore(): boolean {
@@ -87,9 +98,11 @@ function RequireOnboarded() {
 
 export default function App() {
   const ready = useBootRestore();
+  const location = useLocation();
+  const wide = WIDE_ROUTES.includes(location.pathname);
 
   return (
-    <AppShell>
+    <AppShell wide={wide}>
       {ready && <NotificationCenter />}
       {ready ? (
         <Routes>

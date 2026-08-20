@@ -781,7 +781,19 @@ export class KairoEngine {
     this.currentSession.completedAt = Date.now();
     this.profile.recordSession(this.currentSession);
 
-    const streakUpdate = this.streak.recordSession(this.currentSession.completedAt);
+    // Streak growth is restricted to the daily recommendation session
+    // (mode 'standard' — the zero-input suggested/anchored queue built by
+    // startSession(), distinct from 'custom_practice'/'topic_practice'/
+    // 'rapid_fire'/'cbt_exam'/'recovery'). Practising a specific weak
+    // topic or a custom set is real, valuable work, but the streak is
+    // meant to reward showing up for what Kairo actually recommended
+    // that day, not any session. MomentumStreak.recordSession() already
+    // computes momentum from unique *days* in the window, so a second
+    // recommendation completed the same day is naturally a no-op, not
+    // something this gate needs to track separately.
+    const streakUpdate = this.currentSession.mode === 'standard'
+      ? this.streak.recordSession(this.currentSession.completedAt)
+      : null;
     const score = this.eliteScore.calculate(this.graph, this.profile.sessions);
     const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions);
 
@@ -1015,6 +1027,47 @@ export class KairoEngine {
       state: c.retentionState,
       confidence: c.confidenceScore
     }));
+  }
+
+  /**
+   * Real topics the student has actually attempted, ranked by genuine
+   * failure rate (incorrect / total attempts across every concept in
+   * that topic) — the data "Boost Weak Areas" selects from, replacing a
+   * single session that silently mixed every failed concept from every
+   * topic together. A topic with zero attempts never appears (no
+   * fabricated weakness from a topic never seen), so the list can
+   * legitimately be empty for a brand-new student.
+   */
+  getWeakTopics({ subject = null, limit = 5 } = {}) {
+    const concepts = Array.from(this.graph.nodes.values())
+      .filter(c => !subject || c.subject === subject);
+
+    const byTopic = new Map();
+    for (const c of concepts) {
+      const key = `${c.subject}::${c.topic}`;
+      if (!byTopic.has(key)) byTopic.set(key, { subject: c.subject, topic: c.topic, concepts: [] });
+      byTopic.get(key).concepts.push(c);
+    }
+
+    const ranked = Array.from(byTopic.values())
+      .map(t => {
+        const totalAttempts = t.concepts.reduce((s, c) => s + c.attemptHistory.length, 0);
+        const incorrectAttempts = t.concepts.reduce(
+          (s, c) => s + c.attemptHistory.filter(a => !a.correct).length, 0
+        );
+        return {
+          subject: t.subject,
+          topic: t.topic,
+          conceptCount: t.concepts.length,
+          totalAttempts,
+          incorrectAttempts,
+          failureRate: totalAttempts > 0 ? incorrectAttempts / totalAttempts : 0
+        };
+      })
+      .filter(t => t.totalAttempts > 0 && t.incorrectAttempts > 0);
+
+    ranked.sort((a, b) => b.failureRate - a.failureRate || b.incorrectAttempts - a.incorrectAttempts);
+    return ranked.slice(0, limit);
   }
 
   exportState() {

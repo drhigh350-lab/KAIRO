@@ -18,28 +18,35 @@ export interface PracticeResult {
   };
 }
 
-export type PracticeSummaryAction = 'weak' | 'retry' | 'challenge' | 'cbt' | 'review';
-
-export interface EngineSessionSummary {
-  eliteScore?: { total: number };
-  streak?: { momentum: number };
-}
+export type PracticeSummaryAction = 'weak' | 'topic' | 'challenge' | 'cbt' | 'review';
 
 export interface PracticeSummaryProps {
   results: PracticeResult[];
   onHome: () => void;
   onAction?: (action: PracticeSummaryAction) => void;
-  /** Real KairoEngine.endSession() result, when this session ran against the real engine. */
-  engineSummary?: EngineSessionSummary | null;
+  /** 'suggested' = the daily recommendation session; anything else counts as standard practice for the gained-score rate below. */
+  entryFlow?: string;
 }
 
-export function PracticeSummary({ results, onHome, onAction, engineSummary }: PracticeSummaryProps) {
+/** Points shown on the summary for this session alone — deliberately not the adaptive Kairo Score (a slow-changing 0-100 curve, wrong shape for "what did I just earn"). The recommendation session pays more, rewarding showing up for what Kairo actually suggested. */
+const POINTS_PER_CORRECT_SUGGESTED = 10;
+const POINTS_PER_CORRECT_STANDARD = 2;
+
+type SummaryTier = 'low' | 'mid' | 'high';
+
+function tierFor(accuracy: number): SummaryTier {
+  if (accuracy < 50) return 'low';
+  if (accuracy < 80) return 'mid';
+  return 'high';
+}
+
+export function PracticeSummary({ results, onHome, onAction, entryFlow }: PracticeSummaryProps) {
   const total = results.length;
   const correctCount = results.filter((r) => r.correct).length;
-  const incorrectCount = total - correctCount;
   const accuracy = total ? Math.round((correctCount / total) * 100) : 0;
   const totalTime = results.reduce((s, r) => s + (r.time || 0), 0);
   const avgTime = total ? Math.round(totalTime / total) : 0;
+  const gainedScore = correctCount * (entryFlow === 'suggested' ? POINTS_PER_CORRECT_SUGGESTED : POINTS_PER_CORRECT_STANDARD);
 
   // Real per-subject accuracy from what was actually answered this session —
   // a comparison only means something with 2+ distinct subjects present.
@@ -66,22 +73,29 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
 
   const hasInsights = !!(strongest && weakest && strongest.subject !== weakest.subject) || !!topicNeedingAttention;
 
-  const recommendations: { key: PracticeSummaryAction; label: string; detail: string; disabled?: boolean }[] = [
-    {
-      key: 'weak',
-      label: 'Continue Weak Areas',
-      detail: topicNeedingAttention ? `A focused pass on ${topicNeedingAttention}.` : 'Nothing missed yet to build this from — clean sweep.',
-      // A perfect (or nothing-missed) session gives Kairo no fresh signal for
-      // what's actually weak — offering this anyway routes into a session
-      // that predictably comes back with "no questions found" and nowhere
-      // useful to land, which reads as broken rather than honest.
-      disabled: !incorrectCount,
-    },
-    { key: 'retry', label: 'Retry Incorrect Questions', detail: incorrectCount ? `${incorrectCount} question${incorrectCount === 1 ? '' : 's'} to revisit.` : 'Nothing to retry — clean sweep.', disabled: !incorrectCount },
-    { key: 'challenge', label: 'Challenge Yourself', detail: 'Move up to Hard difficulty.' },
-    { key: 'cbt', label: 'Take a CBT Simulation', detail: 'Practise under real exam conditions.' },
-    { key: 'review', label: 'Review Explanations', detail: 'Re-read every explanation from this session.' },
-  ];
+  // Dynamic, at most 2 choices — a real routing decision by how the
+  // session actually went, not a static 5-item menu leaving the choice
+  // (and the cognitive load of picking) to the student. "Retry Incorrect
+  // Questions" is dropped from this list entirely: in-session remediation
+  // (PracticeFlow) already resurfaces missed questions once, automatically,
+  // before this screen ever renders.
+  const tier = tierFor(accuracy);
+  const weakDetail = topicNeedingAttention ? `A focused pass on ${topicNeedingAttention}.` : 'Zero in on what needs the most work.';
+  const TIER_ACTIONS: Record<SummaryTier, { key: PracticeSummaryAction; label: string; detail: string }[]> = {
+    low: [
+      { key: 'review', label: 'Review Explanations', detail: 'Re-read every explanation from this session.' },
+      { key: 'weak', label: 'Boost Weak Areas', detail: weakDetail },
+    ],
+    mid: [
+      { key: 'weak', label: 'Boost Weak Areas', detail: weakDetail },
+      { key: 'topic', label: 'Continue Topic Practice', detail: 'Keep building on what you just covered.' },
+    ],
+    high: [
+      { key: 'challenge', label: 'Challenge Yourself', detail: 'Move up to Hard difficulty.' },
+      { key: 'cbt', label: 'Take a CBT Simulation', detail: 'Practise under real exam conditions.' },
+    ],
+  };
+  const [primary, secondary] = TIER_ACTIONS[tier];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
@@ -91,12 +105,18 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
         </div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)', marginTop: 14 }}>Practice Complete</div>
         <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{total} questions · {formatTime(totalTime)}</div>
+        {gainedScore > 0 && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.15)' }}>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: 'var(--dark-accent-blue)' }}>+{gainedScore}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--dark-text-muted)' }}>points this session</span>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <div style={{ display: 'flex' }}>
-            <StatTile dark label="Answered" value={total} />
+            <StatTile dark label="Correct Answers" value={correctCount} />
             <StatTile dark label="Accuracy" value={`${accuracy}%`} />
             <StatTile dark label="Avg / question" value={`${avgTime}s`} />
           </div>
@@ -115,39 +135,31 @@ export function PracticeSummary({ results, onHome, onAction, engineSummary }: Pr
           </Card>
         )}
 
-        <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>KAIRO SCORE</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
-              {engineSummary?.eliteScore ? Math.round(engineSummary.eliteScore.total) : '—'}
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>STREAK</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 4 }}>
-              {engineSummary?.streak ? `${engineSummary.streak.momentum} days` : '—'}
-            </div>
-          </div>
-        </Card>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em' }}>SUGGESTED NEXT</div>
 
-        <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 6 }}>SUGGESTED NEXT</div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {recommendations.map((r) => (
-              <button key={r.key} type="button" disabled={r.disabled} onClick={() => onAction && onAction(r.key)} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 2px', minHeight: 'var(--touch-min)',
-                cursor: r.disabled ? 'default' : 'pointer', width: '100%', textAlign: 'left', background: 'none', fontFamily: 'inherit',
-                opacity: r.disabled ? 0.45 : 1, border: 'none', borderTop: '1px solid var(--dark-border)', color: 'var(--dark-text-faint)',
-              }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{r.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>{r.detail}</div>
-                </div>
-                {!r.disabled && <ChevronRight />}
-              </button>
-            ))}
+        <button type="button" onClick={() => onAction && onAction(primary.key)} style={{
+          textAlign: 'left', border: 'none', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 'var(--radius-lg)',
+          background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff',
+          boxShadow: '0 8px 30px var(--dark-accent-blue-glow)', padding: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-heading)' }}>{primary.label}</div>
+            <div style={{ fontSize: 13, marginTop: 4, color: 'rgba(255,255,255,0.85)' }}>{primary.detail}</div>
           </div>
-        </Card>
+          <ChevronRight />
+        </button>
+
+        <button type="button" onClick={() => onAction && onAction(secondary.key)} style={{
+          textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 'var(--radius-lg)',
+          background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', color: 'var(--dark-text-heading)',
+          padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{secondary.label}</div>
+            <div style={{ fontSize: 12, marginTop: 2, color: 'var(--dark-text-muted)' }}>{secondary.detail}</div>
+          </div>
+          <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
+        </button>
       </div>
 
       <div style={{ padding: '0 20px 24px' }}>

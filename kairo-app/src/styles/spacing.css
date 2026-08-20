@@ -18,6 +18,12 @@
 
 --touch-min:48px;
 --container-max:420px;
+/* A second, wider cap for hub/dashboard screens (Home, Profile, Practice
+   Home, Insights, Review) on desktop — real multi-column layouts, not the
+   single-column reading width every focused question-answering screen
+   (Practice Question, CBT Exam, Rapid Fire, Review Session, Learn) keeps
+   at --container-max. See .app-shell--wide in layout.css. */
+--container-max-wide:960px;
 
 /* Safe-area insets — real device notches/gesture bars, never simulated */
 --safe-top:env(safe-area-inset-top, 0px);

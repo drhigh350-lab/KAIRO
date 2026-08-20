@@ -79,14 +79,13 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
           ))}
         </div>
 
-        {(insights?.eliteScore || streak) && (
+        {/*
+          The total Kairo Score is deliberately restricted to Home, Profile,
+          and Insights — Practice Home doesn't repeat it, so this card only
+          ever shows Streak/subject-health, never the score itself.
+        */}
+        {(streak || subjectHealth[0]) && (
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', display: 'flex', gap: 18 }}>
-            {insights?.eliteScore != null && (
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Kairo Score</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)', marginTop: 2 }}>{Math.round(insights.eliteScore)}</div>
-              </div>
-            )}
             {streak && (
               <div>
                 <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Streak</div>

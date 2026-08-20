@@ -16,7 +16,7 @@ export class LevelSystem {
       { level: 1,  name: 'First Step',      xpRequired: 0,    tagline: 'You began.' },
       { level: 2,  name: 'Curious Mind',    xpRequired: 100,  tagline: 'Questions are becoming familiar.' },
       { level: 3,  name: 'Pattern Seeker',  xpRequired: 300,  tagline: 'You are noticing how concepts connect.' },
-      { level: 4,  name: 'Steady Builder',  xpRequired: 600,  tagline: 'Consistency is forming.' },
+      { level: 4,  name: 'Steady Builder',  xpRequired: 600,  tagline: "You're settling into a real rhythm." },
       { level: 5,  name: 'Knowledge Keeper',xpRequired: 1000, tagline: 'You are remembering after time passes.' },
       { level: 6,  name: 'Strategist',      xpRequired: 1500, tagline: 'You think before you answer.' },
       { level: 7,  name: 'Elite Scholar',   xpRequired: 2200, tagline: 'Hard concepts are becoming routine.' },

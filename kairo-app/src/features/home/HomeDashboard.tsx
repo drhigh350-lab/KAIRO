@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
-import { Modal } from '../learning/shared';
+import { MissionCard, Card, KairoWordmark, Avatar, Input, Button } from '../../components';
+import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getTodayFocus, setDailyGoal } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getTodayFocus, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation } from '../../lib/kairoEngine';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -22,6 +22,20 @@ function greeting(): string {
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** Dimmed until today's daily recommendation is completed, then burns bright — a single at-a-glance "have I shown up today" signal, distinct from the multi-day streak count itself. */
+function FlameIndicator({ lit }: { lit: boolean }) {
+  return (
+    <div title={lit ? "Today's recommendation done" : "Today's recommendation not done yet"} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+      background: lit ? 'rgba(224,160,57,0.18)' : 'var(--dark-bg-surface)', border: `1.5px solid ${lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-border)'}`,
+    }}>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill={lit ? 'var(--kairo-gold-500, #e0a039)' : 'none'} stroke={lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-text-faint)'} strokeWidth="2">
+        <path d="M12 2c1 4-4 5-4 9a4 4 0 008 0c1.5 1 2 3 2 4a6 6 0 01-12 0c0-5 3-6 3-9 0-1.5.5-3 3-4z" />
+      </svg>
+    </div>
+  );
 }
 
 const quickActions: { label: string; d: string; color: string; to: string; entry?: string }[] = [
@@ -58,6 +72,11 @@ export function HomeDashboard() {
   const earnedBadges: EarnedBadge[] = getEngine()?.getBadges()?.earned ?? [];
   const latestBadge = earnedBadges.length ? earnedBadges[earnedBadges.length - 1] : null;
   const [todayProgress, setTodayProgress] = useState(getTodayProgress());
+  // Home is one of only three places the total Kairo Score is allowed to
+  // show (with Profile and Insights) — everywhere else shows session-scoped
+  // gained points instead, so this doesn't repeat a slow-moving 0-100
+  // number where "what did I just earn" is the more useful question.
+  const insights = getInsightsSummary();
   // The engine's own real reasoning for today's recommended concept —
   // replaces a static sentence that used to be identical for every student
   // regardless of macro-state, decay urgency, or exam proximity.
@@ -96,19 +115,21 @@ export function HomeDashboard() {
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ width: 34 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <KairoWordmark tone="white" width={110} />
-          <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.1em', color: 'var(--dark-accent-blue)', marginTop: 2 }}>SEIZE THE MOMENT</div>
-        </div>
+        <KairoWordmark tone="white" width={100} />
         <button type="button" onClick={() => navigate('/profile')} aria-label="Open profile" style={{
           width: 34, height: 34, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-7px',
-          borderRadius: '50%', background: 'var(--dark-bg-surface)', border: '2px solid var(--dark-accent-blue)', cursor: 'pointer', padding: 0,
-        }} />
+          borderRadius: '50%', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+        }}>
+          <Avatar name={data.name} size={34} ring />
+        </button>
       </div>
 
-      <div>
-        <div style={{ fontSize: 16, color: 'var(--dark-text-heading)', fontWeight: 600 }}>{greeting()}, {firstName} 👋</div>
-        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, color: 'var(--dark-text-heading)', fontWeight: 600 }}>{greeting()}, {firstName} 👋</div>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
+        </div>
+        <FlameIndicator lit={hasCompletedTodaysRecommendation()} />
       </div>
 
       {daysToGo != null && (
@@ -118,57 +139,121 @@ export function HomeDashboard() {
         </div>
       )}
 
-      <MissionCard
-        badge="Recommended Next Step"
-        title="Start Practising"
-        reason={
-          todayFocus?.reason
-            ?? `Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`
-        }
-        chips={['≈5 min', 'Adaptive']}
-        ctaLabel="Start Session"
-        onStart={() => navigate('/practice', { state: { entry: 'suggested', anchorConceptId: todayFocus?.conceptId ?? null } })}
-      />
+      {/*
+        Desktop (>=900px, via .app-shell--wide): a real two-column
+        dashboard — actions on the left where they have room to breathe,
+        status/stats as a sticky sidebar on the right, instead of the same
+        single mobile column just stretched out with the numbers pushed
+        further down the page. Below that breakpoint this is a plain
+        stacked flex column (the classes are no-ops), unchanged from before.
+      */}
+      <div className="desktop-grid">
+        <div className="desktop-main">
+          <MissionCard
+            badge="Recommended Next Step"
+            title="Start Practising"
+            reason={
+              todayFocus?.reason
+                ?? `Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`
+            }
+            chips={['≈5 min', 'Adaptive']}
+            ctaLabel="Start Session"
+            onStart={() => navigate('/practice', { state: { entry: 'suggested', anchorConceptId: todayFocus?.conceptId ?? null } })}
+          />
 
-      <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M4 20V10M11 20V4M18 20v-7" /></svg>
-            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Today's Progress</span>
-          </div>
-          {/* When a daily goal is set, this ring is real goal-completion progress
-              (questionsToday/dailyGoal) — a conic-gradient arc, not just a static
-              border with a number in it, which used to visually imply completion
-              regardless of the number shown. Without a goal there's nothing to
-              show completion against, so it falls back to today's accuracy, same
-              as before. */}
-          <div style={{
-            width: 56, height: 56, borderRadius: '50%', flexShrink: 0, padding: 5,
-            background: hasTodayProgress ? `conic-gradient(var(--dark-accent-blue) ${ringPct * 3.6}deg, var(--dark-border) 0deg)` : 'var(--dark-border)',
-          }}>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: 'var(--dark-bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{ringLabel}</span>
+          <div>
+            <div style={{ fontWeight: 700, color: 'var(--dark-text-heading)', fontSize: 15, marginBottom: 12 }}>Quick Actions</div>
+            <div className="desktop-reflow-grid">
+              {quickActions.map((q) => (
+                <button key={q.label} type="button" onClick={() => navigate(q.to, q.entry ? { state: { entry: q.entry } } : undefined)} style={{
+                  background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 14,
+                  display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
+                }}>
+                  <span style={{ width: 32, height: 32, borderRadius: '50%', background: `${q.color}26`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={q.color} strokeWidth="2"><path d={q.d} /></svg>
+                  </span>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--dark-text-heading)', lineHeight: 1.3 }}>{q.label}</span>
+                </button>
+              ))}
             </div>
           </div>
+
+          <Card onClick={() => navigate('/challenges')} style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(46,124,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Challenges</div>
+              <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 2, lineHeight: 1.4 }}>
+                {liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.'}
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
+          </Card>
+
+          {latestBadge && (
+            <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z" /></svg>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-accent-blue)' }}>Kai Wisdom Spark — {latestBadge.name}</div>
+                <div style={{ fontSize: 'var(--fs-body-sm)', color: 'var(--dark-text-body)', lineHeight: 1.5, marginTop: 4 }}>{latestBadge.desc}. That's not luck — that's real progress showing up.</div>
+              </div>
+            </div>
+          )}
         </div>
-        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>
-          {hasTodayProgress
-            ? (goalPct != null
-                ? `${goalPct}% of today's ${todayProgress.dailyGoal}-question goal · ${todayProgress.accuracyPct}% accuracy so far.`
-                : "Today's accuracy across everything you've completed so far.")
-            : 'Your progress will appear here after you complete a practice session.'}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--dark-border)' }}>
-          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? todayProgress.questionsToday : '—'}</span></div>
-          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Study Time<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? `${todayProgress.studyMinutesToday}m` : '—'}</span></div>
-          <button type="button" onClick={() => { setGoalInput(todayProgress.dailyGoal != null ? String(todayProgress.dailyGoal) : ''); setShowGoalModal(true); }} style={{
-            background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-          }}>
-            <span style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Daily Goal</span><br />
-            <span style={{ color: 'var(--dark-accent-blue)', fontWeight: 700 }}>
-              {todayProgress.dailyGoal != null ? `${todayProgress.questionsToday}/${todayProgress.dailyGoal}` : 'Set goal'}
-            </span>
-          </button>
+
+        <div className="desktop-sidebar">
+          <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M4 20V10M11 20V4M18 20v-7" /></svg>
+                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Today's Progress</span>
+              </div>
+              {/* When a daily goal is set, this ring is real goal-completion progress
+                  (questionsToday/dailyGoal) — a conic-gradient arc, not just a static
+                  border with a number in it, which used to visually imply completion
+                  regardless of the number shown. Without a goal there's nothing to
+                  show completion against, so it falls back to today's accuracy, same
+                  as before. */}
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%', flexShrink: 0, padding: 5,
+                background: hasTodayProgress ? `conic-gradient(var(--dark-accent-blue) ${ringPct * 3.6}deg, var(--dark-border) 0deg)` : 'var(--dark-border)',
+              }}>
+                <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: 'var(--dark-bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{ringLabel}</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 10, maxWidth: 220 }}>
+              {hasTodayProgress
+                ? (goalPct != null
+                    ? `${goalPct}% of today's ${todayProgress.dailyGoal}-question goal · ${todayProgress.accuracyPct}% accuracy so far.`
+                    : "Today's accuracy across everything you've completed so far.")
+                : 'Your progress will appear here after you complete a practice session.'}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--dark-border)' }}>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Questions<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? todayProgress.questionsToday : '—'}</span></div>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Study Time<br /><span style={{ color: 'var(--dark-text-heading)', fontWeight: 700 }}>{hasTodayProgress ? `${todayProgress.studyMinutesToday}m` : '—'}</span></div>
+              <button type="button" onClick={() => { setGoalInput(todayProgress.dailyGoal != null ? String(todayProgress.dailyGoal) : ''); setShowGoalModal(true); }} style={{
+                background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+              }}>
+                <span style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>Daily Goal</span><br />
+                <span style={{ color: 'var(--dark-accent-blue)', fontWeight: 700 }}>
+                  {todayProgress.dailyGoal != null ? `${todayProgress.questionsToday}/${todayProgress.dailyGoal}` : 'Set goal'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {insights?.eliteScore != null && (
+            <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 }}>Kairo Score</span>
+                <KairoScoreInfo />
+              </div>
+              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--dark-text-heading)' }}>{Math.round(insights.eliteScore)}</span>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -181,46 +266,6 @@ export function HomeDashboard() {
             <Button variant="darkAccent" size="lg" fullWidth disabled={savingGoal} onClick={handleSaveGoal}>{savingGoal ? 'Saving…' : 'Save'}</Button>
           </div>
         </Modal>
-      )}
-
-      <div>
-        <div style={{ fontWeight: 700, color: 'var(--dark-text-heading)', fontSize: 15, marginBottom: 12 }}>Quick Actions</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {quickActions.map((q) => (
-            <button key={q.label} type="button" onClick={() => navigate(q.to, q.entry ? { state: { entry: q.entry } } : undefined)} style={{
-              background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 14,
-              display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
-            }}>
-              <span style={{ width: 32, height: 32, borderRadius: '50%', background: `${q.color}26`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={q.color} strokeWidth="2"><path d={q.d} /></svg>
-              </span>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--dark-text-heading)', lineHeight: 1.3 }}>{q.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <Card onClick={() => navigate('/challenges')} style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)' }}>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(46,124,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Challenges</div>
-          <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 2, lineHeight: 1.4 }}>
-            {liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.'}
-          </div>
-        </div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
-      </Card>
-
-      {latestBadge && (
-        <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z" /></svg>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-accent-blue)' }}>Kai Wisdom Spark — {latestBadge.name}</div>
-            <div style={{ fontSize: 'var(--fs-body-sm)', color: 'var(--dark-text-body)', lineHeight: 1.5, marginTop: 4 }}>{latestBadge.desc}. That's not luck — that's real progress showing up.</div>
-          </div>
-        </div>
       )}
     </div>
   );

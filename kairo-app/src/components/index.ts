@@ -21,3 +21,4 @@ export * from './kairo/SessionSummaryCard';
 export * from './navigation/BottomNav';
 
 export * from './brand/Logo';
+export * from './brand/Avatar';

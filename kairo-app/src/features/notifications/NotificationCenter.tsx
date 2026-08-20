@@ -68,12 +68,24 @@ export function NotificationCenter() {
   }
 
   return (
-    <div style={{
-      position: 'fixed', top: 12, left: 0, right: 0, zIndex: 200,
-      display: 'flex', justifyContent: 'center', padding: '0 16px', pointerEvents: 'none',
-    }}>
+    // A normal-flow block, not `position: fixed` — NotificationCenter is
+    // mounted as a sibling of the routed screen inside .app-shell's own
+    // flex column (see App.tsx), so rendering it in-flow here means it
+    // simply pushes that screen's content down by its own height,
+    // whatever that screen's own header looks like, rather than floating
+    // over it. `position: fixed` (this component's previous approach)
+    // required guessing a single top offset that could clear every
+    // screen's differently-sized header — Practice/CBT/Review's tall
+    // two-row topbar, a plain ScreenHeader, or (Insights, Home) no
+    // standard header component at all — and no single guess could ever
+    // be right everywhere: it either buried a question screen's own
+    // exit/bookmark controls (the original bug — a notification firing
+    // mid-question made Practice's exit button unreachable until
+    // dismissed) or covered real content just below a shorter header
+    // (Insights' own Kairo Score card, confirmed in testing).
+    <div style={{ padding: '10px 16px 0', background: 'var(--dark-bg-canvas)' }}>
       <div style={{
-        pointerEvents: 'auto', width: '100%', maxWidth: 420, background: 'var(--dark-bg-surface)',
+        background: 'var(--dark-bg-surface)',
         border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)',
         padding: 14, display: 'flex', gap: 10, alignItems: 'flex-start',
       }}>

@@ -141,19 +141,25 @@ export class MisconceptionLibrary {
   static seedDefaults() {
     const lib = new MisconceptionLibrary();
 
+    // Rewritten in second person, present as diagnosis rather than
+    // judgment — no "student", no "failed"/"wrong", no flat absolute
+    // claims about what happened in someone else's head (Kairo Copy &
+    // Communication Framework: frame a miss as information, never blame).
+    // `name`/`description` are display copy only; `id` is the stable key
+    // real seeded questions reference and stays unchanged.
     const defaults = [
-      { id: 'memorized_not_understood', name: 'Memorized, Not Understood', category: 'retention', description: 'Can reproduce fact/formula but cannot apply when wording changes.' },
-      { id: 'rushed_under_pressure', name: 'Rushed Under Time Pressure', category: 'execution', description: 'Error would not occur if student re-read the question carefully.' },
-      { id: 'guessed_no_reasoning', name: 'Guessed — No Real Reasoning', category: 'engagement', description: 'Response pattern inconsistent with genuine reasoning.' },
-      { id: 'confused_similar_concepts', name: 'Confused Similar Concepts', category: 'conceptual', description: 'Wrong option corresponds to answer correct under an adjacent, different rule.' },
-      { id: 'missing_prerequisite', name: 'Missing Prerequisite Knowledge', category: 'foundational', description: 'Error consistent with gap further down the dependency chain.' },
-      { id: 'misunderstood_terminology', name: 'Misunderstood Terminology', category: 'comprehension', description: 'Misread what a specific term means, not the underlying science.' },
-      { id: 'sign_error', name: 'Sign Error', category: 'careless', description: 'Correct approach but lost track of positive/negative signs.' },
-      { id: 'unit_conversion_error', name: 'Unit Conversion Error', category: 'careless', description: 'Failed to convert units correctly before calculating.' },
-      { id: 'formula_recall_error', name: 'Formula Recall Error', category: 'retention', description: 'Used wrong formula or forgot formula entirely.' },
-      { id: 'arithmetic_slip', name: 'Arithmetic Slip', category: 'careless', description: 'Correct method but simple calculation error.' },
-      { id: 'misread_graph', name: 'Misread Graph/Diagram', category: 'comprehension', description: 'Misinterpreted visual data representation.' },
-      { id: 'overgeneralized_rule', name: 'Overgeneralized Rule', category: 'conceptual', description: 'Applied a rule beyond its valid domain.' }
+      { id: 'memorized_not_understood', name: 'Familiar, Not Yet Flexible', category: 'retention', description: "You know this one when it's asked the usual way — it just needed to stretch further than you'd practiced it." },
+      { id: 'rushed_under_pressure', name: 'Moved a Little Fast', category: 'execution', description: "A slower, closer read of the question would likely have caught this." },
+      { id: 'guessed_no_reasoning', name: 'A Quick Guess', category: 'engagement', description: "This one has the shape of a guess more than a worked answer — worth going back and reasoning through properly." },
+      { id: 'confused_similar_concepts', name: 'Mixed Up Two Similar Ideas', category: 'conceptual', description: "You picked the answer that's correct under a different, related rule — an easy mix-up." },
+      { id: 'missing_prerequisite', name: 'A Gap Further Back', category: 'foundational', description: "This traces back to something earlier in the chain that's worth reinforcing first." },
+      { id: 'misunderstood_terminology', name: 'A Term Read Differently', category: 'comprehension', description: "The idea is there — one specific term just landed differently than it was meant." },
+      { id: 'sign_error', name: 'A Sign Slipped', category: 'careless', description: "Right approach — a plus or minus sign got away partway through." },
+      { id: 'unit_conversion_error', name: 'A Unit Conversion Slipped', category: 'careless', description: "The setup was right — the units just didn't get converted before the calculation." },
+      { id: 'formula_recall_error', name: 'A Different Formula', category: 'retention', description: "A different formula got pulled in here — worth a quick refresh on which one applies." },
+      { id: 'arithmetic_slip', name: 'A Calculation Slip', category: 'careless', description: "Right method, right setup — just a small slip in the arithmetic." },
+      { id: 'misread_graph', name: 'A Graph Read Differently', category: 'comprehension', description: "The chart or diagram gave a different reading than what it actually shows." },
+      { id: 'overgeneralized_rule', name: 'A Rule Stretched Too Far', category: 'conceptual', description: "This rule holds — just not quite this far. It has a boundary worth knowing." }
     ];
 
     for (const d of defaults) lib.register(d);
