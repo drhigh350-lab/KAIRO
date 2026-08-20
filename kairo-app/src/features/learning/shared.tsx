@@ -144,8 +144,8 @@ export function KaiPanel({ note, onAction, tone = 'light', comingSoon = false }:
     <div style={note ? { background: dark ? 'var(--dark-bg-elevated)' : 'var(--kairo-blue-100)', borderRadius: 'var(--radius-lg)', padding: 16, fontFamily: 'var(--font-body)' } : { fontFamily: 'var(--font-body)' }}>
       {note && (
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)'}`, flexShrink: 0, position: 'relative' }}>
-            <div style={{ position: 'absolute', width: '60%', height: '60%', top: '20%', left: '20%', borderRadius: '50%', background: dark ? 'var(--dark-accent-blue)' : 'var(--kairo-navy-900)' }} />
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)'}`, flexShrink: 0, overflow: 'hidden', background: dark ? 'var(--dark-bg-surface)' : '#fff' }}>
+            <img src="/assets/kai-avatar.png" alt="Kai" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
           <div style={{ fontSize: 13, color: dark ? 'var(--dark-text-body)' : 'var(--text-body)', lineHeight: 1.55 }}>{note}</div>
         </div>

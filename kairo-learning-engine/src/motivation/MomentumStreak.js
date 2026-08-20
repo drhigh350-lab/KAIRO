@@ -64,7 +64,7 @@ export class MomentumStreak {
   _statusMessage() {
     const m = this.data.currentMomentum;
     if (m >= 10) return { level: 'strong', text: 'Your rhythm is solid. Keep the pattern.' };
-    if (m >= 5) return { level: 'building', text: 'Consistency is forming. One more session this week.' };
+    if (m >= 5) return { level: 'building', text: "You're settling into a real rhythm. One more session this week keeps it going." };
     if (m >= 2) return { level: 'early', text: 'Momentum is starting. Small steps count.' };
     return { level: 'recovering', text: 'Ready when you are — I kept your place.' };
   }

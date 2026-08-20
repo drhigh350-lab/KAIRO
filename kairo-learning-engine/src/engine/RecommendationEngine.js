@@ -258,8 +258,8 @@ export class RecommendationEngine {
       const blocksOthers = Array.from(this.graph.nodes.values())
         .some(n => n.dependencyIds.includes(concept.id) && n.retentionState !== RetentionState.UNSEEN);
       return blocksOthers
-        ? `"${concept.name}" is still forming, and other topics build on it — worth strengthening first.`
-        : `"${concept.name}" is still forming — a bit more practice will make it stick.`;
+        ? `You're partway through "${concept.name}", and other topics build on it — worth strengthening first.`
+        : `You're partway through "${concept.name}" — a bit more practice will make it stick.`;
     }
     if (examDate && isExamProximity(examDate) && concept.retentionState === RetentionState.HELD) {
       return `"${concept.name}" is solid, but with your exam approaching, it's worth a pressure-test to make sure it holds under pressure.`;

@@ -237,10 +237,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
 
             {!isCorrect && yourMisconception && (
               <Section title="What likely happened">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <Badge tone="danger">Your mistake</Badge>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{yourMisconception.name}</span>
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)', marginBottom: 4 }}>{yourMisconception.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{yourMisconception.description}</div>
               </Section>
             )}
@@ -262,9 +259,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             )}
 
             {examTip && (
-              <Section title="Exam strategy">
-                <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6 }}>{examTip}</div>
-              </Section>
+              <KaiPanel tone="dark" note={<><strong style={{ color: 'var(--dark-text-heading)' }}>Exam strategy — </strong>{examTip}</>} />
             )}
 
             {!isCorrect && onLearnThis && (
@@ -279,9 +274,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             )}
 
             {nextStepNote && (
-              <Section title={NEXT_STEP_TITLES[nextStepNote.action] ?? "What's next"}>
-                <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6 }}>{nextStepNote.reason}</div>
-              </Section>
+              <KaiPanel tone="dark" note={<><strong style={{ color: 'var(--dark-text-heading)' }}>{NEXT_STEP_TITLES[nextStepNote.action] ?? "What's next"} — </strong>{nextStepNote.reason}</>} />
             )}
 
             <KaiPanel tone="dark" onAction={handleKaiFollowupAction} comingSoon />
