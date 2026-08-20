@@ -33,8 +33,12 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
     <div style={{ display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 18, padding: '64px 28px 40px' }}>
         <KairoWordmark tone="white" width={220} />
+        {/* The wordmark's own mask image already carries "Seize the moment" as
+            part of the brand lockup — restating it here read as the same line
+            twice in one glance (the same duplication Home's header consolidation
+            fixed). This just states what Kairo actually does. */}
         <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--dark-text-heading)', maxWidth: 300, lineHeight: 1.5 }}>
-          Seize the Moment. Study smarter for your UTME, one question at a time.
+          Study smarter for your UTME — one question at a time.
         </div>
       </div>
 
@@ -55,7 +59,17 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
         ))}
       </div>
 
-      <div style={{ position: 'sticky', bottom: 0, padding: '20px 24px 28px', background: 'linear-gradient(to top, var(--dark-bg-canvas) 60%, transparent)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/*
+        Solid, not a fade-to-transparent gradient: this bar is
+        `position: sticky` with no fixed-height scroll container, so it's
+        already pinned to the viewport bottom on first paint (the page is
+        taller than the viewport) rather than only after scrolling past
+        it. A translucent top edge let whichever beat happened to be
+        sitting underneath at that moment (e.g. "Learn by Doing.") bleed
+        through behind the button — a real, confusing double-render, not
+        a subtle vignette.
+      */}
+      <div style={{ position: 'sticky', bottom: 0, padding: '20px 24px 28px', background: 'var(--dark-bg-canvas)', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Button variant="darkAccent" size="lg" fullWidth onClick={onGetStarted}>Get Started</Button>
         <SkipLink tone="dark" onClick={onSignIn}>I already have an account</SkipLink>
       </div>
