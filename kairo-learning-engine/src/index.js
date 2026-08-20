@@ -781,7 +781,19 @@ export class KairoEngine {
     this.currentSession.completedAt = Date.now();
     this.profile.recordSession(this.currentSession);
 
-    const streakUpdate = this.streak.recordSession(this.currentSession.completedAt);
+    // Streak growth is restricted to the daily recommendation session
+    // (mode 'standard' — the zero-input suggested/anchored queue built by
+    // startSession(), distinct from 'custom_practice'/'topic_practice'/
+    // 'rapid_fire'/'cbt_exam'/'recovery'). Practising a specific weak
+    // topic or a custom set is real, valuable work, but the streak is
+    // meant to reward showing up for what Kairo actually recommended
+    // that day, not any session. MomentumStreak.recordSession() already
+    // computes momentum from unique *days* in the window, so a second
+    // recommendation completed the same day is naturally a no-op, not
+    // something this gate needs to track separately.
+    const streakUpdate = this.currentSession.mode === 'standard'
+      ? this.streak.recordSession(this.currentSession.completedAt)
+      : null;
     const score = this.eliteScore.calculate(this.graph, this.profile.sessions);
     const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions);
 

@@ -6,7 +6,7 @@ import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation } from './PracticeQuestion';
-import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type EngineSessionSummary } from './PracticeSummary';
+import { PracticeSummary, type PracticeResult, type PracticeSummaryAction } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks } from '../../lib/kairoEngine';
@@ -102,7 +102,6 @@ export function PracticeFlow() {
   }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
-  const [sessionSummary, setSessionSummary] = useState<EngineSessionSummary | null>(null);
   const [lastErrorTag, setLastErrorTag] = useState<string | null>(null);
   const [lastResponseTimeMs, setLastResponseTimeMs] = useState(15000);
   const [kaiNote, setKaiNote] = useState<string | null>(null);
@@ -384,7 +383,12 @@ export function PracticeFlow() {
       setHasHistory(true);
       clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
       if (kairo) {
-        kairo.endSession().then(setSessionSummary).catch(() => setSessionSummary(null));
+        // Score/streak/level/badges/persistence still all run — just not
+        // awaited or shown here. PracticeSummary displays a locally
+        // computed gained-score instead, so the summary never waits on
+        // this (previously slow: IndexedDB graph write + a real Supabase
+        // sync round trip) before rendering.
+        kairo.endSession().catch(() => {});
       }
       go('practiceSummary');
     } else {
@@ -412,9 +416,19 @@ export function PracticeFlow() {
       setSubject({ key: 'weak', label: 'Weak Areas' });
       setEntryFlow('weak');
       go('practiceHub');
-    } else if (key === 'retry') {
-      setQIndex(0);
-      go('practiceQuestion');
+    } else if (key === 'topic') {
+      // Continue on the exact topic just practised where one is known;
+      // otherwise (a mixed/weak-areas session has no single topic) send
+      // the student to pick one.
+      if (topic && activeSubject.key !== 'mixed' && activeSubject.key !== 'weak') {
+        resetResults();
+        setQIndex(0);
+        startTopicSession(activeSubject.label, topic, subtopic ?? undefined);
+        go('practiceQuestion');
+      } else {
+        setEntryFlow('topic');
+        go('subject');
+      }
     } else if (key === 'challenge') {
       setDifficulty('hard');
       setQIndex(0);
@@ -579,7 +593,7 @@ export function PracticeFlow() {
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} engineSummary={sessionSummary} />;
+    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} entryFlow={entryFlow} />;
   }
   if (screen === 'practiceReview') {
     return <PracticeReview results={results} onBack={back} />;
