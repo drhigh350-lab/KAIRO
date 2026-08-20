@@ -1029,6 +1029,47 @@ export class KairoEngine {
     }));
   }
 
+  /**
+   * Real topics the student has actually attempted, ranked by genuine
+   * failure rate (incorrect / total attempts across every concept in
+   * that topic) — the data "Boost Weak Areas" selects from, replacing a
+   * single session that silently mixed every failed concept from every
+   * topic together. A topic with zero attempts never appears (no
+   * fabricated weakness from a topic never seen), so the list can
+   * legitimately be empty for a brand-new student.
+   */
+  getWeakTopics({ subject = null, limit = 5 } = {}) {
+    const concepts = Array.from(this.graph.nodes.values())
+      .filter(c => !subject || c.subject === subject);
+
+    const byTopic = new Map();
+    for (const c of concepts) {
+      const key = `${c.subject}::${c.topic}`;
+      if (!byTopic.has(key)) byTopic.set(key, { subject: c.subject, topic: c.topic, concepts: [] });
+      byTopic.get(key).concepts.push(c);
+    }
+
+    const ranked = Array.from(byTopic.values())
+      .map(t => {
+        const totalAttempts = t.concepts.reduce((s, c) => s + c.attemptHistory.length, 0);
+        const incorrectAttempts = t.concepts.reduce(
+          (s, c) => s + c.attemptHistory.filter(a => !a.correct).length, 0
+        );
+        return {
+          subject: t.subject,
+          topic: t.topic,
+          conceptCount: t.concepts.length,
+          totalAttempts,
+          incorrectAttempts,
+          failureRate: totalAttempts > 0 ? incorrectAttempts / totalAttempts : 0
+        };
+      })
+      .filter(t => t.totalAttempts > 0 && t.incorrectAttempts > 0);
+
+    ranked.sort((a, b) => b.failureRate - a.failureRate || b.incorrectAttempts - a.incorrectAttempts);
+    return ranked.slice(0, limit);
+  }
+
   exportState() {
     return {
       profile: this.profile.toJSON(),

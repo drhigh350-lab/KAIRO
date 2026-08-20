@@ -425,7 +425,33 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
   if (normalized.length > 0 && seededSubjects.length === 0) {
     return { questions: [] };
   }
-  const { queue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  // startCustomPractice's own queue is one entry per distinct concept
+  // (deduplicated, capped at `limit` concepts) — for an ordinary bounded
+  // session that's exactly right, but Mixed Practice's "no cap" request
+  // means every real question in scope, not one question per concept. Round-
+  // robin across each concept's actual remaining question pool (same
+  // approach startTopicPracticeSession already uses) so a concept with
+  // several seeded questions contributes more than one before the session
+  // considers it exhausted.
+  const { queue: conceptQueue } = kairo.startCustomPractice({ subjects: seededSubjects, includeFading, count: limit });
+  const pools = conceptQueue.map((conceptId: string) => ({
+    conceptId,
+    remaining: kairo.questionGraph.getQuestionsForConcept(conceptId).length,
+  }));
+  const queue: string[] = [];
+  let addedThisPass = true;
+  while (queue.length < limit && addedThisPass) {
+    addedThisPass = false;
+    for (const pool of pools) {
+      if (queue.length >= limit) break;
+      if (pool.remaining > 0) {
+        queue.push(pool.conceptId);
+        pool.remaining--;
+        addedThisPass = true;
+      }
+    }
+  }
+
   const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];
   const seenIds: string[] = [];
@@ -438,6 +464,33 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
     }
   }
   return { questions };
+}
+
+export interface WeakTopicSummary {
+  subject: string;
+  topic: string;
+  incorrectAttempts: number;
+  failureRate: number;
+}
+
+/**
+ * Real most-failed topics (KairoEngine.getWeakTopics(), ranked by failure
+ * rate then miss count) — replaces "Weak Areas" repeating every question the
+ * student has ever missed with a short, selectable list of the topics
+ * actually hurting them. Empty (not an error) whenever there's no attempt
+ * history yet — callers should treat that the same as "not enough history
+ * for Weak Areas" they already handle via `hasHistory`.
+ */
+export function getWeakTopics(subjectLabel?: string, limit = 5): WeakTopicSummary[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  const subject = subjectLabel ? normalizeSubjectName(subjectLabel) : null;
+  return kairo.getWeakTopics({ subject, limit }).map((t: Engine) => ({
+    subject: t.subject,
+    topic: t.topic,
+    incorrectAttempts: t.incorrectAttempts,
+    failureRate: t.failureRate,
+  }));
 }
 
 // ─────────────────────────────────────────────

@@ -63,6 +63,8 @@ export interface PracticeQuestionProps {
   explanation?: PracticeExplanation | null;
   /** RecommendationEngine.processAnswer()'s per-answer interrupt — computed on every answer, previously discarded entirely. Absent (null) on the ordinary 'continue' case; present when Kairo is rerouting to a weak prerequisite, dropping to a lower-stakes diagnostic question after a guess, or easing off after repeated careless slips. `reason` is the engine's own real sentence — rendered verbatim, not paraphrased. */
   nextStepNote?: { action: string; reason: string } | null;
+  /** Set for sessions with no student-picked question count (Mixed Practice / a weak-topic boost, both now uncapped to "every real question available") — a raw "Question 7 of 23" reads as an arbitrary number the student never chose, so the header shows completion percentage instead. */
+  showPercent?: boolean;
 }
 
 const NEXT_STEP_TITLES: Record<string, string> = {
@@ -78,7 +80,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote, showPercent }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(() => isQuestionBookmarked(question.id));
@@ -179,7 +181,9 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
       <div className="app-topbar" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 20px 10px', background: 'var(--dark-bg-canvas)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <IconButton dark onClick={onExit}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>Question {index + 1} of {total}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>
+            {showPercent ? `${Math.round(((index + 1) / total) * 100)}% complete` : `Question ${index + 1} of ${total}`}
+          </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <IconButton dark active={bookmarked} onClick={handleBookmarkToggle}><BookmarkIcon filled={bookmarked} /></IconButton>
             <IconButton dark onClick={() => setShowCalc(true)}><CalcIcon /></IconButton>
