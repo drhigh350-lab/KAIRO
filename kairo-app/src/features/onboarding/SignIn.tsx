@@ -7,10 +7,13 @@ export interface SignInProps {
   onBack: () => void;
   onSignedIn: () => void;
   onGoToSignUp: () => void;
+  /** Pre-fills the email field — e.g. when arriving here from SignUp after an
+   * "already registered" bounce, so the student doesn't have to retype it. */
+  initialEmail?: string;
 }
 
-export function SignIn({ onBack, onSignedIn, onGoToSignUp }: SignInProps) {
-  const [email, setEmail] = useState('');
+export function SignIn({ onBack, onSignedIn, onGoToSignUp, initialEmail }: SignInProps) {
+  const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);

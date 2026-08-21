@@ -8,7 +8,17 @@ export interface SignUpProps {
   total: number;
   onBack: () => void;
   onEmailSignUp: (data: { name: string; email: string }) => void;
-  onGoToSignIn: () => void;
+  onGoToSignIn: (email?: string) => void;
+}
+
+/** Supabase Auth is one shared user pool across every product on this project (RoboMed/TechMed's
+ * `public.*` schema and Kairo's `kairo.*` schema both sit on the same auth.users) — so a student
+ * with an existing TechMed/RoboMed login hits this on their very first Kairo sign-up, for an
+ * account they don't think of as a "Kairo account" at all. Detected by Supabase's own stable
+ * error_code rather than sniffing the message text, which is more likely to drift. */
+function isAlreadyRegistered(err: unknown): boolean {
+  if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'user_already_exists') return true;
+  return /already registered|already exists/i.test(describeError(err));
 }
 
 export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: SignUpProps) {
@@ -16,6 +26,7 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const passwordValid = password.length >= 8 && /\d/.test(password);
@@ -23,12 +34,21 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
 
   async function handleSubmit() {
     setError('');
+    setAlreadyRegistered(false);
     setSubmitting(true);
     try {
       await signUpAndConnect({ name: name.trim(), email: email.trim(), password });
       onEmailSignUp({ name: name.trim(), email: email.trim() });
     } catch (err) {
-      setError(describeError(err));
+      if (isAlreadyRegistered(err)) {
+        // This is expected and recoverable, not a dead end — say so plainly, with the one
+        // action that actually gets them in (this is exactly what "it says I already have an
+        // account" reports turned out to be: a real TechMed/RoboMed login, not a bug).
+        setAlreadyRegistered(true);
+        setError('An account already exists for this email — sign in with your existing TechMed/RoboMed password instead.');
+      } else {
+        setError(describeError(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -69,9 +89,13 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
           )}
         </div>
       </div>
-      <Button variant="darkAccent" size="lg" fullWidth disabled={!canSubmit} onClick={handleSubmit}>{submitting ? 'Creating account…' : 'Get Started'}</Button>
+      {alreadyRegistered ? (
+        <Button variant="darkAccent" size="lg" fullWidth onClick={() => onGoToSignIn(email.trim())}>Sign In Instead</Button>
+      ) : (
+        <Button variant="darkAccent" size="lg" fullWidth disabled={!canSubmit} onClick={handleSubmit}>{submitting ? 'Creating account…' : 'Get Started'}</Button>
+      )}
       <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 'auto' }}>
-        Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); onGoToSignIn(); }} style={{ color: 'var(--dark-accent-blue)' }}>Sign In</a>
+        Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); onGoToSignIn(email.trim()); }} style={{ color: 'var(--dark-accent-blue)' }}>Sign In</a>
       </div>
     </div>
   );

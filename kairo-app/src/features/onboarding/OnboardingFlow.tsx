@@ -98,16 +98,36 @@ export function OnboardingFlow() {
     body = (
       <SignIn
         onBack={back}
+        initialEmail={data.email}
         onSignedIn={() => {
           const profile = getEngine()?.profile;
-          navigate('/home', {
-            state: {
-              name: profile?.name || data.name || 'there',
-              course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : data.course,
-              examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : data.examDate,
-              subjects: profile?.targetSubjects?.length ? profile.targetSubjects : data.subjects,
-            },
-          });
+          if (isOnboarded()) {
+            navigate('/home', {
+              state: {
+                name: profile?.name || data.name || 'there',
+                course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : data.course,
+                examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : data.examDate,
+                subjects: profile?.targetSubjects?.length ? profile.targetSubjects : data.subjects,
+              },
+            });
+            return;
+          }
+          // Signed in successfully but never finished the diagnostic — e.g. a legacy
+          // TechMed/RoboMed account signing into Kairo for the first time, or a student
+          // who closed the app mid-onboarding. RequireOnboarded would otherwise bounce
+          // this straight back to the bare Landing Page with no memory of any of this
+          // (the exact "press Log In, it just refreshes back to onboarding" loop), so
+          // resume onboarding instead — pre-filled with whatever's already saved — via
+          // the same beginOnboarding() entry point the sign-up path uses.
+          setData((d) => ({
+            ...d,
+            name: profile?.name || d.name,
+            course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : d.course,
+            examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : d.examDate,
+            subjects: profile?.targetSubjects?.length ? profile.targetSubjects : d.subjects,
+          }));
+          beginOnboarding(profile?.name || data.name || '');
+          go('about');
         }}
         onGoToSignUp={() => go('signup')}
       />
@@ -123,7 +143,10 @@ export function OnboardingFlow() {
           beginOnboarding(name);
           go('about');
         }}
-        onGoToSignIn={() => go('signin')}
+        onGoToSignIn={(email) => {
+          if (email) setData((d) => ({ ...d, email }));
+          go('signin');
+        }}
       />
     );
   } else if (screen === 'about') {
