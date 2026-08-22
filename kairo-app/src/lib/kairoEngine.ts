@@ -12,6 +12,23 @@ export function getEngine(): Engine | null {
   return engine;
 }
 
+let onlineSyncArmed = false;
+/**
+ * Silently flush anything queued in SyncManager.pendingSync (now durably
+ * backed by IndexedDB, see LocalStore's pending_sync_queue) the moment the
+ * browser regains connectivity — without this, a session/attempt completed
+ * while offline just sat there until the next action happened to call
+ * kairo.sync.sync() itself. Idempotent: safe to call on every render/mount,
+ * only ever registers the listener once per page load.
+ */
+export function setupOnlineSync(): void {
+  if (onlineSyncArmed || typeof window === 'undefined') return;
+  onlineSyncArmed = true;
+  window.addEventListener('online', () => {
+    getEngine()?.sync?.sync().catch(() => {});
+  });
+}
+
 /**
  * Whether the signed-in student has actually taken the real diagnostic —
  * `profile.diagnosticCompleted` is set exactly once, by

@@ -21,7 +21,7 @@ import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoMark } from './components';
-import { getEngine, isOnboarded, restoreSession } from './lib/kairoEngine';
+import { getEngine, isOnboarded, restoreSession, setupOnlineSync } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
 // themselves before deciding where to go — this list is every *other*
@@ -100,6 +100,10 @@ export default function App() {
   const ready = useBootRestore();
   const location = useLocation();
   const wide = WIDE_ROUTES.includes(location.pathname);
+
+  useEffect(() => {
+    setupOnlineSync();
+  }, []);
 
   return (
     <AppShell wide={wide}>

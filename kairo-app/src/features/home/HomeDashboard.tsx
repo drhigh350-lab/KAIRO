@@ -5,7 +5,7 @@ import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getTodayFocus, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getTodayFocus, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus } from '../../lib/kairoEngine';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -24,16 +24,26 @@ function greeting(): string {
   return 'Good evening';
 }
 
-/** Dimmed until today's daily recommendation is completed, then burns bright — a single at-a-glance "have I shown up today" signal, distinct from the multi-day streak count itself. */
-function FlameIndicator({ lit }: { lit: boolean }) {
+/** Dimmed until today's daily recommendation is completed, then burns bright — a single at-a-glance "have I shown up today" signal. The numeric streak count sits directly underneath, and a small snowflake row shows any earned Streak Freezes still in reserve. */
+function FlameIndicator({ lit, days, freezesAvailable }: { lit: boolean; days: number; freezesAvailable: number }) {
   return (
-    <div title={lit ? "Today's recommendation done" : "Today's recommendation not done yet"} style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-      background: lit ? 'rgba(224,160,57,0.18)' : 'var(--dark-bg-surface)', border: `1.5px solid ${lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-border)'}`,
-    }}>
-      <svg width="17" height="17" viewBox="0 0 24 24" fill={lit ? 'var(--kairo-gold-500, #e0a039)' : 'none'} stroke={lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-text-faint)'} strokeWidth="2">
-        <path d="M12 2c1 4-4 5-4 9a4 4 0 008 0c1.5 1 2 3 2 4a6 6 0 01-12 0c0-5 3-6 3-9 0-1.5.5-3 3-4z" />
-      </svg>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+      <div title={lit ? "Today's recommendation done" : "Today's recommendation not done yet"} style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+        background: lit ? 'rgba(224,160,57,0.18)' : 'var(--dark-bg-surface)', border: `1.5px solid ${lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-border)'}`,
+      }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill={lit ? 'var(--kairo-gold-500, #e0a039)' : 'none'} stroke={lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-text-faint)'} strokeWidth="2">
+          <path d="M12 2c1 4-4 5-4 9a4 4 0 008 0c1.5 1 2 3 2 4a6 6 0 01-12 0c0-5 3-6 3-9 0-1.5.5-3 3-4z" />
+        </svg>
+      </div>
+      {days > 0 && (
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-text-muted)' }}>{days} day{days === 1 ? '' : 's'}</div>
+      )}
+      {freezesAvailable > 0 && (
+        <div title={`${freezesAvailable} Streak Freeze${freezesAvailable === 1 ? '' : 's'} in reserve`} style={{ fontSize: 10, color: 'var(--dark-accent-blue)' }}>
+          {'❄'.repeat(freezesAvailable)}
+        </div>
+      )}
     </div>
   );
 }
@@ -77,6 +87,7 @@ export function HomeDashboard() {
   // gained points instead, so this doesn't repeat a slow-moving 0-100
   // number where "what did I just earn" is the more useful question.
   const insights = getInsightsSummary();
+  const streakStatus = getStreakStatus();
   // The engine's own real reasoning for today's recommended concept —
   // replaces a static sentence that used to be identical for every student
   // regardless of macro-state, decay urgency, or exam proximity.
@@ -129,7 +140,7 @@ export function HomeDashboard() {
           <div style={{ fontSize: 16, color: 'var(--dark-text-heading)', fontWeight: 600 }}>{greeting()}, {firstName} 👋</div>
           <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
         </div>
-        <FlameIndicator lit={hasCompletedTodaysRecommendation()} />
+        <FlameIndicator lit={hasCompletedTodaysRecommendation()} days={streakStatus?.momentum ?? 0} freezesAvailable={streakStatus?.freezesAvailable ?? 0} />
       </div>
 
       {daysToGo != null && (
