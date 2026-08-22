@@ -1,0 +1,3 @@
+INSERT INTO kairo.concepts (id, name, subject, topic, subtopic, difficulty_weight, dependency_ids, question_pool_ids) VALUES
+('2ae5n3', 'Historic/Historical', 'Use of English', 'Appropriate word choice', 'Historic/Historical', 1.0, '{}', '{}'),
+('1gp2vz', 'Noun Modifiers (Singular Attributive Nouns)', 'Use of English', 'Grammatical usage', 'Noun Modifiers (Singular Attributive Nouns)', 1.0, '{}', '{}');
