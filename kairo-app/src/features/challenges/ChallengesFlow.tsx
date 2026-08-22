@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChallengesHub } from './ChallengesHub';
 import { ChallengePreview } from './ChallengePreview';
 import { ChallengeGetReady } from './ChallengeGetReady';
@@ -16,6 +16,7 @@ type Screen = 'hub' | 'preview' | 'getReady' | 'attempt' | 'results';
 
 export function ChallengesFlow() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [screen, setScreen] = useState<Screen>('hub');
   const [history, setHistory] = useState<Screen[]>([]);
 
@@ -34,6 +35,16 @@ export function ChallengesFlow() {
       .then(setDbChallenges)
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load challenges.'));
   }, []);
+
+  // Deep link from a "Challenge a Friend" share (ChallengesHub) —
+  // /challenges/<id> jumps straight to that challenge's preview instead of
+  // leaving a friend who followed the link stuck picking it out of the hub.
+  useEffect(() => {
+    if (!dbChallenges || screen !== 'hub') return;
+    const match = location.pathname.match(/^\/challenges\/([^/]+)$/);
+    if (match) selectChallenge(match[1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbChallenges]);
 
   function go(next: Screen) {
     setHistory((h) => [...h, screen]);
