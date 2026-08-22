@@ -1208,6 +1208,28 @@ test('ExplanationEngine: memory_anchor is omitted (not filler text) when no genu
   assert(!memoryAnchorPart, 'No memory_anchor part should be present when nothing genuine exists for this concept');
 });
 
+test('ExplanationEngine: distractor_breakdown ("why other options are wrong") is included on a CORRECT attempt too, not just incorrect ones', () => {
+  const q = new Question({
+    id: 'distractor_on_correct_1', subject: 'Chemistry', topic: 'Organic Chemistry', subtopic: 'Alkanes',
+    stem: 'What is the general formula for an alkane?',
+    options: [
+      { label: 'A', text: 'CnH2n+2', isCorrect: true },
+      { label: 'B', text: 'CnH2n', isCorrect: false },
+      { label: 'C', text: 'CnH2n-2', isCorrect: false },
+    ],
+    correctOption: 'A', explanation: 'Alkanes are saturated hydrocarbons with formula CnH2n+2.',
+    lifecycleState: 'live'
+  });
+  const correctExplanation = learnEngine.explanations.generate({ question: q, attempt: { correct: true }, concept: null, macroState: 'building' });
+  const breakdownOnCorrect = correctExplanation.parts.find(p => p.type === 'distractor_breakdown');
+  assert(breakdownOnCorrect, 'distractor_breakdown should be present even when the attempt was correct');
+  assertEqual(breakdownOnCorrect.content.length, 2, 'Should include both wrong options');
+
+  const incorrectExplanation = learnEngine.explanations.generate({ question: q, attempt: { correct: false }, concept: null, macroState: 'building' });
+  const breakdownOnIncorrect = incorrectExplanation.parts.find(p => p.type === 'distractor_breakdown');
+  assert(breakdownOnIncorrect, 'distractor_breakdown should still be present on an incorrect attempt');
+});
+
 test("Learn: commonMisconceptions come from the question's own distractor data, not the legacy mapDistractor() table", () => {
   const freshConceptId = learnEngine.addConcept({ name: 'Osmosis', subject: 'Biology', topic: 'Cell Biology', subtopic: 'Transport' });
   const freshQuestion = new Question({

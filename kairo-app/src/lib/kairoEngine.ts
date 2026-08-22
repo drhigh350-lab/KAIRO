@@ -1629,7 +1629,7 @@ export async function getUniversityRankings(limit = 20): Promise<UniversityRanki
 // ─────────────────────────────────────────────
 
 /** Persists a "Report question" or "Question feedback" tap from Practice against the real question the student was looking at. Throws if there's no signed-in student — callers should already be inside an active session. */
-export async function reportQuestion(questionId: string, kind: 'report' | 'feedback'): Promise<void> {
+export async function reportQuestion(questionId: string, kind: 'report' | 'feedback', reason?: string): Promise<void> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const supabase = getSupabase();
@@ -1637,6 +1637,7 @@ export async function reportQuestion(questionId: string, kind: 'report' | 'feedb
     student_id: kairo.profile.studentId,
     question_id: questionId,
     kind,
+    message: reason ?? null,
   });
   if (error) throw error;
 }
