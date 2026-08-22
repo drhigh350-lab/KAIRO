@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'kairo_learning_engine';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const STORES = {
   CONCEPTS: 'concepts',
@@ -23,7 +23,11 @@ const STORES = {
   // objects already attached) — built while online, popped when starting
   // a recommendation session offline instead of failing on the network
   // call ensureContentLoaded()/loadContentCatalog() would otherwise need.
-  PREFETCHED_QUEUES: 'prefetched_queues'
+  PREFETCHED_QUEUES: 'prefetched_queues',
+  // Study Planner state (plan input, completed topic keys, per-topic SRS
+  // progress) — one row per student, offline-first mirror of
+  // kairo.planner_state in Supabase. See kairo-app/src/lib/planner/plannerApi.ts.
+  PLANNER: 'planner'
 };
 
 export class LocalStore {
@@ -64,6 +68,9 @@ export class LocalStore {
         }
         if (!db.objectStoreNames.contains(STORES.PREFETCHED_QUEUES)) {
           db.createObjectStore(STORES.PREFETCHED_QUEUES, { keyPath: 'queueId' });
+        }
+        if (!db.objectStoreNames.contains(STORES.PLANNER)) {
+          db.createObjectStore(STORES.PLANNER, { keyPath: 'studentId' });
         }
       };
     });
@@ -171,6 +178,14 @@ export class LocalStore {
 
   async deletePrefetchedQueue(queueId) {
     await this.delete(STORES.PREFETCHED_QUEUES, queueId);
+  }
+
+  async savePlannerState(studentId, state) {
+    await this.put(STORES.PLANNER, { studentId, ...state });
+  }
+
+  async loadPlannerState(studentId) {
+    return this.get(STORES.PLANNER, studentId);
   }
 }
 

@@ -5,7 +5,8 @@ import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getTodayFocus, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus } from '../../lib/kairoEngine';
+import { getPinnedTodayFocus } from '../../lib/dailyRecommendation';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -58,6 +59,7 @@ const quickActions: { label: string; d: string; color: string; to: string; entry
   // understand something on their own initiative, not only when Kairo
   // interrupts them with it.
   { label: 'Get Unstuck', d: 'M12 4.5C9.5 2.5 6 2.5 4 4v14c2-1.5 5.5-1.5 8 .5 2.5-2 6-2 8-.5V4c-2-1.5-5.5-1.5-8 .5z', color: '#5FBF7A', to: '/learn' },
+  { label: 'Study Planner', d: 'M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z', color: '#E05A8C', to: '/planner' },
 ];
 
 export function HomeDashboard() {
@@ -90,8 +92,9 @@ export function HomeDashboard() {
   const streakStatus = getStreakStatus();
   // The engine's own real reasoning for today's recommended concept —
   // replaces a static sentence that used to be identical for every student
-  // regardless of macro-state, decay urgency, or exam proximity.
-  const todayFocus = getTodayFocus();
+  // regardless of macro-state, decay urgency, or exam proximity. Pinned
+  // for the day (Batch 3's persistent-queue rule) — see dailyRecommendation.ts.
+  const todayFocus = getPinnedTodayFocus();
   const hasTodayProgress = todayProgress.questionsToday > 0;
   // Goal-completion %, not accuracy — the ring used to show accuracyPct
   // (e.g. "90%" from one lucky question) inside a shape that visually reads
@@ -151,7 +154,7 @@ export function HomeDashboard() {
       )}
 
       {/*
-        Desktop (>=900px, via .app-shell--wide): a real two-column
+        Tablet/desktop (>=768px, via .app-shell--wide): a real two-column
         dashboard — actions on the left where they have room to breathe,
         status/stats as a sticky sidebar on the right, instead of the same
         single mobile column just stretched out with the numbers pushed

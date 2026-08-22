@@ -9,6 +9,7 @@ import { CbtHistory } from './CbtHistory';
 import { startCbtExam, finishCbtExam, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
+import { goHomeOrStreakSavior } from '../../lib/streakSavior';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
 
@@ -52,11 +53,17 @@ export function CbtFlow() {
   }
 
   const toHome = () => navigate('/home');
+  // CBT is inherently a non-recommendation session type — Batch 4's Streak
+  // Savior always applies to its Summary screen's "back to Home" (button or
+  // physical back button below), whether or not today's real recommendation
+  // is done; goHomeOrStreakSavior itself checks that and no-ops to /home
+  // when it's already been completed.
+  const fromSummaryToHome = () => goHomeOrStreakSavior(navigate, false);
 
   useBackIntercept(SCREEN_DEPTH[screen], () => {
     if (screen === 'history' || screen === 'instructions') { setScreen('setup'); return; }
     if (screen === 'review') { setScreen('summary'); return; }
-    if (screen === 'summary') { toHome(); return; }
+    if (screen === 'summary') { fromSummaryToHome(); return; }
     // 'exam' / 'starting': swallowed, no navigation — protects a live attempt from an accidental exit.
   });
 
@@ -138,7 +145,7 @@ export function CbtFlow() {
     return <CbtExam paper={paper} totalTimeMin={totalTimeMin} onSubmit={handleSubmit} onExit={toHome} />;
   }
   if (screen === 'summary' && results) {
-    return <CbtSummary results={results} onHome={toHome} onReview={() => setScreen('review')} />;
+    return <CbtSummary results={results} onHome={fromSummaryToHome} onReview={() => setScreen('review')} />;
   }
   if (screen === 'review' && results) {
     return <CbtReview paper={paper} questionResults={results.questionResults ?? []} onBack={() => setScreen('summary')} />;
