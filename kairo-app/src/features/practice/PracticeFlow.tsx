@@ -12,6 +12,7 @@ import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, type WeakTopicSummary } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
+import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 
@@ -85,6 +86,10 @@ export function PracticeFlow() {
   // this resolves, so it doesn't need to be awaited before questions render.
   useEffect(() => { loadBookmarks(); }, []);
   const [screen, setScreen] = useState<Screen>(init.screen);
+  // Persistent bottom nav (AppTabs) hides only for the actual focused
+  // question/explanation screen — every other Practice screen (home,
+  // subject/topic pickers, hub, summary, review) keeps it visible.
+  useSetBottomNavHidden(screen === 'practiceQuestion');
   const [history, setHistory] = useState<Screen[]>([]);
   const [subject, setSubject] = useState<SubjectLike | null>(init.subject);
   const [topic, setTopic] = useState<string | null>(null);

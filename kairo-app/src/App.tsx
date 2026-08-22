@@ -117,12 +117,12 @@ export default function App() {
           <Route element={<RequireOnboarded />}>
             <Route element={<AppTabs />}>
               <Route path="/home" element={<HomeDashboard />} />
+              <Route path="/practice/*" element={<PracticeFlow />} />
+              <Route path="/cbt/*" element={<CbtFlow />} />
               <Route path="/review" element={<Review />} />
               <Route path="/insights" element={<Insights />} />
             </Route>
 
-            <Route path="/practice/*" element={<PracticeFlow />} />
-            <Route path="/cbt/*" element={<CbtFlow />} />
             <Route path="/review/session" element={<ReviewSession />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/edit" element={<EditProfile />} />

@@ -8,6 +8,7 @@ import { CbtReview } from './CbtReview';
 import { CbtHistory } from './CbtHistory';
 import { startCbtExam, finishCbtExam, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
 import { useBackIntercept } from '../../lib/useBackIntercept';
+import { useSetBottomNavHidden } from '../../layout/AppTabs';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
 
@@ -31,6 +32,11 @@ const SCREEN_DEPTH: Record<Screen, number> = {
 export function CbtFlow() {
   const navigate = useNavigate();
   const [screen, setScreen] = useState<Screen>('setup');
+  // Persistent bottom nav (AppTabs) hides for the live exam itself and the
+  // brief 'starting' transition into it — both already treat a casual exit
+  // as unavailable (see useBackIntercept below); every other CBT screen
+  // (setup, instructions, history, summary, review) keeps the nav visible.
+  useSetBottomNavHidden(screen === 'exam' || screen === 'starting');
   const [paper, setPaper] = useState<CbtPaperQuestion[]>([]);
   const [totalTimeMin, setTotalTimeMin] = useState(120);
   const [results, setResults] = useState<CbtResults | null>(null);
@@ -93,7 +99,7 @@ export function CbtFlow() {
   if (screen === 'setup') {
     if (startError) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
           <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>{startError}</div>
           <button type="button" onClick={toHome} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Home</button>
         </div>

@@ -1,3 +1,4 @@
+import { createContext, useContext, useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav, type BottomNavItem } from '../components';
 
@@ -13,6 +14,23 @@ const TABS: { key: string; path: string; label: string; d: string }[] = [
   { key: 'insights', path: '/insights', label: 'Insights', d: 'M4 20V10M11 20V4M18 20v-7' },
 ];
 
+// Practice and CBT each drive their own internal screen-stack (not real
+// routes) inside a single /practice/* or /cbt/* route, so AppTabs can't
+// tell "hub screen" from "actively answering a question" just by looking
+// at location.pathname the way it can for /home, /review, /insights. This
+// context lets those flow controllers report their own hide/show intent
+// up to the persistent nav shell they're now nested inside.
+const NavVisibilityContext = createContext<(hidden: boolean) => void>(() => {});
+
+/** Call with `true` while the current screen is a focused question/explanation screen that must hide the bottom nav, `false` (or unmount) once it's showing a hub/browsing screen again. */
+export function useSetBottomNavHidden(hidden: boolean) {
+  const setHidden = useContext(NavVisibilityContext);
+  useEffect(() => {
+    setHidden(hidden);
+    return () => setHidden(false);
+  }, [hidden, setHidden]);
+}
+
 /**
  * Persistent bottom navigation shell for the main app section (Home / Practice /
  * CBT / Review / Insights). Profile is reached via the avatar in each screen's
@@ -22,23 +40,28 @@ export function AppTabs() {
   const navigate = useNavigate();
   const location = useLocation();
   const active = TABS.find((t) => location.pathname.startsWith(t.path))?.key ?? 'home';
+  const [navHidden, setNavHidden] = useState(false);
 
   const items: BottomNavItem[] = TABS.map((t) => ({ key: t.key, label: t.label, icon: icon(t.d) }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+    <NavVisibilityContext.Provider value={setNavHidden}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <Outlet />
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+          <Outlet />
+        </div>
+        {!navHidden && (
+          <BottomNav
+            items={items}
+            active={active}
+            dark
+            onChange={(key) => {
+              const tab = TABS.find((t) => t.key === key);
+              if (tab) navigate(tab.path);
+            }}
+          />
+        )}
       </div>
-      <BottomNav
-        items={items}
-        active={active}
-        dark
-        onChange={(key) => {
-          const tab = TABS.find((t) => t.key === key);
-          if (tab) navigate(tab.path);
-        }}
-      />
-    </div>
+    </NavVisibilityContext.Provider>
   );
 }
