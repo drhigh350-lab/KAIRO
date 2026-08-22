@@ -9,6 +9,7 @@ import { RetentionState, ErrorTag, StreakConstants } from "../src/utils/constant
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
 import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
 import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
+import { EliteScore } from "../src/engine/EliteScore.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -221,6 +222,25 @@ test('Error classifier detects guessing', () => {
     question: { id: 'q_guess', distractorTags: [], difficulty: 1, type: 'single' }
   });
   assertEqual(tag, ErrorTag.GUESSED, 'Very fast wrong should be guessed');
+});
+
+test('EliteScore.computeSessionDelta: appends the High-Yield bonus for recommendation/cbt, never for standard, and never alters the underlying total', () => {
+  const rec = EliteScore.computeSessionDelta(40, 42.3, 'recommendation');
+  assertEqual(rec.base, 3, 'Base delta should round UP (2.3 -> 3)');
+  assertEqual(rec.bonus, 10, 'Recommendation session type should earn the +10 bonus');
+  assertEqual(rec.total, 13, 'Displayed total should be base + bonus');
+
+  const cbt = EliteScore.computeSessionDelta(40, 42.3, 'cbt');
+  assertEqual(cbt.bonus, 10, 'CBT session type should earn the +10 bonus');
+
+  const standard = EliteScore.computeSessionDelta(40, 42.3, 'standard');
+  assertEqual(standard.base, 3, 'Base delta is identical regardless of session type');
+  assertEqual(standard.bonus, 0, 'Standard practice/topic sessions should never earn the bonus');
+  assertEqual(standard.total, 3, 'No bonus means displayed total equals the base delta');
+
+  const steady = EliteScore.computeSessionDelta(50, 50, 'recommendation');
+  assertEqual(steady.base, 0, 'No organic movement should floor at 0, not go negative');
+  assertEqual(steady.total, 10, 'The bonus still applies even when the organic curve held steady');
 });
 
 test('Adaptive difficulty respects macro-state ceiling', () => {
@@ -1867,12 +1887,16 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
     contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
     submitAnswer: () => {},
     sync: { queue: () => {} },
-    // finish() calls this.engine.profile.recordSession() — every real
-    // KairoEngine has one, so this was missing only because this fake is
-    // deliberately minimal for testing the mid-exam withholding behavior
-    // below, not because finish() is broken (a real-engine test covers
-    // finish() itself further down this file).
-    profile: { recordSession: () => {} }
+    // finish() calls this.engine.profile.recordSession() and (to update
+    // the real weighted Kairo Score for a completed mock) this.engine.
+    // eliteScore.calculate() — every real KairoEngine has both, so these
+    // were missing only because this fake is deliberately minimal for
+    // testing the mid-exam withholding behavior below, not because
+    // finish() is broken (a real-engine test covers finish() itself
+    // further down this file).
+    profile: { recordSession: () => {}, sessions: [] },
+    graph: { nodes: new Map() },
+    eliteScore: { history: [], calculate: () => ({ total: 0, accuracy: 0, retention: 0, consistency: 0, timestamp: Date.now() }) }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
@@ -1929,6 +1953,11 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
 
   const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'cbt_exam');
   assert(sessionPush, 'CBT finish() should queue a kairo.sessions row tagged mode: cbt_exam — previously nothing did, and the crash meant it never got this far anyway');
+
+  assert(results.eliteScore, 'finish() should compute and return the real weighted eliteScore — previously nothing ever recalculated it for a completed CBT mock');
+  assertEqual(results.scoreDelta.sessionType, 'cbt', 'A completed CBT mock should carry sessionType "cbt"');
+  assertEqual(results.scoreDelta.bonus, 10, 'A full CBT simulation should earn the High-Yield Session bonus');
+  assertEqual(engine.eliteScore.history[engine.eliteScore.history.length - 1].total, results.eliteScore.total, 'The engine\'s real eliteScoreHistory should reflect this CBT mock, not just the returned copy');
 });
 
 await test("CBT: finish() doesn't submit unanswered questions as attempts (they'd fail kairo.attempts' anti-cheat trigger and silently take the whole sync down)", async () => {
@@ -1975,6 +2004,48 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   const topicResult = engine.startTopicPractice('Biology', 'Cells', 'Organelles', 5);
   assertEqual(engine.currentSession.mode, 'topic_practice', 'startTopicPractice() should tag the session mode: topic_practice');
   assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
+});
+
+await test('endSession(): scoreDelta carries the High-Yield bonus for a standard (recommendation) session, and the returned eliteScore is the real unaltered weighted snapshot', async () => {
+  const engine = new KairoEngine({ studentId: 'delta1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Delta Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'delta_q1', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+
+  engine.startSession({ mode: 'standard', plan: [conceptId] });
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'delta_q1', questionDifficulty: 1 });
+  const result = await engine.endSession();
+
+  assert(result.scoreDelta, 'endSession() should return a scoreDelta');
+  assertEqual(result.scoreDelta.sessionType, 'recommendation', "mode 'standard' should map to sessionType 'recommendation'");
+  assertEqual(result.scoreDelta.bonus, 10, 'A standard-mode (recommendation) session should earn the High-Yield bonus');
+  assertEqual(result.scoreDelta.total, result.scoreDelta.base + 10, 'Displayed total should be base + bonus');
+  const latestSnapshot = engine.eliteScore.history[engine.eliteScore.history.length - 1];
+  assertEqual(result.eliteScore.total, latestSnapshot.total, 'Returned eliteScore should be the real, unaltered weighted snapshot — the bonus never touches it');
+});
+
+await test('endSession(): a custom/topic practice session earns no High-Yield bonus', async () => {
+  const engine = new KairoEngine({ studentId: 'delta2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Delta Concept 2', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'delta_q2', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+
+  engine.startCustomPractice({ subjects: ['Biology'], count: 5 });
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'delta_q2', questionDifficulty: 1 });
+  const result = await engine.endSession();
+
+  assertEqual(result.scoreDelta.sessionType, 'standard', 'Custom practice should map to sessionType standard');
+  assertEqual(result.scoreDelta.bonus, 0, 'Custom practice should never earn the High-Yield bonus');
 });
 
 test('TopicPracticeEngine.buildSubtopicSession fills the session from a concept\'s real question pool, not just one slot per concept', () => {

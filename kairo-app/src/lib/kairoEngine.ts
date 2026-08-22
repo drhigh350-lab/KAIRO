@@ -1018,7 +1018,13 @@ export async function finishCbtExam(): Promise<Engine> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const results = kairo.cbt.finish();
-  await kairo.sync.sync();
+  // Score/streak/badges/scoreDelta are already computed synchronously above
+  // (real weighted eliteScore.calculate() included) — the sync round trip
+  // is a real network call that shouldn't hold up the summary screen from
+  // rendering a number it already has, same reasoning as Practice's
+  // endSession(). Fire-and-forget; SyncManager's own durable queue covers
+  // retrying if this fails.
+  kairo.sync.sync().catch(() => {});
   return results;
 }
 

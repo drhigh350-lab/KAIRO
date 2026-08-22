@@ -89,6 +89,15 @@ export const EliteScorePoints = Object.freeze({
   CONSISTENCY_DAY_BONUS: 3    // per distinct calendar day a session was ever completed
 });
 
+// Gamification layer on top of the weighted Kairo Score — display-only,
+// never blended into the weighted math above (EliteScore.calculate()'s
+// total/history are untouched by this). A fixed, transparent bonus shown
+// alongside the real session-to-session delta for the two session types
+// that matter most: the daily recommendation and a full CBT simulation.
+export const EliteScoreBonus = Object.freeze({
+  HIGH_YIELD_SESSION: 10
+});
+
 // ─── Decay & Scheduling ───
 export const DecayConstants = Object.freeze({
   BASE_DECAY_HALF_LIFE_DAYS: 7,

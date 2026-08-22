@@ -3,6 +3,8 @@
  * Full UTME simulation with JAMB-style timing, navigation, and scoring.
  */
 
+import { EliteScore } from "../engine/EliteScore.js";
+
 export class CBTExamMode {
   // JAMB standard: English is compulsory and carries 60 questions;
   // every other subject in the combination carries 40 (CBT Exam Mode
@@ -329,6 +331,21 @@ export class CBTExamMode {
       questionsAnswered: results.answered,
       correctCount: results.correct
     });
+
+    // Unlike standard Practice's endSession(), nothing here ever
+    // recalculated the real weighted Kairo Score for a completed CBT mock
+    // — the submitAnswer() loop above feeds real accuracy/retention
+    // signals into the graph, and recordSession() above feeds a real
+    // consistency day, but until now nothing turned those into an updated
+    // eliteScoreHistory entry. Computed here, same as endSession(), with
+    // the same display-only High-Yield Session bonus (a full CBT
+    // simulation is one of the two session types that earns it).
+    const previousTotal = this.engine.eliteScore.history.length > 0
+      ? this.engine.eliteScore.history[this.engine.eliteScore.history.length - 1].total
+      : 0;
+    const eliteScore = this.engine.eliteScore.calculate(this.engine.graph, this.engine.profile.sessions);
+    results.eliteScore = eliteScore;
+    results.scoreDelta = EliteScore.computeSessionDelta(previousTotal, eliteScore.total, 'cbt');
 
     this.engine.sync.queue({
       type: 'session',

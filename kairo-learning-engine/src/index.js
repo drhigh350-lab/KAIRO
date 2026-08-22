@@ -800,7 +800,22 @@ export class KairoEngine {
     const streakUpdate = this.currentSession.mode === 'standard'
       ? this.streak.recordSession(this.currentSession.completedAt)
       : null;
+
+    // Captured before calculate() pushes this session's fresh snapshot —
+    // the real, honest pre-session total the display delta below is
+    // measured against.
+    const previousTotal = this.eliteScore.history.length > 0
+      ? this.eliteScore.history[this.eliteScore.history.length - 1].total
+      : 0;
     const score = this.eliteScore.calculate(this.graph, this.profile.sessions);
+    // 'standard' is the daily recommendation (see the streak comment
+    // above); every other Practice mode (custom_practice, topic_practice,
+    // rapid_fire, recovery) is "standard practice" for bonus purposes —
+    // only the recommendation and CBT (handled separately in
+    // CBTExamMode.finish(), which never calls endSession()) earn the
+    // High-Yield Session bonus.
+    const sessionType = this.currentSession.mode === 'standard' ? 'recommendation' : 'standard';
+    const scoreDelta = EliteScore.computeSessionDelta(previousTotal, score.total, sessionType);
     const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions);
 
     // Check badges
@@ -832,14 +847,29 @@ export class KairoEngine {
       }
     });
 
-    await this.store.saveGraph(this.graph);
-    this._snapshotSjeeState();
-    await this.store.saveProfile(this.profile);
-    await this.sync.sync();
+    // Persistence (IndexedDB writes + a real Supabase sync round trip) is
+    // the genuinely slow part of ending a session — everything above it
+    // is pure in-memory computation. Detached (not awaited) so the caller
+    // gets the real score/streak/badges/scoreDelta back immediately for an
+    // instant summary screen, instead of the summary waiting on a network
+    // round trip to show a number it already has. Nothing below this
+    // block reads from store/sync, so nothing here needs their result.
+    const persistTail = (async () => {
+      await this.store.saveGraph(this.graph);
+      this._snapshotSjeeState();
+      await this.store.saveProfile(this.profile);
+      await this.sync.sync();
+    })();
+    persistTail.catch(() => {
+      // Best-effort — a failure here doesn't undo the session or its
+      // score; SyncManager's own queue/rehydrate already covers retrying
+      // the sync half specifically.
+    });
 
     const result = {
       session: this.currentSession,
       eliteScore: score,
+      scoreDelta,
       streak: streakUpdate,
       macroState: this.profile.macroState,
       level: levelUpdate,
