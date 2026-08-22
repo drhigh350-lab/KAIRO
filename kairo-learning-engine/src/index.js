@@ -223,6 +223,12 @@ export class KairoEngine {
       this.decayModel.refreshAll(this.graph);
     }
 
+    // Anything queued for Supabase before the app closed/reloaded while
+    // still offline — without this, those attempts/sessions/cbt_results
+    // were silently lost forever (SyncManager.pendingSync is otherwise
+    // memory-only).
+    await this.sync.rehydrate();
+
     this.ready = true;
   }
 

@@ -5,14 +5,19 @@
  */
 
 const DB_NAME = 'kairo_learning_engine';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
   CONCEPTS: 'concepts',
   SESSIONS: 'sessions',
   ATTEMPTS: 'attempts',
   PROFILE: 'profile',
-  QUEUE: 'queue'
+  QUEUE: 'queue',
+  // Durable mirror of SyncManager.pendingSync — without this, a queued
+  // attempt/session/cbt_result sitting offline is lost the moment the tab
+  // closes or reloads before sync() ever runs, since pendingSync itself is
+  // just an in-memory array.
+  PENDING_SYNC: 'pending_sync_queue'
 };
 
 export class LocalStore {
@@ -48,6 +53,9 @@ export class LocalStore {
         if (!db.objectStoreNames.contains(STORES.QUEUE)) {
           db.createObjectStore(STORES.QUEUE, { keyPath: 'queueId' });
         }
+        if (!db.objectStoreNames.contains(STORES.PENDING_SYNC)) {
+          db.createObjectStore(STORES.PENDING_SYNC, { keyPath: 'syncId' });
+        }
       };
     });
   }
@@ -57,7 +65,7 @@ export class LocalStore {
   async put(store, data) {
     if (this.useMemory) {
       if (!this.memoryFallback.has(store)) this.memoryFallback.set(store, new Map());
-      const key = data.id || data.sessionId || data.attemptId || data.studentId || data.queueId || Date.now();
+      const key = data.id || data.sessionId || data.attemptId || data.studentId || data.queueId || data.syncId || Date.now();
       this.memoryFallback.get(store).set(String(key), data);
       return data;
     }

@@ -4,6 +4,8 @@
  * Rule: most recent completed attempt wins for state, but ALL attempts are retained.
  */
 
+import { STORES } from "../data/LocalStore.js";
+
 export class SyncManager {
   /**
    * @param {LocalStore} localStore
@@ -28,14 +30,40 @@ export class SyncManager {
   }
 
   /**
-   * Queue an item for sync when connection returns.
+   * Queue an item for sync when connection returns. Persisted to
+   * IndexedDB (not just the in-memory array) so a queued attempt/session
+   * genuinely survives a reload or a closed tab while still offline —
+   * rehydrate() below is what reads it back on the next boot.
    */
   queue(syncItem) {
-    this.pendingSync.push({
+    const item = {
       ...syncItem,
       queuedAt: Date.now(),
       syncId: `${Date.now()}_${Math.random().toString(36).slice(2)}`
-    });
+    };
+    this.pendingSync.push(item);
+    this.store?.put(STORES.PENDING_SYNC, item).catch(() => {});
+    return item;
+  }
+
+  /**
+   * Read back whatever is still sitting in the durable pending-sync store
+   * (e.g. items queued while offline, before a reload happened) and merge
+   * it into the in-memory queue. Call once at engine boot, before the
+   * first sync() attempt.
+   */
+  async rehydrate() {
+    if (!this.store) return;
+    try {
+      const stored = await this.store.getAll(STORES.PENDING_SYNC);
+      if (!stored?.length) return;
+      const known = new Set(this.pendingSync.map(i => i.syncId));
+      for (const item of stored) {
+        if (!known.has(item.syncId)) this.pendingSync.push(item);
+      }
+    } catch {
+      // Corrupt/unavailable store — sync just has less to work with this boot, not fatal.
+    }
   }
 
   /**
@@ -53,6 +81,13 @@ export class SyncManager {
     const pendingSessions = toSync.filter(i => i.type === 'session').map(i => i.data);
     const pendingCbtResults = toSync.filter(i => i.type === 'cbt_result').map(i => i.data);
     this.pendingSync = [];
+    // Clear the durable copies of everything we're about to attempt —
+    // a genuine failure below re-persists them (see the catch block);
+    // a partial failure re-persists only the specific failed items via
+    // this.queue() below, each under a fresh syncId.
+    if (this.store) {
+      for (const item of toSync) this.store.delete(STORES.PENDING_SYNC, item.syncId).catch(() => {});
+    }
 
     try {
       const result = await this.adapter.fullSync({
@@ -88,8 +123,13 @@ export class SyncManager {
     } catch (err) {
       // Only reached when the foundational profile push itself fails —
       // nothing else was attempted, so the whole original batch is still
-      // genuinely pending and belongs back in the queue.
+      // genuinely pending and belongs back in the queue (in memory and,
+      // since we already cleared their durable copies above, re-persisted
+      // to IndexedDB too).
       this.pendingSync = [...toSync, ...this.pendingSync];
+      if (this.store) {
+        for (const item of toSync) this.store.put(STORES.PENDING_SYNC, item).catch(() => {});
+      }
       return { status: 'error', error: err.message, queued: this.pendingSync.length };
     }
   }

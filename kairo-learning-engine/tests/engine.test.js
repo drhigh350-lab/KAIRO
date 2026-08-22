@@ -5,8 +5,10 @@
 
 import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
-import { RetentionState, ErrorTag } from "../src/utils/constants.js";
+import { RetentionState, ErrorTag, StreakConstants } from "../src/utils/constants.js";
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
+import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
+import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -235,6 +237,66 @@ test('Momentum streak records session with status', () => {
   assert(status.message && (status.message.text || status.message.level), 'Should have status message');
 });
 
+test('Momentum streak increments by exactly 1 per consecutive day, never silently decreases', () => {
+  const p = new StudentProfile({ studentId: 's_streak', name: 'S' });
+  const streak = new MomentumStreak(p);
+  const day = 24 * 60 * 60 * 1000;
+  const t0 = Date.parse('2026-06-01T09:00:00Z');
+  const s1 = streak.recordSession(t0);
+  assertEqual(s1.momentum, 1, 'First-ever session should start the streak at 1');
+  const s2 = streak.recordSession(t0 + day);
+  assertEqual(s2.momentum, 2, 'A session the very next calendar day should increment by 1');
+  // Same-day second session (e.g. re-called defensively) must not double count.
+  const s2b = streak.recordSession(t0 + day + 3600000);
+  assertEqual(s2b.momentum, 2, 'A second session the same calendar day should not increment again');
+  const s3 = streak.recordSession(t0 + 2 * day);
+  assertEqual(s3.momentum, 3, 'Third consecutive day should reach 3');
+  // Regression guard for the previous rolling-window bug: momentum must
+  // never drop below its last known value without a genuine, unbridged gap.
+  assert(s3.momentum >= s2.momentum, 'Momentum must never silently decrease across consecutive real sessions');
+});
+
+test('Momentum streak: a genuine unbridged gap resets to 1, not a silent partial decrement', () => {
+  const p = new StudentProfile({ studentId: 's_streak_break', name: 'S' });
+  const streak = new MomentumStreak(p);
+  const day = 24 * 60 * 60 * 1000;
+  const t0 = Date.parse('2026-06-01T09:00:00Z');
+  streak.recordSession(t0);
+  streak.recordSession(t0 + day);
+  streak.recordSession(t0 + 2 * day); // momentum = 3, no freezes earned
+  const broken = streak.recordSession(t0 + 10 * day); // 7-day gap, far beyond grace/freeze
+  assertEqual(broken.momentum, 1, 'A real, unbridged gap should reset the streak to 1');
+});
+
+test('Streak Freeze: earned on onboarding, capped at FREEZE_CAPACITY, and bridges a missed day without breaking the streak', () => {
+  const p = new StudentProfile({ studentId: 's_freeze', name: 'S' });
+  const streak = new MomentumStreak(p);
+  assertEqual(streak.data.freezesAvailable, 0, 'No freezes before any are earned');
+  streak.earnFreeze(StreakConstants.FREEZE_EARNED_ON_ONBOARDING);
+  assertEqual(streak.data.freezesAvailable, 1, 'Onboarding should award exactly one freeze');
+  streak.earnFreeze(5); // attempt to over-earn
+  assertEqual(streak.data.freezesAvailable, StreakConstants.FREEZE_CAPACITY, 'Freezes should never exceed FREEZE_CAPACITY');
+
+  const p2 = new StudentProfile({ studentId: 's_freeze_use', name: 'S' });
+  const streak2 = new MomentumStreak(p2);
+  streak2.earnFreeze(1);
+  const day = 24 * 60 * 60 * 1000;
+  const t0 = Date.parse('2026-06-01T09:00:00Z');
+  streak2.recordSession(t0);
+  // 3 missed days: 1 beyond what the free PROTECTED_GAP_DAYS (2) grace
+  // alone would cover — exactly what the single earned freeze should bridge.
+  const afterGap = streak2.recordSession(t0 + 4 * day);
+  assertEqual(afterGap.momentum, 2, 'A spent Streak Freeze should bridge a gap beyond the free grace and continue the streak');
+  assertEqual(afterGap.freezesAvailable, 0, 'The freeze used to bridge the gap should be spent, not refunded');
+
+  // Without a freeze, the same size gap should genuinely break the streak.
+  const p3 = new StudentProfile({ studentId: 's_freeze_none', name: 'S' });
+  const streak3 = new MomentumStreak(p3);
+  streak3.recordSession(t0);
+  const brokenNoFreeze = streak3.recordSession(t0 + 4 * day);
+  assertEqual(brokenNoFreeze.momentum, 1, 'The same gap with no freeze available should reset the streak to 1');
+});
+
 test('Weekly reflection generates data', () => {
   const { data, kaiNote } = engine.getWeeklyReflection();
   assert(Array.isArray(data.reinforced), 'Reinforced should be array');
@@ -402,6 +464,25 @@ test('Badge system has catalog and checks', () => {
   assert(Array.isArray(badges.earned), 'Should have earned badges array');
   assert(Array.isArray(badges.available), 'Should have available badges array');
   assert(badges.available.length > 0, 'Should have available badges');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// RECOMMENDATION ENGINE — SUBJECT GUARDRAIL
+// ═══════════════════════════════════════════════════════════════
+
+test('RecommendationEngine.buildSessionPlan() hard-filters out concepts from non-enrolled subjects', () => {
+  const graph = new KnowledgeGraph();
+  const enrolledConcept = new ConceptNode({ id: 'guardrail_enrolled', name: 'Enrolled Subject Concept', subject: 'Physics', topic: 'Motion' });
+  const nonEnrolledConcept = new ConceptNode({ id: 'guardrail_not_enrolled', name: 'Non-Enrolled Subject Concept', subject: 'Mathematics', topic: 'Algebra' });
+  graph.addConcept(enrolledConcept);
+  graph.addConcept(nonEnrolledConcept);
+
+  const profile = new StudentProfile({ studentId: 'guardrail_student', name: 'S', targetSubjects: ['Physics'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+  const plan = rec.buildSessionPlan();
+
+  assert(plan.includes('guardrail_enrolled'), 'Enrolled-subject concept should be eligible for the recommendation queue');
+  assert(!plan.includes('guardrail_not_enrolled'), 'A concept from a subject the student is not enrolled in must never surface in the daily recommendation');
 });
 
 // ═══════════════════════════════════════════════════════════════

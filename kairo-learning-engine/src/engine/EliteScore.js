@@ -114,8 +114,8 @@ export class EliteScore {
     if (diff <= 0) {
       return {
         direction: 'steady',
-        delta: '0.0',
-        text: "Your Elite Score held steady — keep practicing to move it further.",
+        delta: '0',
+        text: "Your Kairo Score held steady — keep practicing to move it further.",
         components: { accuracy: current.accuracy, retention: current.retention, consistency: current.consistency }
       };
     }
@@ -134,10 +134,11 @@ export class EliteScore {
       reasons.push('small gains across multiple components');
     }
 
+    const roundedDelta = Math.max(1, Math.round(diff));
     return {
       direction: 'up',
-      delta: diff.toFixed(1),
-      text: `Your Elite Score went up by ${diff.toFixed(1)} because ${reasons.join(' and ')}.`,
+      delta: String(roundedDelta),
+      text: `Your Kairo Score went up by ${roundedDelta} because ${reasons.join(' and ')}.`,
       components: {
         accuracy: current.accuracy,
         retention: current.retention,

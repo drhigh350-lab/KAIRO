@@ -27,7 +27,13 @@ export class RecommendationEngine {
   // ═══════════════════════════════════════════════════════════════
 
   buildSessionPlan() {
-    const all = Array.from(this.graph.nodes.values());
+    // Hard subject guardrail: a concept outside the student's own enrolled
+    // subjects must never surface in the daily recommendation, even if it
+    // happens to be loaded into this.graph (e.g. from a CBT session that
+    // covers subjects beyond what the student is actually taking).
+    const enrolled = this.profile.targetSubjects;
+    const all = Array.from(this.graph.nodes.values())
+      .filter(c => !enrolled || enrolled.length === 0 || enrolled.includes(c.subject));
     const scored = all.map(c => ({
       concept: c,
       score: this._sessionPriorityScore(c)

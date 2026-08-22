@@ -116,7 +116,13 @@ export const SessionConstants = Object.freeze({
 export const StreakConstants = Object.freeze({
   ROLLING_WINDOW_DAYS: 14,
   PROTECTED_GAP_DAYS: 2,
-  MIN_SESSIONS_PER_WINDOW: 3
+  MIN_SESSIONS_PER_WINDOW: 3,
+  // Streak Freeze: a discrete, earned/spent resource distinct from the
+  // automatic PROTECTED_GAP_DAYS grace above. One is earned the moment
+  // onboarding completes; capacity never exceeds 2 without a further
+  // earn event (none defined yet beyond onboarding).
+  FREEZE_CAPACITY: 2,
+  FREEZE_EARNED_ON_ONBOARDING: 1
 });
 
 // ─── Kai Tone Boundaries ───

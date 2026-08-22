@@ -86,7 +86,9 @@ export class StudentProfile {
       currentMomentum: 0,
       protectedGapsUsed: 0,
       lastSessionDate: null,
-      windowSessions: []
+      windowSessions: [],
+      freezesAvailable: 0,
+      freezesUsed: 0
     };
 
     // Recovery tracking
