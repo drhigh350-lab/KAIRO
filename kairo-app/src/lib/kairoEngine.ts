@@ -12,13 +12,41 @@ export function getEngine(): Engine | null {
   return engine;
 }
 
+/**
+ * Background, best-effort pre-assembly of the next few days' recommendation
+ * queues (real resolved questions, not just concept IDs) while online, so
+ * "Start Session" for the recommendation still works if the student opens
+ * the app later with no connectivity at all. Never awaited by a caller —
+ * failures here are silent (there's simply nothing cached to fall back on,
+ * same as before this existed) and never block or slow down whatever
+ * actually triggered this (a sync, a page load).
+ */
+export async function triggerRecommendationPrefetch(): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) return;
+  try {
+    await ensureContentLoaded(kairo.profile.targetSubjects || []);
+    await kairo.prefetchRecommendationQueues({ queueCount: 4, questionsPerQueue: 10 });
+  } catch {
+    // Offline, not signed in yet, or nothing to prefetch — fine, this is
+    // opportunistic by design.
+  }
+}
+
 let onlineSyncArmed = false;
 /**
  * Silently flush anything queued in SyncManager.pendingSync (now durably
  * backed by IndexedDB, see LocalStore's pending_sync_queue) the moment the
  * browser regains connectivity — without this, a session/attempt completed
  * while offline just sat there until the next action happened to call
- * kairo.sync.sync() itself. Idempotent: safe to call on every render/mount,
+ * kairo.sync.sync() itself. Also (re)builds the offline recommendation
+ * queue cache on the same online transition — the other half of "when the
+ * app detects an online state" is the normal-boot-while-already-online
+ * case, covered separately by an explicit triggerRecommendationPrefetch()
+ * call once the engine is actually signed in and ready (see App.tsx),
+ * since at the moment this function itself runs (App's very first mount
+ * effect) auth restoration is usually still in flight and getEngine()
+ * would just be null. Idempotent: safe to call on every render/mount,
  * only ever registers the listener once per page load.
  */
 export function setupOnlineSync(): void {
@@ -26,7 +54,15 @@ export function setupOnlineSync(): void {
   onlineSyncArmed = true;
   window.addEventListener('online', () => {
     getEngine()?.sync?.sync().catch(() => {});
+    triggerRecommendationPrefetch();
   });
+}
+
+/** Pop the oldest cached offline recommendation queue, or null if nothing was ever prefetched (or it's already been used up). */
+export async function popPrefetchedRecommendationQueue(): Promise<{ queueId: string; conceptIds: string[]; questions: Engine[] } | null> {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.popPrefetchedQueue();
 }
 
 /**
@@ -329,6 +365,24 @@ const TOPIC_SESSION_MIN_QUESTIONS = 10;
 export async function startSuggestedSession(limit = 5, anchorConceptId?: string | null): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
+
+  // Offline (and no specific concept anchored, which needs a live
+  // catalog/graph lookup this device may not have): ensureContentLoaded()
+  // below would otherwise throw trying to reach Supabase. Pop a queue
+  // pre-assembled while online instead of failing on the network call —
+  // real, already-resolved questions, no further loadContentCatalog()
+  // needed at all.
+  if (anchorConceptId == null && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    const prefetched = await popPrefetchedRecommendationQueue();
+    if (prefetched) {
+      const { kaiMessage } = kairo.startSession({ mode: 'standard' });
+      kairo.currentSession.plan = prefetched.conceptIds;
+      return { questions: prefetched.questions.slice(0, limit || prefetched.questions.length), kaiMessage };
+    }
+    // Nothing cached — fall through to the normal path, which will
+    // honestly fail (ensureContentLoaded throws) rather than pretend.
+  }
+
   await ensureContentLoaded(kairo.profile.targetSubjects || []);
 
   if (anchorConceptId) {

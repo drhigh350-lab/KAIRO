@@ -32,8 +32,6 @@ export interface PracticeSummaryProps {
   results: PracticeResult[];
   onHome: () => void;
   onAction?: (action: PracticeSummaryAction) => void;
-  /** 'suggested' = the daily recommendation session; kept for the tier/insights logic below. */
-  entryFlow?: string;
   /** Real scoreDelta from endSession() — null only if the session somehow ended without one (e.g. a sync/engine error), in which case no score badge renders at all rather than showing a made-up number. */
   scoreDelta?: ScoreDelta | null;
 }
@@ -46,7 +44,7 @@ function tierFor(accuracy: number): SummaryTier {
   return 'high';
 }
 
-export function PracticeSummary({ results, onHome, onAction, entryFlow, scoreDelta }: PracticeSummaryProps) {
+export function PracticeSummary({ results, onHome, onAction, scoreDelta }: PracticeSummaryProps) {
   const total = results.length;
   const correctCount = results.filter((r) => r.correct).length;
   const accuracy = total ? Math.round((correctCount / total) * 100) : 0;

@@ -546,6 +546,71 @@ export class KairoEngine {
   }
 
   /**
+   * Pre-assembles several sessions' worth of the daily recommendation
+   * queue while online — real, resolved Question objects already
+   * attached (not just concept IDs), so a later "Start Session" for the
+   * recommendation while offline never needs questionGraph/network at
+   * all. Same throwaway-RecommendationEngine pattern as getTodayFocus():
+   * never touches this.currentSession/this.recommendation, safe to call
+   * whether or not a real session happens to be in progress.
+   */
+  async prefetchRecommendationQueues({ queueCount = 4, questionsPerQueue = 10 } = {}) {
+    if (!this.ready) return { queued: 0 };
+    this.profile.computeMacroState(this.graph);
+    const preview = new RecommendationEngine({
+      knowledgeGraph: this.graph,
+      studentProfile: this.profile,
+      decayModel: this.decayModel,
+      examDate: this.profile.examDate
+    });
+    const ranked = preview.buildRankedQueue(queueCount * questionsPerQueue);
+
+    const queues = [];
+    for (let i = 0; i < queueCount; i++) {
+      const slice = ranked.slice(i * questionsPerQueue, (i + 1) * questionsPerQueue);
+      if (slice.length === 0) break;
+      const questions = [];
+      const seenIds = [];
+      for (const conceptId of slice) {
+        const q = this.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+        if (q) { questions.push(q); seenIds.push(q.id); }
+      }
+      if (questions.length === 0) continue; // nothing real resolvable for this chunk — don't cache an empty queue
+      queues.push({
+        queueId: `prefetch_${this.profile.studentId}_${Date.now()}_${i}`,
+        conceptIds: slice,
+        questions,
+        builtAt: Date.now()
+      });
+    }
+
+    // Replace whatever was cached before — a stale prefetch (built against
+    // yesterday's retention states) is worse than none, since it could
+    // resurface exactly the concepts a real session since then already
+    // resolved (e.g. a Fading concept the student already reviewed).
+    const existing = await this.store.getPrefetchedQueues();
+    for (const q of existing) await this.store.deletePrefetchedQueue(q.queueId);
+    for (const q of queues) await this.store.savePrefetchedQueue(q);
+
+    return { queued: queues.length };
+  }
+
+  /**
+   * Pop the oldest still-cached prefetched queue (the one built first is
+   * the one whose retention-state snapshot is closest to going stale).
+   * Returns null if nothing is cached — the caller's own online path is
+   * the honest fallback, not a fabricated queue.
+   */
+  async popPrefetchedQueue() {
+    const queues = await this.store.getPrefetchedQueues();
+    if (!queues.length) return null;
+    queues.sort((a, b) => a.builtAt - b.builtAt);
+    const next = queues[0];
+    await this.store.deletePrefetchedQueue(next.queueId);
+    return next;
+  }
+
+  /**
    * Collects candidates from every SJEE/notification-producing module —
    * NotificationEngine's client heuristics (daily recap, streak, exam
    * proximity, weekly reflection, recovery welcome), ReEngagementEngine,

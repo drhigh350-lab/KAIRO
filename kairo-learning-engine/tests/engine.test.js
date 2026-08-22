@@ -564,6 +564,39 @@ test('Content pack manager tracks storage', async () => {
   assert(typeof usage.totalQuestions === 'number', 'Should have totalQuestions');
 });
 
+await test('prefetchRecommendationQueues()/popPrefetchedQueue(): builds real, resolved offline queues and pops them oldest-first without disturbing a live session', async () => {
+  const engine = new KairoEngine({ studentId: 'prefetch1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  for (let i = 0; i < 15; i++) {
+    const cid = engine.addConcept({ name: `Prefetch Concept ${i}`, subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+    engine.questionGraph.addQuestion(new Question({
+      id: `prefetch_q${i}`, subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+      conceptsTested: [{ conceptId: cid, weight: 1 }],
+      stem: `S${i}`, options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+      lifecycleState: 'live'
+    }));
+  }
+
+  // A real session already in progress must be completely unaffected.
+  const before = engine.startSession({ mode: 'standard' });
+
+  const { queued } = await engine.prefetchRecommendationQueues({ queueCount: 2, questionsPerQueue: 10 });
+  assertEqual(queued, 2, '15 concepts / 10 per queue should produce exactly 2 non-empty queues (10 + 5)');
+  assertEqual(engine.currentSession.plan, before.queue, 'Prefetching must never touch the already-in-progress live session plan');
+
+  const first = await engine.popPrefetchedQueue();
+  assert(first, 'First pop should return a real cached queue');
+  assertEqual(first.questions.length, 10, 'First (oldest) queue should carry its full 10 resolved questions');
+  assert(first.questions[0].id, 'Cached questions should be real, already-resolved question objects, not bare concept IDs');
+
+  const second = await engine.popPrefetchedQueue();
+  assert(second, 'Second pop should return the other cached queue');
+  assert(second.queueId !== first.queueId, 'Each pop should consume a distinct queue, not the same one twice');
+
+  const third = await engine.popPrefetchedQueue();
+  assertEqual(third, null, 'Once every cached queue is popped, there should honestly be nothing left rather than a fabricated one');
+});
+
 // ═══════════════════════════════════════════════════════════════
 // STUDENT INTELLIGENCE MODEL — Emotional Profile & Learning State
 // ═══════════════════════════════════════════════════════════════

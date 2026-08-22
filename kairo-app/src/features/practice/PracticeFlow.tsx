@@ -667,7 +667,7 @@ export function PracticeFlow() {
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} entryFlow={entryFlow} scoreDelta={scoreDelta} />;
+    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} scoreDelta={scoreDelta} />;
   }
   if (screen === 'practiceReview') {
     return <PracticeReview results={results} onBack={back} />;

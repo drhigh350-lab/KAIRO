@@ -21,7 +21,7 @@ import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoMark } from './components';
-import { getEngine, isOnboarded, restoreSession, setupOnlineSync } from './lib/kairoEngine';
+import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
 // themselves before deciding where to go — this list is every *other*
@@ -104,6 +104,15 @@ export default function App() {
   useEffect(() => {
     setupOnlineSync();
   }, []);
+
+  // The other half of "when the app detects an online state and executes
+  // the daily sync/init" (setupOnlineSync's own online-event listener
+  // covers an offline->online transition mid-session) — a normal boot
+  // that's already online, once the engine is actually signed in and
+  // ready rather than racing restoreSession() above.
+  useEffect(() => {
+    if (ready && getEngine()) triggerRecommendationPrefetch();
+  }, [ready]);
 
   return (
     <AppShell wide={wide}>
