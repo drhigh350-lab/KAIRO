@@ -423,6 +423,9 @@ export function KairoScoreInfo({ iconColor = 'var(--dark-text-faint)' }: { iconC
           <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.65, marginTop: 10 }}>
             It only ever goes up, and it moves slowly on purpose — one session won't swing it much, but showing up consistently will.
           </div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65, marginTop: 10, fontWeight: 600 }}>
+            Pro Tip: Completing your Daily Recommendation or a full CBT Simulation instantly awards a massive +10 Bonus to your score.
+          </div>
         </Modal>
       )}
     </>

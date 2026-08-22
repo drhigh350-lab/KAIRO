@@ -1,6 +1,7 @@
 import { Button, Card } from '../../components';
 import { StatTile } from '../learning/shared';
 import type { CbtQuestionResult } from '../../lib/kairoEngine';
+import type { ScoreDelta } from '../practice/PracticeSummary';
 
 export interface CbtResultsSubject {
   subject: string;
@@ -20,6 +21,8 @@ export interface CbtResults {
   timeAnalysis: { totalTimeMin: number; avgTimePerQuestionSec: number };
   kaiSummary: string;
   questionResults: CbtQuestionResult[];
+  /** Real scoreDelta from CBTExamMode.finish() — null only if it somehow finished without one. */
+  scoreDelta?: ScoreDelta | null;
 }
 
 export interface CbtSummaryProps {
@@ -28,12 +31,11 @@ export interface CbtSummaryProps {
   onReview?: () => void;
 }
 
-/** Fixed session-delta reward for completing a full CBT simulation — same "+N points this session" shape as Practice's PracticeSummary, deliberately not a recalculation of the slow-moving adaptive Kairo Score. */
-const CBT_COMPLETION_POINTS = 10;
-
 export function CbtSummary({ results, onHome, onReview }: CbtSummaryProps) {
   const strongest = results.bySubject.slice().sort((a, b) => b.percentage - a.percentage)[0];
   const weakest = results.bySubject.slice().sort((a, b) => a.percentage - b.percentage)[0];
+  const gainedScore = results.scoreDelta?.total ?? 0;
+  const hasBonus = !!results.scoreDelta && results.scoreDelta.bonus > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
@@ -43,10 +45,18 @@ export function CbtSummary({ results, onHome, onReview }: CbtSummaryProps) {
         </div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)', marginTop: 14 }}>Exam Submitted</div>
         <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>Here's how your simulation went.</div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.15)' }}>
-          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: 'var(--dark-accent-blue)' }}>+{CBT_COMPLETION_POINTS}</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--dark-text-muted)' }}>Kairo Score for completing this simulation</span>
-        </div>
+        {gainedScore > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginTop: 12 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.15)' }}>
+              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: 'var(--dark-accent-blue)' }}>+{gainedScore} Kairo Score</span>
+            </div>
+            {hasBonus && (
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--kairo-gold-500, #e0a039)' }}>
+                (Includes +{results.scoreDelta!.bonus} High-Yield Bonus!)
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>

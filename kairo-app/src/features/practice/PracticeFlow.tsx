@@ -113,9 +113,13 @@ export function PracticeFlow() {
   // restarts, via resetResults() below, so a genuinely new session always
   // gets its own remediation chance.
   const [remediationDone, setRemediationDone] = useState(false);
+  // The real weighted scoreDelta from endSession() ({ base, bonus, total,
+  // sessionType }) — null until the session actually ends.
+  const [scoreDelta, setScoreDelta] = useState<{ base: number; bonus: number; total: number; sessionType: string } | null>(null);
   function resetResults() {
     setResults([]);
     setRemediationDone(false);
+    setScoreDelta(null);
   }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
@@ -373,7 +377,7 @@ export function PracticeFlow() {
     navigate(`/learn/${encodeURIComponent(eq.conceptId)}`, { state: { returnTo: '/practice' } });
   }
 
-  function handleNextQuestion({ correct, confidence, selectedIndex, responseTimeMs }: PracticeQuestionResult) {
+  async function handleNextQuestion({ correct, confidence, selectedIndex, responseTimeMs }: PracticeQuestionResult) {
     const eq = engineQuestions?.[qIndex];
     const newResults = [...results, {
       correct, confidence, time: Math.round(responseTimeMs / 1000), subject: eq?.subject, topic: eq?.topic,
@@ -424,12 +428,17 @@ export function PracticeFlow() {
       setHasHistory(true);
       clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
       if (kairo) {
-        // Score/streak/level/badges/persistence still all run — just not
-        // awaited or shown here. PracticeSummary displays a locally
-        // computed gained-score instead, so the summary never waits on
-        // this (previously slow: IndexedDB graph write + a real Supabase
-        // sync round trip) before rendering.
-        kairo.endSession().catch(() => {});
+        // endSession() itself no longer waits on IndexedDB/Supabase (that
+        // tail runs detached inside the engine now) — score/streak/level/
+        // badges/scoreDelta come back essentially instantly, so awaiting
+        // it here still means an instant summary transition, just with
+        // the real weighted score delta instead of a flat estimate.
+        try {
+          const result = await kairo.endSession();
+          setScoreDelta(result?.scoreDelta ?? null);
+        } catch {
+          setScoreDelta(null);
+        }
       }
       go('practiceSummary');
     } else {
@@ -658,7 +667,7 @@ export function PracticeFlow() {
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} entryFlow={entryFlow} />;
+    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} entryFlow={entryFlow} scoreDelta={scoreDelta} />;
   }
   if (screen === 'practiceReview') {
     return <PracticeReview results={results} onBack={back} />;
