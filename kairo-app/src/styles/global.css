@@ -26,3 +26,17 @@ body {
   flex-direction: column;
   min-height: 100dvh;
 }
+
+/* Skeleton placeholder — shown behind the Kairo logo/wordmark and any
+   avatar/mascot image while its asset is still loading (slow connections,
+   cold cache), so a student never sees a blank canvas where the brand
+   mark should be. */
+@keyframes kairo-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.kairo-skeleton {
+  background: linear-gradient(90deg, var(--dark-bg-surface) 25%, var(--dark-bg-elevated) 50%, var(--dark-bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: kairo-shimmer 1.4s ease-in-out infinite;
+}

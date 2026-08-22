@@ -306,10 +306,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             <AnswerFeedback dark correct={isCorrect} title={isCorrect ? "That's correct" : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} detail={question.why} />
 
             {!isCorrect && yourMisconception && (
-              <Section title="What likely happened">
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)', marginBottom: 4 }}>{yourMisconception.name}</div>
-                <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{yourMisconception.description}</div>
-              </Section>
+              <KaiPanel tone="dark" note={<><strong style={{ color: 'var(--dark-text-heading)' }}>{yourMisconception.name} — </strong>{yourMisconception.description}</>} />
             )}
 
             {distractors.length > 0 && (

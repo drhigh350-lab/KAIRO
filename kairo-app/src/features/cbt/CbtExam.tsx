@@ -17,6 +17,7 @@ export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps)
   const [showPalette, setShowPalette] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(totalTimeMin * 60);
   const [warned, setWarned] = useState(false);
   const questionStartedAt = useRef(Date.now());
@@ -70,7 +71,7 @@ export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps)
       {warned && secondsLeft > 295 && <InlineToast tone="caution">5 minutes remaining — review flagged questions if you can.</InlineToast>}
 
       <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px 10px', background: 'var(--dark-bg-canvas)' }}>
-        <IconButton dark onClick={onExit}><CloseIcon /></IconButton>
+        <IconButton dark onClick={() => setShowExitConfirm(true)}><CloseIcon /></IconButton>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', textTransform: 'uppercase', letterSpacing: '.03em' }}>{q.subject}</span>
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: timeLow ? 'var(--dark-danger)' : 'var(--dark-text-heading)' }}>{mins}:{secs.toString().padStart(2, '0')}</span>
@@ -175,6 +176,17 @@ export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps)
         <Modal onClose={() => setShowCalc(false)} tone="dark">
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 14 }}>Calculator</div>
           <MiniCalculator tone="dark" />
+        </Modal>
+      )}
+
+      {showExitConfirm && (
+        <Modal onClose={() => setShowExitConfirm(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Leave session?</div>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', lineHeight: 1.5, marginBottom: 20 }}>Your progress in this session won't be recorded if you leave now.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Button variant="darkAccent" size="lg" fullWidth onClick={() => setShowExitConfirm(false)}>Resume Practice</Button>
+            <Button variant="danger" size="lg" fullWidth onClick={onExit}>Quit Session</Button>
+          </div>
         </Modal>
       )}
 
