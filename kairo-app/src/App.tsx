@@ -19,6 +19,8 @@ import { ChallengesFlow } from './features/challenges/ChallengesFlow';
 import { LearnLesson } from './features/learn/LearnLesson';
 import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
+import { PlannerFlow } from './features/planner/PlannerFlow';
+import { StreakSavior } from './features/home/StreakSavior';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoMark } from './components';
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
@@ -32,7 +34,7 @@ import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecomme
 // out"-looking screen even though their Supabase auth session was still
 // sitting in localStorage the whole time — this is what read as "my
 // progress reset" / "I have to sign in again" on every refresh.
-const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/insights', '/profile', '/challenges', '/learn', '/rapid-fire'];
+const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/insights', '/profile', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior'];
 
 // Real multi-column desktop layouts exist only for these browsing/hub
 // screens (see AppShell's `wide` prop). Exact matches, not prefixes:
@@ -141,6 +143,11 @@ export default function App() {
             <Route path="/learn" element={<LearnHome />} />
             <Route path="/learn/:conceptId" element={<LearnLesson />} />
             <Route path="/rapid-fire" element={<RapidFireFlow />} />
+            <Route path="/planner/*" element={<PlannerFlow />} />
+            {/* Outside AppTabs, same reasoning as /review/session — a
+                focused, binary-choice interstitial has no business showing
+                the bottom nav (Batch 4's Streak Savior). */}
+            <Route path="/streak-savior" element={<StreakSavior />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

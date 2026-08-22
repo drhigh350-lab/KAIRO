@@ -88,7 +88,7 @@ export function Review() {
           : "Nothing's waiting for review right now — that changes as you practise."}
       </div>
 
-      {/* Desktop (>=900px): the active review queue (resume/suggested CTA +
+      {/* Tablet/desktop (>=768px): the active review queue (resume/suggested CTA +
           the engine-detected categories) as the main column; the quieter,
           self-directed items (bookmarks, reinforced-this-month, session
           history — already documented above as "kept visually quiet") as

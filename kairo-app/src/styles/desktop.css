@@ -1,13 +1,13 @@
-/* Desktop-only multi-column layouts for the hub/browsing screens that opt
-   into AppShell's `wide` shell (Home, Profile, Insights, Review — see
+/* Tablet/desktop multi-column layouts for the hub/browsing screens that
+   opt into AppShell's `wide` shell (Home, Profile, Insights, Review — see
    App.tsx's WIDE_ROUTES). Every rule that changes layout is scoped behind
-   the same min-width the wide shell itself activates at, so nothing
-   changes for mobile or for the narrow, focused question-answering
-   screens. `display`/`gap` live here (not as inline styles on these
-   specific wrapper elements) on purpose — an inline `style` attribute
-   always wins over an external class in the cascade, so the mobile-first
-   flex-column base has to be defined here too, or the desktop grid rule
-   below could never actually override it. */
+   the same min-width the wide shell itself activates at (768px — tablet
+   tier, see layout.css), so nothing changes for mobile or for the narrow,
+   focused question-answering screens. `display`/`gap` live here (not as
+   inline styles on these specific wrapper elements) on purpose — an
+   inline `style` attribute always wins over an external class in the
+   cascade, so the mobile-first flex-column base has to be defined here
+   too, or the desktop grid rule below could never actually override it. */
 
 .desktop-grid, .desktop-main, .desktop-sidebar {
   display: flex;
@@ -16,17 +16,17 @@
 }
 
 /* Quick-action / subject-picker style button grids: fixed 2-up at every
-   width reads as cramped once there's real desktop room — grid-template-
-   columns lives here (not inline) at both tiers so the >=900px override
-   below can actually take effect; an inline style would always win over
-   it regardless of the media query. */
+   width reads as cramped once there's real tablet/desktop room — grid-
+   template-columns lives here (not inline) at both tiers so the >=768px
+   override below can actually take effect; an inline style would always
+   win over it regardless of the media query. */
 .desktop-reflow-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 768px) {
   .desktop-grid {
     display: grid;
     grid-template-columns: 1fr 340px;

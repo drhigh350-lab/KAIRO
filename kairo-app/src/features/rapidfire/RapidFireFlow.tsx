@@ -7,6 +7,7 @@ import {
   startRapidFireSession, finishRapidFire,
   type RapidFireQueuedQuestion, type RapidFireResults as RapidFireResultsData,
 } from '../../lib/kairoEngine';
+import { goHomeOrStreakSavior } from '../../lib/streakSavior';
 
 type Screen = 'intro' | 'play' | 'results';
 
@@ -54,7 +55,9 @@ export function RapidFireFlow() {
     return <RapidFirePlay questions={questions} timePerQuestionSec={timePerQuestionSec} onFinish={handleFinish} onExit={toHome} />;
   }
   if (screen === 'results' && results) {
-    return <RapidFireResults results={results} onHome={toHome} onRetry={() => setScreen('intro')} />;
+    // Rapid Fire is a non-recommendation session type — Batch 4's Streak
+    // Savior gate applies the same way it does for Practice/CBT.
+    return <RapidFireResults results={results} onHome={() => goHomeOrStreakSavior(navigate, false)} onRetry={() => setScreen('intro')} />;
   }
   return null;
 }

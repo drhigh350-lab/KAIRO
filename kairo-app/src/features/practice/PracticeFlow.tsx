@@ -15,6 +15,11 @@ import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
+import { recordVerificationResult } from '../../lib/planner/plannerApi';
+import { goHomeOrStreakSavior } from '../../lib/streakSavior';
+
+/** Batch 2's "Trust, but Verify" loop — a strictly scoped 10-question session on exactly one Planner topic, launched instantly with no picker screens. */
+const VERIFICATION_SESSION_LENGTH = 10;
 
 // Mixed Practice / a weak-topic boost both request "every real question
 // available" now rather than a student-picked count — this is a ceiling
@@ -28,7 +33,7 @@ const EXAM_PACE_SEC = 45;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
-type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested';
+type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'verify';
 
 interface InitialState {
   screen: Screen;
@@ -40,7 +45,7 @@ interface InitialState {
   results: PracticeResult[];
 }
 
-function computeInitial(entry: string): InitialState {
+function computeInitial(entry: string, verifyTarget: { subjectLabel: string; topic: string } | null): InitialState {
   const kind = entry as EntryKind;
   const base: InitialState = {
     screen: 'subject',
@@ -63,6 +68,14 @@ function computeInitial(entry: string): InitialState {
   if (kind === 'suggested') {
     return { ...base, subject: subjects[0], difficulty: 'adaptive', length: 5, screen: 'practiceQuestion' };
   }
+  if (kind === 'verify' && verifyTarget) {
+    return {
+      ...base,
+      subject: { key: verifyTarget.subjectLabel, label: verifyTarget.subjectLabel },
+      length: VERIFICATION_SESSION_LENGTH,
+      screen: 'practiceQuestion',
+    };
+  }
   // 'subject' and 'topic' (and any unrecognized entry) both start at the subject picker.
   return base;
 }
@@ -83,8 +96,17 @@ export function PracticeFlow() {
   // Read once via ref: only the initial mount's auto-start needs it, and a
   // ref avoids re-triggering that effect.
   const anchorConceptIdRef = useRef((location.state as { anchorConceptId?: string | null } | null)?.anchorConceptId ?? null);
+  // Planner's Verification Session (Batch 2) — the exact subject/topic to
+  // bypass every picker for, and the Planner topic key its accuracy result
+  // reports back to (Batch 3's tiered SRS). Read once via ref, same
+  // reasoning as anchorConceptIdRef above.
+  const verifyStateRef = useRef(location.state as { subjectLabel?: string; topic?: string; plannerTopicKey?: string } | null);
+  const plannerTopicKeyRef = useRef<string | null>(verifyStateRef.current?.plannerTopicKey ?? null);
+  const verifyTarget = verifyStateRef.current?.subjectLabel && verifyStateRef.current?.topic
+    ? { subjectLabel: verifyStateRef.current.subjectLabel, topic: verifyStateRef.current.topic }
+    : null;
 
-  const [init] = useState(() => computeInitial(entry));
+  const [init] = useState(() => computeInitial(entry, verifyTarget));
   // Loads the real bookmark set once per Practice mount — PracticeQuestion
   // reads it synchronously (isQuestionBookmarked) and re-syncs itself once
   // this resolves, so it doesn't need to be awaited before questions render.
@@ -96,7 +118,7 @@ export function PracticeFlow() {
   useSetBottomNavHidden(screen === 'practiceQuestion');
   const [history, setHistory] = useState<Screen[]>([]);
   const [subject, setSubject] = useState<SubjectLike | null>(init.subject);
-  const [topic, setTopic] = useState<string | null>(null);
+  const [topic, setTopic] = useState<string | null>(verifyTarget?.topic ?? null);
   const [subtopic, setSubtopic] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<string | null>(init.difficulty);
   const [length, setLength] = useState(init.length);
@@ -165,6 +187,22 @@ export function PracticeFlow() {
     if (entryFlow !== 'suggested' || startedSuggested.current) return;
     startedSuggested.current = true;
     startSuggested(anchorConceptIdRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Verification Session (Batch 2) — same auto-start-on-mount pattern as
+  // 'suggested' above, straight into the one subject+topic the Planner
+  // named, at a fixed 10-question length, adaptive difficulty (no
+  // student-facing config screen to pick one from).
+  const startedVerify = useRef(false);
+  useEffect(() => {
+    if (entryFlow !== 'verify' || startedVerify.current) return;
+    startedVerify.current = true;
+    if (!verifyTarget) {
+      setEngineLoadError('Missing verification target — go back to the Planner and try again.');
+      return;
+    }
+    startTopicSession(verifyTarget.subjectLabel, verifyTarget.topic, undefined, VERIFICATION_SESSION_LENGTH, undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -427,6 +465,15 @@ export function PracticeFlow() {
       }
       setHasHistory(true);
       clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
+      // Batch 3's tiered SRS — a Verification Session's real final accuracy
+      // (including any in-session remediation questions above, since
+      // newResults already carries those by this point) drives the
+      // topic's decay-timer tier. Best-effort, same as sync elsewhere —
+      // never blocks the summary transition.
+      if (entryFlow === 'verify' && plannerTopicKeyRef.current) {
+        const accuracyPct = newResults.length ? Math.round((newResults.filter((r) => r.correct).length / newResults.length) * 100) : 0;
+        recordVerificationResult(plannerTopicKeyRef.current, accuracyPct).catch(() => {});
+      }
       if (kairo) {
         // endSession() itself no longer waits on IndexedDB/Supabase (that
         // tail runs detached inside the engine now) — score/streak/level/
@@ -667,7 +714,18 @@ export function PracticeFlow() {
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} scoreDelta={scoreDelta} />;
+    // Batch 4's Streak Savior — only a 'suggested'-entry session is itself
+    // the Daily Recommendation; every other completed session here (mixed,
+    // weak, subject, topic, verify) detours through the interstitial first
+    // if today's real recommendation is still undone.
+    return (
+      <PracticeSummary
+        results={results}
+        onHome={() => goHomeOrStreakSavior(navigate, entryFlow === 'suggested')}
+        onAction={handleSummaryAction}
+        scoreDelta={scoreDelta}
+      />
+    );
   }
   if (screen === 'practiceReview') {
     return <PracticeReview results={results} onBack={back} />;

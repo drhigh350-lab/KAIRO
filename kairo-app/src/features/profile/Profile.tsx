@@ -23,7 +23,7 @@ export function Profile() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', flex: 1 }}>
       <ScreenHeader onBack={() => navigate(-1)} title="Profile" tone="dark" />
-      {/* Desktop (>=900px): identity + score as the main hero column, the
+      {/* Tablet/desktop (>=768px): identity + score as the main hero column, the
           settings/list items as a sidebar — real use of the width instead
           of the same single mobile column stacked all the way down. */}
       <div className="desktop-grid" style={{ padding: '0 20px 24px' }}>

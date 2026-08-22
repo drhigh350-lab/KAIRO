@@ -22,13 +22,30 @@
   }
 }
 
-/* Hub/dashboard screens opt into this (App.tsx toggles it per route) —
-   real desktop use of the extra width via multi-column layouts, rather
-   than the same single 420px column stretched out with dead space either
-   side. Only the browsing/overview screens use it; anywhere a student is
-   actively answering one question at a time stays at the narrower,
-   focused --container-max. */
-@media (min-width: 900px) {
+/* Tablet tier (12-inch tablets land well inside this, e.g. iPad Pro at
+   1024/1366 CSS px). Two different rules, same breakpoint:
+   - Focused reading screens (question stem, explanations — anything NOT
+     .app-shell--wide) widen from the phone-width 420px column to an
+     optimal ~65ch reading measure, so a tablet isn't stuck with a strip
+     of text and two huge dead margins.
+   - Hub/dashboard screens (.app-shell--wide) drop the width cap entirely
+     and fill the viewport fluidly — their internal grid (desktop.css)
+     reflows Quick Actions / metric cards / sidebar into real multi-column
+     layouts instead of one column stretched out with empty space. */
+@media (min-width: 768px) {
+  .app-shell:not(.app-shell--wide) {
+    max-width: var(--container-max-reading);
+  }
+
+  .app-shell.app-shell--wide {
+    max-width: 100%;
+  }
+}
+
+/* Sane upper bound only — keeps the fluid wide shell from stretching
+   indefinitely on ultra-wide desktop monitors, well past any real tablet
+   width. Not part of the tablet-scaling rule above. */
+@media (min-width: 1440px) {
   .app-shell.app-shell--wide {
     max-width: var(--container-max-wide);
   }

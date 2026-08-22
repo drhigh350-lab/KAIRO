@@ -66,7 +66,7 @@ export function Insights() {
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>Insights</div>
 
-      {/* Desktop (>=900px): the reflective, narrative cards (This Week,
+      {/* Tablet/desktop (>=768px): the reflective, narrative cards (This Week,
           Kairo Wrapped) as the main column, the at-a-glance numbers
           (score, subject health) as a sticky sidebar — reading vs.
           scanning, rather than one long stacked column. */}
