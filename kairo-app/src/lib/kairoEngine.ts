@@ -517,8 +517,8 @@ export function getWeakTopics(subjectLabel?: string, limit = 5): WeakTopicSummar
 // SEEDED_SUBJECTS return real topics.
 // ─────────────────────────────────────────────
 
-export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number; questionCount: number }
-export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number; questionCount: number }
+export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number; questionCount: number; attempted: number; accuracyPct: number }
+export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number; questionCount: number; attempted: number; accuracyPct: number }
 
 /** The subject picker's label ("English Language") predates the seeded catalog's real name ("Use of English") — normalized here rather than touching the shared subject list every other Practice entry point also uses. */
 function normalizeSubjectName(subject: string): string {
@@ -535,6 +535,7 @@ export async function getRealTopics(subjectLabel: string): Promise<TopicInfo[]> 
   const topics = journey[subject]?.topics || {};
   return Object.entries(topics).map(([topic, t]: [string, Engine]) => ({
     topic, total: t.total, mastered: t.mastered, masteryPct: t.masteryPct, questionCount: t.questionCount ?? 0,
+    attempted: t.attempted ?? 0, accuracyPct: t.accuracyPct ?? 0,
   }));
 }
 
@@ -545,7 +546,10 @@ export async function getRealSubtopics(subjectLabel: string, topic: string): Pro
   const subject = normalizeSubjectName(subjectLabel);
   await ensureContentLoaded([subject]);
   const { subtopics } = kairo.topicPractice.getTopicJourney(subject, topic);
-  return subtopics.map((s: Engine) => ({ subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct, questionCount: s.questionCount ?? 0 }));
+  return subtopics.map((s: Engine) => ({
+    subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct, questionCount: s.questionCount ?? 0,
+    attempted: s.attempted ?? 0, accuracyPct: s.accuracyPct ?? 0,
+  }));
 }
 
 /**

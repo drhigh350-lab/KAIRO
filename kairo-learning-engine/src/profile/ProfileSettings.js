@@ -123,13 +123,13 @@ export class ProfileSettings {
 
     for (const c of concepts) {
       if (!subjects[c.subject]) {
-        subjects[c.subject] = { topics: {}, total: 0, mastered: 0, questionIds: new Set() };
+        subjects[c.subject] = { topics: {}, total: 0, mastered: 0, questionIds: new Set(), attemptedQuestionIds: new Set(), correctAttempts: 0, totalAttempts: 0 };
       }
       if (!subjects[c.subject].topics[c.topic]) {
-        subjects[c.subject].topics[c.topic] = { subtopics: {}, total: 0, mastered: 0, questionIds: new Set() };
+        subjects[c.subject].topics[c.topic] = { subtopics: {}, total: 0, mastered: 0, questionIds: new Set(), attemptedQuestionIds: new Set(), correctAttempts: 0, totalAttempts: 0 };
       }
       if (!subjects[c.subject].topics[c.topic].subtopics[c.subtopic]) {
-        subjects[c.subject].topics[c.topic].subtopics[c.subtopic] = { concepts: [], total: 0, mastered: 0, questionIds: new Set() };
+        subjects[c.subject].topics[c.topic].subtopics[c.subtopic] = { concepts: [], total: 0, mastered: 0, questionIds: new Set(), attemptedQuestionIds: new Set(), correctAttempts: 0, totalAttempts: 0 };
       }
 
       const sub = subjects[c.subject].topics[c.topic].subtopics[c.subtopic];
@@ -149,6 +149,27 @@ export class ProfileSettings {
         subjects[c.subject].questionIds.add(q.id);
       }
 
+      // Attempted: X / Total and real accuracy (Practice Module — topic
+      // progress screens) — distinct from masteryPct, which reflects
+      // retention *state* (a concept can be Held without every question
+      // in its pool ever being attempted, and an attempted question isn't
+      // automatically "mastered").
+      for (const attempt of c.attemptHistory || []) {
+        if (attempt.questionId) {
+          sub.attemptedQuestionIds.add(attempt.questionId);
+          subjects[c.subject].topics[c.topic].attemptedQuestionIds.add(attempt.questionId);
+          subjects[c.subject].attemptedQuestionIds.add(attempt.questionId);
+        }
+        sub.totalAttempts++;
+        subjects[c.subject].topics[c.topic].totalAttempts++;
+        subjects[c.subject].totalAttempts++;
+        if (attempt.correct) {
+          sub.correctAttempts++;
+          subjects[c.subject].topics[c.topic].correctAttempts++;
+          subjects[c.subject].correctAttempts++;
+        }
+      }
+
       if (c.retentionState === 'held' || c.retentionState === 'reinforced') {
         sub.mastered++;
         subjects[c.subject].mastered++;
@@ -161,17 +182,26 @@ export class ProfileSettings {
       const sj = subjects[subject];
       sj.masteryPct = Math.round((sj.mastered / sj.total) * 100);
       sj.questionCount = sj.questionIds.size;
+      sj.attempted = sj.attemptedQuestionIds.size;
+      sj.accuracyPct = sj.totalAttempts > 0 ? Math.round((sj.correctAttempts / sj.totalAttempts) * 100) : 0;
       delete sj.questionIds;
+      delete sj.attemptedQuestionIds;
       for (const topic in sj.topics) {
         const t = sj.topics[topic];
         t.masteryPct = Math.round((t.mastered / t.total) * 100);
         t.questionCount = t.questionIds.size;
+        t.attempted = t.attemptedQuestionIds.size;
+        t.accuracyPct = t.totalAttempts > 0 ? Math.round((t.correctAttempts / t.totalAttempts) * 100) : 0;
         delete t.questionIds;
+        delete t.attemptedQuestionIds;
         for (const subtopic in t.subtopics) {
           const s = t.subtopics[subtopic];
           s.masteryPct = Math.round((s.mastered / s.total) * 100);
           s.questionCount = s.questionIds.size;
+          s.attempted = s.attemptedQuestionIds.size;
+          s.accuracyPct = s.totalAttempts > 0 ? Math.round((s.correctAttempts / s.totalAttempts) * 100) : 0;
           delete s.questionIds;
+          delete s.attemptedQuestionIds;
         }
       }
     }

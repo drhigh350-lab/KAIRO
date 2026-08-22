@@ -4,7 +4,7 @@ import { PracticeHome } from './PracticeHome';
 import { SubjectSelect } from './SubjectSelect';
 import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
-import { PracticeHub } from './PracticeHub';
+import { PracticeHub, type PracticePacing } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
@@ -21,6 +21,10 @@ import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, 
 // safely above any seeded subject's real question bank, not a target the
 // engine is expected to actually reach.
 const UNCAPPED_LIMIT = 500;
+
+// Matches PracticeHub's EXAM_PACE_SEC — kept in sync there, not imported,
+// since it's a small display/pacing constant, not shared behavior.
+const EXAM_PACE_SEC = 45;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
@@ -96,6 +100,8 @@ export function PracticeFlow() {
   const [subtopic, setSubtopic] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<string | null>(init.difficulty);
   const [length, setLength] = useState(init.length);
+  const [pacing, setPacing] = useState<PracticePacing>('study');
+  const [customTimerSec, setCustomTimerSec] = useState(60);
   const [entryFlow, setEntryFlow] = useState(init.entryFlow);
   const [recentKeys, setRecentKeys] = useState<string[]>([]);
   const [hasHistory, setHasHistory] = useState(false);
@@ -546,13 +552,15 @@ export function PracticeFlow() {
         lockedType={lockedType}
         weakTopics={weakTopics}
         onBack={back}
-        onStart={({ type, difficulty: d, length: len, topic: pickedTopic, topicSubject }) => {
+        onStart={({ type, difficulty: d, length: len, topic: pickedTopic, topicSubject, pacing: p, customTimerSec: cts }) => {
           // len === 0 is PracticeHub's "no cap" sentinel (Mixed Practice /
           // a weak-topic boost, both of which hide the length picker).
           const uncapped = len === 0;
           setDifficulty(d);
           setLength(uncapped ? UNCAPPED_LIMIT : len);
           setShowPercent(uncapped);
+          setPacing(p);
+          if (cts) setCustomTimerSec(cts);
           if (type === 'topic') {
             go('topic');
           } else if (pickedTopic && topicSubject) {
@@ -645,6 +653,7 @@ export function PracticeFlow() {
         explanation={explanation}
         nextStepNote={decisionNote}
         showPercent={showPercent}
+        timerSec={pacing === 'exam' ? EXAM_PACE_SEC : pacing === 'custom' ? customTimerSec : null}
       />
     );
   }

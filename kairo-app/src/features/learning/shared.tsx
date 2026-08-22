@@ -389,7 +389,7 @@ export function Modal({ children, onClose, tone = 'light' }: ModalProps) {
   useEscapeToClose(onClose);
   return (
     <div onClick={onClose} role="presentation" style={{ position: 'absolute', inset: 0, background: 'rgba(11,23,32,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 30 }}>
-      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ background: dark ? 'var(--dark-bg-elevated)' : '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', fontFamily: 'var(--font-body)' }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ background: dark ? 'var(--dark-bg-elevated)' : '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }}>
         {children}
       </div>
     </div>

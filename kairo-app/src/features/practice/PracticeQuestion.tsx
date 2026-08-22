@@ -65,6 +65,8 @@ export interface PracticeQuestionProps {
   nextStepNote?: { action: string; reason: string } | null;
   /** Set for sessions with no student-picked question count (Mixed Practice / a weak-topic boost, both now uncapped to "every real question available") — a raw "Question 7 of 23" reads as an arbitrary number the student never chose, so the header shows completion percentage instead. */
   showPercent?: boolean;
+  /** Seconds allotted for this question under Custom Timer / Exam Pace pacing (PracticeHub) — null under Study (untimed) pacing, which shows no countdown at all. */
+  timerSec?: number | null;
 }
 
 const NEXT_STEP_TITLES: Record<string, string> = {
@@ -80,7 +82,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote, showPercent }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote, showPercent, timerSec = null }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(() => isQuestionBookmarked(question.id));
@@ -99,12 +101,44 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   // re-surfacing questions past the real end of a session.
   const hasAdvancedRef = useRef(false);
 
+  // Custom Timer / Exam Pace countdown (Practice Module Spec §5.11: "framed
+  // as a pacing aid, not a penalty countdown" — kept calm/neutral, never a
+  // red flashing warning). null under Study pacing, which shows nothing.
+  const [timeLeft, setTimeLeft] = useState<number | null>(timerSec);
+  const submittedRef = useRef(false);
+  const selectedRef = useRef<number | null>(null);
+
   // Re-syncs against the real bookmark set in case loadBookmarks() (called
   // once when Practice starts) hadn't resolved yet when this question's
   // initial state was computed.
   useEffect(() => {
     setBookmarked(isQuestionBookmarked(question.id));
   }, [question.id]);
+
+  useEffect(() => { submittedRef.current = submitted; }, [submitted]);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // One countdown per question (this component remounts per question via
+  // its `key`, so timeLeft always starts fresh at timerSec). Ticks down
+  // once a second and auto-submits — with whatever was selected, or none —
+  // the moment it reaches zero, exactly like the student tapping Submit.
+  useEffect(() => {
+    if (timerSec == null) return;
+    const interval = setInterval(() => {
+      if (submittedRef.current) return;
+      setTimeLeft((t) => {
+        if (t !== null && t <= 1) {
+          submittedRef.current = true;
+          setSubmitted(true);
+          onAnswered?.({ correct: selectedRef.current === question.correct, selectedIndex: selectedRef.current, responseTimeMs: Date.now() - questionStartedAt.current });
+          return 0;
+        }
+        return t !== null ? t - 1 : null;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerSec]);
 
   function submit() {
     setSubmitted(true);
@@ -188,8 +222,13 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
       <div className="app-topbar" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 20px 10px', background: 'var(--dark-bg-canvas)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <IconButton dark onClick={() => setShowExitConfirm(true)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>
-            {showPercent ? `${Math.round(((index + 1) / total) * 100)}% complete` : `Question ${index + 1} of ${total}`}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>
+              {showPercent ? `${Math.round(((index + 1) / total) * 100)}% complete` : `Question ${index + 1} of ${total}`}
+            </div>
+            {timeLeft !== null && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)' }}>{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <IconButton dark active={bookmarked} onClick={handleBookmarkToggle}><BookmarkIcon filled={bookmarked} /></IconButton>
