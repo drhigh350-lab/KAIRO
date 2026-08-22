@@ -21,7 +21,7 @@
  *   Consistency (20%) — distinct calendar days ever practiced
  */
 
-import { EliteScoreWeights, EliteScorePointScale, EliteScorePoints } from "../utils/constants.js";
+import { EliteScoreWeights, EliteScorePointScale, EliteScorePoints, EliteScoreBonus } from "../utils/constants.js";
 import { clamp } from "../utils/helpers.js";
 
 export class EliteScore {
@@ -114,8 +114,8 @@ export class EliteScore {
     if (diff <= 0) {
       return {
         direction: 'steady',
-        delta: '0.0',
-        text: "Your Elite Score held steady — keep practicing to move it further.",
+        delta: '0',
+        text: "Your Kairo Score held steady — keep practicing to move it further.",
         components: { accuracy: current.accuracy, retention: current.retention, consistency: current.consistency }
       };
     }
@@ -134,16 +134,37 @@ export class EliteScore {
       reasons.push('small gains across multiple components');
     }
 
+    const roundedDelta = Math.max(1, Math.round(diff));
     return {
       direction: 'up',
-      delta: diff.toFixed(1),
-      text: `Your Elite Score went up by ${diff.toFixed(1)} because ${reasons.join(' and ')}.`,
+      delta: String(roundedDelta),
+      text: `Your Kairo Score went up by ${roundedDelta} because ${reasons.join(' and ')}.`,
       components: {
         accuracy: current.accuracy,
         retention: current.retention,
         consistency: current.consistency
       }
     };
+  }
+
+  /**
+   * Display-only session delta for the summary screen. Two parts:
+   *   base  — the real, organic weighted movement this session produced
+   *           (current.total - previous.total), rounded UP so a genuine
+   *           but fractional gain never displays as "+0".
+   *   bonus — a fixed, transparent "High-Yield Session" bonus for the two
+   *           session types that matter most (the daily recommendation,
+   *           a full CBT simulation) — never for standard practice/topic
+   *           sessions.
+   * Purely a read of two already-computed totals — never mutates
+   * history/profile, never feeds back into calculate()'s own math. The
+   * underlying weighted score is exactly what it would be without this
+   * method existing at all.
+   */
+  static computeSessionDelta(previousTotal, currentTotal, sessionType) {
+    const base = Math.max(0, Math.ceil(currentTotal - previousTotal));
+    const bonus = (sessionType === 'recommendation' || sessionType === 'cbt') ? EliteScoreBonus.HIGH_YIELD_SESSION : 0;
+    return { base, bonus, total: base + bonus, sessionType };
   }
 
   /** The score is monotonic, so this only ever distinguishes genuine growth from a plateau — never a fall. */

@@ -13,6 +13,59 @@ export function getEngine(): Engine | null {
 }
 
 /**
+ * Background, best-effort pre-assembly of the next few days' recommendation
+ * queues (real resolved questions, not just concept IDs) while online, so
+ * "Start Session" for the recommendation still works if the student opens
+ * the app later with no connectivity at all. Never awaited by a caller —
+ * failures here are silent (there's simply nothing cached to fall back on,
+ * same as before this existed) and never block or slow down whatever
+ * actually triggered this (a sync, a page load).
+ */
+export async function triggerRecommendationPrefetch(): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) return;
+  try {
+    await ensureContentLoaded(kairo.profile.targetSubjects || []);
+    await kairo.prefetchRecommendationQueues({ queueCount: 4, questionsPerQueue: 10 });
+  } catch {
+    // Offline, not signed in yet, or nothing to prefetch — fine, this is
+    // opportunistic by design.
+  }
+}
+
+let onlineSyncArmed = false;
+/**
+ * Silently flush anything queued in SyncManager.pendingSync (now durably
+ * backed by IndexedDB, see LocalStore's pending_sync_queue) the moment the
+ * browser regains connectivity — without this, a session/attempt completed
+ * while offline just sat there until the next action happened to call
+ * kairo.sync.sync() itself. Also (re)builds the offline recommendation
+ * queue cache on the same online transition — the other half of "when the
+ * app detects an online state" is the normal-boot-while-already-online
+ * case, covered separately by an explicit triggerRecommendationPrefetch()
+ * call once the engine is actually signed in and ready (see App.tsx),
+ * since at the moment this function itself runs (App's very first mount
+ * effect) auth restoration is usually still in flight and getEngine()
+ * would just be null. Idempotent: safe to call on every render/mount,
+ * only ever registers the listener once per page load.
+ */
+export function setupOnlineSync(): void {
+  if (onlineSyncArmed || typeof window === 'undefined') return;
+  onlineSyncArmed = true;
+  window.addEventListener('online', () => {
+    getEngine()?.sync?.sync().catch(() => {});
+    triggerRecommendationPrefetch();
+  });
+}
+
+/** Pop the oldest cached offline recommendation queue, or null if nothing was ever prefetched (or it's already been used up). */
+export async function popPrefetchedRecommendationQueue(): Promise<{ queueId: string; conceptIds: string[]; questions: Engine[] } | null> {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.popPrefetchedQueue();
+}
+
+/**
  * Whether the signed-in student has actually taken the real diagnostic —
  * `profile.diagnosticCompleted` is set exactly once, by
  * OnboardingEngine.buildInitialPlan() at the genuine end of onboarding
@@ -312,6 +365,24 @@ const TOPIC_SESSION_MIN_QUESTIONS = 10;
 export async function startSuggestedSession(limit = 5, anchorConceptId?: string | null): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
+
+  // Offline (and no specific concept anchored, which needs a live
+  // catalog/graph lookup this device may not have): ensureContentLoaded()
+  // below would otherwise throw trying to reach Supabase. Pop a queue
+  // pre-assembled while online instead of failing on the network call —
+  // real, already-resolved questions, no further loadContentCatalog()
+  // needed at all.
+  if (anchorConceptId == null && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    const prefetched = await popPrefetchedRecommendationQueue();
+    if (prefetched) {
+      const { kaiMessage } = kairo.startSession({ mode: 'standard' });
+      kairo.currentSession.plan = prefetched.conceptIds;
+      return { questions: prefetched.questions.slice(0, limit || prefetched.questions.length), kaiMessage };
+    }
+    // Nothing cached — fall through to the normal path, which will
+    // honestly fail (ensureContentLoaded throws) rather than pretend.
+  }
+
   await ensureContentLoaded(kairo.profile.targetSubjects || []);
 
   if (anchorConceptId) {
@@ -500,8 +571,8 @@ export function getWeakTopics(subjectLabel?: string, limit = 5): WeakTopicSummar
 // SEEDED_SUBJECTS return real topics.
 // ─────────────────────────────────────────────
 
-export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number; questionCount: number }
-export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number; questionCount: number }
+export interface TopicInfo { topic: string; total: number; mastered: number; masteryPct: number; questionCount: number; attempted: number; accuracyPct: number }
+export interface SubtopicInfo { subtopic: string; total: number; mastered: number; masteryPct: number; questionCount: number; attempted: number; accuracyPct: number }
 
 /** The subject picker's label ("English Language") predates the seeded catalog's real name ("Use of English") — normalized here rather than touching the shared subject list every other Practice entry point also uses. */
 function normalizeSubjectName(subject: string): string {
@@ -518,6 +589,7 @@ export async function getRealTopics(subjectLabel: string): Promise<TopicInfo[]> 
   const topics = journey[subject]?.topics || {};
   return Object.entries(topics).map(([topic, t]: [string, Engine]) => ({
     topic, total: t.total, mastered: t.mastered, masteryPct: t.masteryPct, questionCount: t.questionCount ?? 0,
+    attempted: t.attempted ?? 0, accuracyPct: t.accuracyPct ?? 0,
   }));
 }
 
@@ -528,7 +600,10 @@ export async function getRealSubtopics(subjectLabel: string, topic: string): Pro
   const subject = normalizeSubjectName(subjectLabel);
   await ensureContentLoaded([subject]);
   const { subtopics } = kairo.topicPractice.getTopicJourney(subject, topic);
-  return subtopics.map((s: Engine) => ({ subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct, questionCount: s.questionCount ?? 0 }));
+  return subtopics.map((s: Engine) => ({
+    subtopic: s.name, total: s.total, mastered: s.mastered, masteryPct: s.masteryPct, questionCount: s.questionCount ?? 0,
+    attempted: s.attempted ?? 0, accuracyPct: s.accuracyPct ?? 0,
+  }));
 }
 
 /**
@@ -997,7 +1072,13 @@ export async function finishCbtExam(): Promise<Engine> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const results = kairo.cbt.finish();
-  await kairo.sync.sync();
+  // Score/streak/badges/scoreDelta are already computed synchronously above
+  // (real weighted eliteScore.calculate() included) — the sync round trip
+  // is a real network call that shouldn't hold up the summary screen from
+  // rendering a number it already has, same reasoning as Practice's
+  // endSession(). Fire-and-forget; SyncManager's own durable queue covers
+  // retrying if this fails.
+  kairo.sync.sync().catch(() => {});
   return results;
 }
 
@@ -1629,7 +1710,7 @@ export async function getUniversityRankings(limit = 20): Promise<UniversityRanki
 // ─────────────────────────────────────────────
 
 /** Persists a "Report question" or "Question feedback" tap from Practice against the real question the student was looking at. Throws if there's no signed-in student — callers should already be inside an active session. */
-export async function reportQuestion(questionId: string, kind: 'report' | 'feedback'): Promise<void> {
+export async function reportQuestion(questionId: string, kind: 'report' | 'feedback', reason?: string): Promise<void> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const supabase = getSupabase();
@@ -1637,6 +1718,7 @@ export async function reportQuestion(questionId: string, kind: 'report' | 'feedb
     student_id: kairo.profile.studentId,
     question_id: questionId,
     kind,
+    message: reason ?? null,
   });
   if (error) throw error;
 }

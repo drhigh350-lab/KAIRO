@@ -30,12 +30,20 @@ export class TopicPracticeEngine {
       // "null"), silently returning zero concepts and zero questions.
       if (c.subtopic == null) continue;
       if (!subtopics[c.subtopic]) {
-        subtopics[c.subtopic] = { concepts: [], mastered: 0, total: 0, questionIds: new Set() };
+        subtopics[c.subtopic] = { concepts: [], mastered: 0, total: 0, questionIds: new Set(), attemptedQuestionIds: new Set(), correctAttempts: 0, totalAttempts: 0 };
       }
       subtopics[c.subtopic].concepts.push(c);
       subtopics[c.subtopic].total++;
       for (const q of this.engine.questionGraph.getQuestionsForConcept(c.id)) {
         subtopics[c.subtopic].questionIds.add(q.id);
+      }
+      // c comes from getAllConcepts()'s flattened summary (no attemptHistory)
+      // — the real ConceptNode is what actually carries it.
+      const node = this.engine.graph.getConcept(c.id);
+      for (const attempt of node?.attemptHistory || []) {
+        if (attempt.questionId) subtopics[c.subtopic].attemptedQuestionIds.add(attempt.questionId);
+        subtopics[c.subtopic].totalAttempts++;
+        if (attempt.correct) subtopics[c.subtopic].correctAttempts++;
       }
       if (c.state === 'held' || c.state === 'reinforced') {
         subtopics[c.subtopic].mastered++;
@@ -45,12 +53,14 @@ export class TopicPracticeEngine {
     // Sort subtopics by dependency order (simplistic: by mastery %)
     const sorted = Object.entries(subtopics)
       .map(([name, data]) => {
-        const { questionIds, ...rest } = data;
+        const { questionIds, attemptedQuestionIds, correctAttempts, totalAttempts, ...rest } = data;
         return {
           name,
           ...rest,
           questionCount: questionIds.size,
           masteryPct: Math.round((data.mastered / data.total) * 100),
+          attempted: attemptedQuestionIds.size,
+          accuracyPct: totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0,
           locked: false // could add prerequisite logic here
         };
       })

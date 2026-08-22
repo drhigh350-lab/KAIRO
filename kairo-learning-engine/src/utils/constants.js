@@ -89,6 +89,15 @@ export const EliteScorePoints = Object.freeze({
   CONSISTENCY_DAY_BONUS: 3    // per distinct calendar day a session was ever completed
 });
 
+// Gamification layer on top of the weighted Kairo Score — display-only,
+// never blended into the weighted math above (EliteScore.calculate()'s
+// total/history are untouched by this). A fixed, transparent bonus shown
+// alongside the real session-to-session delta for the two session types
+// that matter most: the daily recommendation and a full CBT simulation.
+export const EliteScoreBonus = Object.freeze({
+  HIGH_YIELD_SESSION: 10
+});
+
 // ─── Decay & Scheduling ───
 export const DecayConstants = Object.freeze({
   BASE_DECAY_HALF_LIFE_DAYS: 7,
@@ -116,7 +125,13 @@ export const SessionConstants = Object.freeze({
 export const StreakConstants = Object.freeze({
   ROLLING_WINDOW_DAYS: 14,
   PROTECTED_GAP_DAYS: 2,
-  MIN_SESSIONS_PER_WINDOW: 3
+  MIN_SESSIONS_PER_WINDOW: 3,
+  // Streak Freeze: a discrete, earned/spent resource distinct from the
+  // automatic PROTECTED_GAP_DAYS grace above. One is earned the moment
+  // onboarding completes; capacity never exceeds 2 without a further
+  // earn event (none defined yet beyond onboarding).
+  FREEZE_CAPACITY: 2,
+  FREEZE_EARNED_ON_ONBOARDING: 1
 });
 
 // ─── Kai Tone Boundaries ───

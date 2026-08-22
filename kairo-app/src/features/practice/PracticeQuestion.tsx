@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton, Badge } from '../../components';
 import {
-  BookmarkIcon, ReportIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
+  BookmarkIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
   InlineToast, Modal, OverflowMenu, MiniCalculator, type ConfidenceLevel,
 } from '../learning/shared';
 import type { PracticeQuestion as PracticeQuestionData } from './data';
@@ -65,6 +65,8 @@ export interface PracticeQuestionProps {
   nextStepNote?: { action: string; reason: string } | null;
   /** Set for sessions with no student-picked question count (Mixed Practice / a weak-topic boost, both now uncapped to "every real question available") — a raw "Question 7 of 23" reads as an arbitrary number the student never chose, so the header shows completion percentage instead. */
   showPercent?: boolean;
+  /** Seconds allotted for this question under Custom Timer / Exam Pace pacing (PracticeHub) — null under Study (untimed) pacing, which shows no countdown at all. */
+  timerSec?: number | null;
 }
 
 const NEXT_STEP_TITLES: Record<string, string> = {
@@ -80,7 +82,7 @@ export function FeedbackIconSmall() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>;
 }
 
-export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote, showPercent }: PracticeQuestionProps) {
+export function PracticeQuestion({ question, index, total, onNext, onExit, onAnswered, onLearnThis, explanation, nextStepNote, showPercent, timerSec = null }: PracticeQuestionProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [bookmarked, setBookmarked] = useState(() => isQuestionBookmarked(question.id));
@@ -90,7 +92,21 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const [showOverflow, setShowOverflow] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showReportSheet, setShowReportSheet] = useState(false);
   const questionStartedAt = useRef(Date.now());
+  // Guards against a duplicate advance (e.g. two rapid taps landing before
+  // the button can visually disable) firing onNext twice for the same
+  // question — the root cause class behind "Finish Session" occasionally
+  // re-surfacing questions past the real end of a session.
+  const hasAdvancedRef = useRef(false);
+
+  // Custom Timer / Exam Pace countdown (Practice Module Spec §5.11: "framed
+  // as a pacing aid, not a penalty countdown" — kept calm/neutral, never a
+  // red flashing warning). null under Study pacing, which shows nothing.
+  const [timeLeft, setTimeLeft] = useState<number | null>(timerSec);
+  const submittedRef = useRef(false);
+  const selectedRef = useRef<number | null>(null);
 
   // Re-syncs against the real bookmark set in case loadBookmarks() (called
   // once when Practice starts) hadn't resolved yet when this question's
@@ -98,6 +114,31 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   useEffect(() => {
     setBookmarked(isQuestionBookmarked(question.id));
   }, [question.id]);
+
+  useEffect(() => { submittedRef.current = submitted; }, [submitted]);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // One countdown per question (this component remounts per question via
+  // its `key`, so timeLeft always starts fresh at timerSec). Ticks down
+  // once a second and auto-submits — with whatever was selected, or none —
+  // the moment it reaches zero, exactly like the student tapping Submit.
+  useEffect(() => {
+    if (timerSec == null) return;
+    const interval = setInterval(() => {
+      if (submittedRef.current) return;
+      setTimeLeft((t) => {
+        if (t !== null && t <= 1) {
+          submittedRef.current = true;
+          setSubmitted(true);
+          onAnswered?.({ correct: selectedRef.current === question.correct, selectedIndex: selectedRef.current, responseTimeMs: Date.now() - questionStartedAt.current });
+          return 0;
+        }
+        return t !== null ? t - 1 : null;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerSec]);
 
   function submit() {
     setSubmitted(true);
@@ -115,12 +156,13 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
       flashToast("Couldn't update bookmark — try again.");
     }
   }
-  async function report() {
+  async function report(reason?: string) {
     if (reported) return;
     setReported(true);
+    setShowReportSheet(false);
     flashToast("Thanks — we'll take a look at this question.");
     try {
-      await reportQuestion(question.id, 'report');
+      await reportQuestion(question.id, 'report', reason);
     } catch {
       setReported(false);
       flashToast("Couldn't send that — try again.");
@@ -170,7 +212,6 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const yourMisconception = distractors.find((d) => d.label === selectedLabel)?.misconception ?? null;
 
   const overflowItems = [
-    { label: reported ? 'Question reported' : 'Report question', icon: <ReportIcon />, onClick: report, tone: 'danger' as const },
     { label: hideElim ? 'Show elimination marks' : 'Hide elimination marks', icon: <CloseIconSmall />, onClick: () => setHideElim((h) => !h) },
     { label: 'Question feedback', icon: <FeedbackIconSmall />, onClick: sendFeedback },
   ];
@@ -180,9 +221,14 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
       {toastMsg && <InlineToast>{toastMsg}</InlineToast>}
       <div className="app-topbar" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 20px 10px', background: 'var(--dark-bg-canvas)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <IconButton dark onClick={onExit}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>
-            {showPercent ? `${Math.round(((index + 1) / total) * 100)}% complete` : `Question ${index + 1} of ${total}`}
+          <IconButton dark onClick={() => setShowExitConfirm(true)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg></IconButton>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>
+              {showPercent ? `${Math.round(((index + 1) / total) * 100)}% complete` : `Question ${index + 1} of ${total}`}
+            </div>
+            {timeLeft !== null && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)' }}>{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <IconButton dark active={bookmarked} onClick={handleBookmarkToggle}><BookmarkIcon filled={bookmarked} /></IconButton>
@@ -197,6 +243,30 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
         <Modal onClose={() => setShowCalc(false)} tone="dark">
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 14 }}>Calculator</div>
           <MiniCalculator tone="dark" />
+        </Modal>
+      )}
+      {showExitConfirm && (
+        <Modal onClose={() => setShowExitConfirm(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Leave session?</div>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', lineHeight: 1.5, marginBottom: 20 }}>Your progress in this session won't be recorded if you leave now.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Button variant="darkAccent" size="lg" fullWidth onClick={() => setShowExitConfirm(false)}>Resume Practice</Button>
+            <Button variant="danger" size="lg" fullWidth onClick={onExit}>Quit Session</Button>
+          </div>
+        </Modal>
+      )}
+      {showReportSheet && (
+        <Modal onClose={() => setShowReportSheet(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 14 }}>What's wrong with this question?</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {['Typo / Formatting', 'Wrong Answer Key', 'Incomplete Question'].map((reason) => (
+              <button key={reason} type="button" onClick={() => report(reason)} style={{
+                textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)',
+                border: '1.5px solid var(--dark-border)', background: 'var(--dark-bg-surface)', color: 'var(--dark-text-body)',
+                fontSize: 15, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              }}>{reason}</button>
+            ))}
+          </div>
         </Modal>
       )}
 
@@ -236,19 +306,18 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             <AnswerFeedback dark correct={isCorrect} title={isCorrect ? "That's correct" : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} detail={question.why} />
 
             {!isCorrect && yourMisconception && (
-              <Section title="What likely happened">
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)', marginBottom: 4 }}>{yourMisconception.name}</div>
-                <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{yourMisconception.description}</div>
-              </Section>
+              <KaiPanel tone="dark" note={<><strong style={{ color: 'var(--dark-text-heading)' }}>{yourMisconception.name} — </strong>{yourMisconception.description}</>} />
             )}
 
-            {!isCorrect && distractors.length > 0 && (
-              <Section title="Why each option is wrong">
+            {distractors.length > 0 && (
+              <Section title="Why the other options are wrong">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {distractors.map((d) => (
                     <div key={d.label}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        {d.label === selectedLabel && <Badge tone="danger">Your answer</Badge>}
+                        {/* distractors excludes the correct option, so this can only ever
+                            match a genuine wrong pick — never a red flag on a correct answer. */}
+                        {d.label === selectedLabel && !isCorrect && <Badge tone="danger">Your answer</Badge>}
                         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{d.label}. {d.text}</span>
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55 }}>{d.whyWrong}</div>
@@ -282,13 +351,24 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             <ConfidenceRating value={confidence} onChange={setConfidence} tone="dark" />
           </div>
         )}
+
+        <div style={{ textAlign: 'center', marginTop: 24 }}>
+          <button type="button" onClick={() => setShowReportSheet(true)} disabled={reported} style={{
+            background: 'none', border: 'none', cursor: reported ? 'default' : 'pointer', fontFamily: 'inherit',
+            fontSize: 13, fontWeight: 600, color: reported ? 'var(--dark-text-faint)' : 'var(--kairo-gold-500, #e0a039)', padding: 8,
+          }}>{reported ? 'Reported — thanks for the heads-up' : 'Report an issue with this question'}</button>
+        </div>
       </div>
 
       <div className="app-footer-bar" style={{ padding: '16px 20px 24px', background: 'var(--dark-bg-canvas)' }}>
         {!submitted ? (
           <Button variant="darkAccent" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit Answer</Button>
         ) : (
-          <Button variant="darkAccent" size="lg" fullWidth onClick={() => onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current })}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
+          <Button variant="darkAccent" size="lg" fullWidth disabled={hasAdvancedRef.current} onClick={() => {
+            if (hasAdvancedRef.current) return;
+            hasAdvancedRef.current = true;
+            onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current });
+          }}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
         )}
       </div>
     </div>

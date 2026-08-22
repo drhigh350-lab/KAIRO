@@ -223,6 +223,12 @@ export class KairoEngine {
       this.decayModel.refreshAll(this.graph);
     }
 
+    // Anything queued for Supabase before the app closed/reloaded while
+    // still offline — without this, those attempts/sessions/cbt_results
+    // were silently lost forever (SyncManager.pendingSync is otherwise
+    // memory-only).
+    await this.sync.rehydrate();
+
     this.ready = true;
   }
 
@@ -540,6 +546,71 @@ export class KairoEngine {
   }
 
   /**
+   * Pre-assembles several sessions' worth of the daily recommendation
+   * queue while online — real, resolved Question objects already
+   * attached (not just concept IDs), so a later "Start Session" for the
+   * recommendation while offline never needs questionGraph/network at
+   * all. Same throwaway-RecommendationEngine pattern as getTodayFocus():
+   * never touches this.currentSession/this.recommendation, safe to call
+   * whether or not a real session happens to be in progress.
+   */
+  async prefetchRecommendationQueues({ queueCount = 4, questionsPerQueue = 10 } = {}) {
+    if (!this.ready) return { queued: 0 };
+    this.profile.computeMacroState(this.graph);
+    const preview = new RecommendationEngine({
+      knowledgeGraph: this.graph,
+      studentProfile: this.profile,
+      decayModel: this.decayModel,
+      examDate: this.profile.examDate
+    });
+    const ranked = preview.buildRankedQueue(queueCount * questionsPerQueue);
+
+    const queues = [];
+    for (let i = 0; i < queueCount; i++) {
+      const slice = ranked.slice(i * questionsPerQueue, (i + 1) * questionsPerQueue);
+      if (slice.length === 0) break;
+      const questions = [];
+      const seenIds = [];
+      for (const conceptId of slice) {
+        const q = this.getQuestionForConcept(conceptId, { excludeIds: seenIds });
+        if (q) { questions.push(q); seenIds.push(q.id); }
+      }
+      if (questions.length === 0) continue; // nothing real resolvable for this chunk — don't cache an empty queue
+      queues.push({
+        queueId: `prefetch_${this.profile.studentId}_${Date.now()}_${i}`,
+        conceptIds: slice,
+        questions,
+        builtAt: Date.now()
+      });
+    }
+
+    // Replace whatever was cached before — a stale prefetch (built against
+    // yesterday's retention states) is worse than none, since it could
+    // resurface exactly the concepts a real session since then already
+    // resolved (e.g. a Fading concept the student already reviewed).
+    const existing = await this.store.getPrefetchedQueues();
+    for (const q of existing) await this.store.deletePrefetchedQueue(q.queueId);
+    for (const q of queues) await this.store.savePrefetchedQueue(q);
+
+    return { queued: queues.length };
+  }
+
+  /**
+   * Pop the oldest still-cached prefetched queue (the one built first is
+   * the one whose retention-state snapshot is closest to going stale).
+   * Returns null if nothing is cached — the caller's own online path is
+   * the honest fallback, not a fabricated queue.
+   */
+  async popPrefetchedQueue() {
+    const queues = await this.store.getPrefetchedQueues();
+    if (!queues.length) return null;
+    queues.sort((a, b) => a.builtAt - b.builtAt);
+    const next = queues[0];
+    await this.store.deletePrefetchedQueue(next.queueId);
+    return next;
+  }
+
+  /**
    * Collects candidates from every SJEE/notification-producing module —
    * NotificationEngine's client heuristics (daily recap, streak, exam
    * proximity, weekly reflection, recovery welcome), ReEngagementEngine,
@@ -794,7 +865,22 @@ export class KairoEngine {
     const streakUpdate = this.currentSession.mode === 'standard'
       ? this.streak.recordSession(this.currentSession.completedAt)
       : null;
+
+    // Captured before calculate() pushes this session's fresh snapshot —
+    // the real, honest pre-session total the display delta below is
+    // measured against.
+    const previousTotal = this.eliteScore.history.length > 0
+      ? this.eliteScore.history[this.eliteScore.history.length - 1].total
+      : 0;
     const score = this.eliteScore.calculate(this.graph, this.profile.sessions);
+    // 'standard' is the daily recommendation (see the streak comment
+    // above); every other Practice mode (custom_practice, topic_practice,
+    // rapid_fire, recovery) is "standard practice" for bonus purposes —
+    // only the recommendation and CBT (handled separately in
+    // CBTExamMode.finish(), which never calls endSession()) earn the
+    // High-Yield Session bonus.
+    const sessionType = this.currentSession.mode === 'standard' ? 'recommendation' : 'standard';
+    const scoreDelta = EliteScore.computeSessionDelta(previousTotal, score.total, sessionType);
     const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions);
 
     // Check badges
@@ -826,14 +912,29 @@ export class KairoEngine {
       }
     });
 
-    await this.store.saveGraph(this.graph);
-    this._snapshotSjeeState();
-    await this.store.saveProfile(this.profile);
-    await this.sync.sync();
+    // Persistence (IndexedDB writes + a real Supabase sync round trip) is
+    // the genuinely slow part of ending a session — everything above it
+    // is pure in-memory computation. Detached (not awaited) so the caller
+    // gets the real score/streak/badges/scoreDelta back immediately for an
+    // instant summary screen, instead of the summary waiting on a network
+    // round trip to show a number it already has. Nothing below this
+    // block reads from store/sync, so nothing here needs their result.
+    const persistTail = (async () => {
+      await this.store.saveGraph(this.graph);
+      this._snapshotSjeeState();
+      await this.store.saveProfile(this.profile);
+      await this.sync.sync();
+    })();
+    persistTail.catch(() => {
+      // Best-effort — a failure here doesn't undo the session or its
+      // score; SyncManager's own queue/rehydrate already covers retrying
+      // the sync half specifically.
+    });
 
     const result = {
       session: this.currentSession,
       eliteScore: score,
+      scoreDelta,
       streak: streakUpdate,
       macroState: this.profile.macroState,
       level: levelUpdate,

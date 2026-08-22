@@ -27,25 +27,42 @@ export class RecommendationEngine {
   // ═══════════════════════════════════════════════════════════════
 
   buildSessionPlan() {
-    const all = Array.from(this.graph.nodes.values());
+    // Respect macro-state session length cap
+    this.sessionQueue = this.buildRankedQueue(this._sessionLengthCap());
+    this.sessionHistory = [];
+    this.fatigueCounter = 0;
+    this.interruptionBuffer = [];
+
+    return this.sessionQueue.slice(); // return copy
+  }
+
+  /**
+   * The same subject-guardrailed priority ranking + revision/fresh
+   * interleave buildSessionPlan() uses, but capped to an explicit length
+   * instead of the macro-state session-length cap, and without touching
+   * this instance's live sessionQueue/sessionHistory/interruptionBuffer —
+   * a pure "what would Kairo recommend" read. Used to pre-build several
+   * sessions' worth of queue at once (offline pre-fetch), where the
+   * caller needs far more than one macro-state-capped session's length
+   * and must never disturb whatever real session is actually in progress
+   * on this same engine.
+   */
+  buildRankedQueue(maxLen) {
+    // Hard subject guardrail: a concept outside the student's own enrolled
+    // subjects must never surface in the daily recommendation, even if it
+    // happens to be loaded into this.graph (e.g. from a CBT session that
+    // covers subjects beyond what the student is actually taking).
+    const enrolled = this.profile.targetSubjects;
+    const all = Array.from(this.graph.nodes.values())
+      .filter(c => !enrolled || enrolled.length === 0 || enrolled.includes(c.subject));
     const scored = all.map(c => ({
       concept: c,
       score: this._sessionPriorityScore(c)
     }));
 
     scored.sort((a, b) => b.score - a.score);
-
-    // Respect macro-state session length cap
-    const maxLen = this._sessionLengthCap();
     const selected = scored.slice(0, maxLen).map(s => s.concept.id);
-
-    // Interleave: don't put all revision first, mix with new
-    this.sessionQueue = this._interleaveQueue(selected);
-    this.sessionHistory = [];
-    this.fatigueCounter = 0;
-    this.interruptionBuffer = [];
-
-    return this.sessionQueue.slice(); // return copy
+    return this._interleaveQueue(selected);
   }
 
   /**

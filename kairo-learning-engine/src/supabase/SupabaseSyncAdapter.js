@@ -123,6 +123,8 @@ export class SupabaseSyncAdapter {
       // reached kairo.students, even though the request otherwise succeeded).
       streak_last_session_date: profileData.streakData?.lastSessionDate ? new Date(profileData.streakData.lastSessionDate).toISOString().slice(0, 10) : null,
       streak_window_sessions: profileData.streakData?.windowSessions || [],
+      streak_freezes_available: profileData.streakData?.freezesAvailable || 0,
+      streak_freezes_used: profileData.streakData?.freezesUsed || 0,
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
       notification_history: profileData.notificationHistory || [],
@@ -191,7 +193,9 @@ export class SupabaseSyncAdapter {
         currentMomentum: row.streak_current_momentum,
         protectedGapsUsed: row.streak_protected_gaps_used,
         lastSessionDate: row.streak_last_session_date,
-        windowSessions: row.streak_window_sessions || []
+        windowSessions: row.streak_window_sessions || [],
+        freezesAvailable: row.streak_freezes_available || 0,
+        freezesUsed: row.streak_freezes_used || 0
       },
       atRiskTriggeredAt: row.at_risk_triggered_at ? new Date(row.at_risk_triggered_at).getTime() : null,
       recoverySessionCount: row.recovery_session_count,

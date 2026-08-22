@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../../components';
-import { ScreenHeader } from '../learning/shared';
+import { Modal } from '../learning/shared';
 import type { Subject } from './data';
 
 export interface WeakTopicInfo {
@@ -10,6 +10,8 @@ export interface WeakTopicInfo {
   failureRate: number;
 }
 
+export type PracticePacing = 'study' | 'custom' | 'exam';
+
 export interface PracticeHubStartArgs {
   type: string;
   difficulty: string;
@@ -17,6 +19,9 @@ export interface PracticeHubStartArgs {
   /** Set only when a specific weak topic was picked (type 'weak' with weakTopics available) — the session scopes to this subject+topic instead of mixing every failed concept together. */
   topic?: string;
   topicSubject?: string;
+  pacing: PracticePacing;
+  /** Seconds per question — only meaningful when pacing === 'custom'. */
+  customTimerSec?: number;
 }
 
 export interface PracticeHubProps {
@@ -29,12 +34,19 @@ export interface PracticeHubProps {
   onStart: (args: PracticeHubStartArgs) => void;
 }
 
+const EXAM_PACE_SEC = 45;
+
+/**
+ * Custom Practice setup — a clean bottom sheet (KISS: question count +
+ * pacing, the two controls the Copy Framework calls out), reached after
+ * tapping any of Practice Home's four quick-action cards.
+ */
 export function PracticeHub({ subject, hasHistory, lockedType, weakTopics, onBack, onStart }: PracticeHubProps) {
   const [type, setType] = useState(lockedType || 'topic');
   const [difficulty, setDifficulty] = useState('adaptive');
   const [length, setLength] = useState(10);
-  const [customLength, setCustomLength] = useState('');
-  const [customOpen, setCustomOpen] = useState(false);
+  const [pacing, setPacing] = useState<PracticePacing>('study');
+  const [customTimerSec, setCustomTimerSec] = useState('60');
   const [selectedWeakTopic, setSelectedWeakTopic] = useState<WeakTopicInfo | null>(null);
 
   const types = [
@@ -48,7 +60,12 @@ export function PracticeHub({ subject, hasHistory, lockedType, weakTopics, onBac
     { key: 'medium', label: 'Medium' },
     { key: 'hard', label: 'Hard' },
   ];
-  const lengths = [5, 10, 20];
+  const lengths: (number | 'all')[] = [10, 20, 30, 'all'];
+  const pacingOptions: { key: PracticePacing; label: string; desc: string }[] = [
+    { key: 'study', label: 'Study', desc: 'Untimed — take the time you need.' },
+    { key: 'custom', label: 'Custom Timer', desc: 'Set your own seconds per question.' },
+    { key: 'exam', label: 'Exam Pace', desc: `${EXAM_PACE_SEC}s per question — real exam pressure.` },
+  ];
 
   const isWeakWithTopics = type === 'weak' && !!weakTopics && weakTopics.length > 0;
   // Mixed Practice and a topic-boost session both mean "everything real
@@ -56,34 +73,35 @@ export function PracticeHub({ subject, hasHistory, lockedType, weakTopics, onBac
   // picker only still applies to plain Topic Practice.
   const hidesLengthPicker = type === 'mixed' || isWeakWithTopics;
 
-  const resolvedLength = customOpen ? (parseInt(customLength, 10) || 0) : length;
-  const canStart = isWeakWithTopics ? !!selectedWeakTopic : hidesLengthPicker ? true : resolvedLength > 0;
+  const canStart = isWeakWithTopics
+    ? !!selectedWeakTopic
+    : pacing === 'custom'
+      ? (parseInt(customTimerSec, 10) || 0) > 0
+      : true;
 
   function handleStart() {
-    // 0 is the "no cap — every real question available" sentinel for Mixed
-    // Practice and a weak-topic boost, both of which hide the length picker
-    // and no longer have a student-picked count to send.
-    const effectiveLength = hidesLengthPicker ? 0 : resolvedLength;
+    // 0 is the "no cap — every real question available" sentinel, used for
+    // Mixed Practice / a weak-topic boost (no picker shown) and for
+    // Topic Practice's own "All Available" option.
+    const effectiveLength = hidesLengthPicker || length === 0 ? 0 : length;
+    const pacingArgs = pacing === 'custom' ? { pacing, customTimerSec: parseInt(customTimerSec, 10) || 60 } : { pacing };
     if (isWeakWithTopics && selectedWeakTopic) {
-      onStart({ type, difficulty, length: effectiveLength, topic: selectedWeakTopic.topic, topicSubject: selectedWeakTopic.subject });
+      onStart({ type, difficulty, length: effectiveLength, topic: selectedWeakTopic.topic, topicSubject: selectedWeakTopic.subject, ...pacingArgs });
     } else {
-      onStart({ type, difficulty, length: effectiveLength });
+      onStart({ type, difficulty, length: effectiveLength, ...pacingArgs });
     }
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
-      <ScreenHeader onBack={onBack} title={subject.label} tone="dark" />
-      <div style={{ padding: '4px 20px 32px', flex: 1, display: 'flex', flexDirection: 'column', gap: 30 }}>
-        <div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--dark-text-heading)', lineHeight: 1.25 }}>
-            Ready to practise {subject.label}?
-          </div>
-          <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', marginTop: 10, lineHeight: 1.6 }}>
-            One question at a time. Understand concepts. Build confidence.
-          </div>
-        </div>
+    <Modal onClose={() => onBack?.()} tone="dark">
+      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--dark-text-heading)', lineHeight: 1.25 }}>
+        Ready to practise {subject.label}?
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 8, marginBottom: 22, lineHeight: 1.55 }}>
+        One question at a time. Understand concepts. Build confidence.
+      </div>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
         {!lockedType && (
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>PRACTICE TYPE</div>
@@ -155,32 +173,18 @@ export function PracticeHub({ subject, hasHistory, lockedType, weakTopics, onBac
 
         {!hidesLengthPicker && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>ESTIMATED SESSION</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>QUESTION COUNT</div>
           <div style={{ display: 'flex', gap: 8 }}>
             {lengths.map((n) => {
-              const active = !customOpen && length === n;
+              const active = n === 'all' ? length === 0 : length === n;
               return (
-                <button type="button" key={n} aria-pressed={active} onClick={() => { setCustomOpen(false); setLength(n); }} style={{
-                  flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+                <button type="button" key={n} aria-pressed={active} onClick={() => setLength(n === 'all' ? 0 : n)} style={{
+                  flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: n === 'all' ? 12 : 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
                   border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: active ? '#fff' : 'var(--dark-text-body)',
-                }}>{n}</button>
+                }}>{n === 'all' ? 'All' : n}</button>
               );
             })}
-            <button type="button" aria-pressed={customOpen} onClick={() => setCustomOpen(true)} style={{
-              flex: 1, textAlign: 'center', padding: '12px 4px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-              border: `1.5px solid ${customOpen ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: customOpen ? 'var(--dark-accent-blue)' : 'var(--dark-bg-surface)', color: customOpen ? '#fff' : 'var(--dark-text-body)',
-            }}>Custom</button>
           </div>
-          {customOpen && (
-            <input
-              type="number" min="1" max="60" autoFocus placeholder="Number of questions"
-              value={customLength} onChange={(e) => setCustomLength(e.target.value)}
-              style={{
-                marginTop: 10, width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 'var(--radius-md)',
-                border: '1.5px solid var(--dark-border)', fontSize: 14, fontFamily: 'var(--font-body)', color: 'var(--dark-text-heading)', background: 'var(--dark-bg-surface)',
-              }}
-            />
-          )}
         </div>
         )}
         {hidesLengthPicker && (
@@ -191,12 +195,47 @@ export function PracticeHub({ subject, hasHistory, lockedType, weakTopics, onBac
           </div>
         )}
 
-        <div style={{ marginTop: 'auto' }}>
-          <Button variant="darkAccent" size="lg" fullWidth disabled={!canStart} onClick={handleStart}>
-            {'Start Practice →'}
-          </Button>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>PACING</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pacingOptions.map((p) => {
+              const active = pacing === p.key;
+              return (
+                <button type="button" key={p.key} aria-pressed={active} onClick={() => setPacing(p.key)} style={{
+                  padding: '12px 14px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', fontFamily: 'inherit',
+                  cursor: 'pointer', border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`, background: active ? 'var(--dark-bg-elevated)' : 'var(--dark-bg-surface)',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{p.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>{p.desc}</div>
+                  </div>
+                  <div style={{
+                    width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                    border: `1.5px solid ${active ? 'var(--dark-accent-blue)' : 'var(--dark-border)'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {active && <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--dark-accent-blue)' }} />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {pacing === 'custom' && (
+            <input
+              type="number" min="10" max="300" autoFocus placeholder="Seconds per question"
+              value={customTimerSec} onChange={(e) => setCustomTimerSec(e.target.value)}
+              style={{
+                marginTop: 10, width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 'var(--radius-md)',
+                border: '1.5px solid var(--dark-border)', fontSize: 14, fontFamily: 'var(--font-body)', color: 'var(--dark-text-heading)', background: 'var(--dark-bg-surface)',
+              }}
+            />
+          )}
         </div>
+
+        <Button variant="darkAccent" size="lg" fullWidth disabled={!canStart} onClick={handleStart}>
+          {'Start Practice →'}
+        </Button>
       </div>
-    </div>
+    </Modal>
   );
 }

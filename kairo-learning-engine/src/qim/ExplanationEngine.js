@@ -27,23 +27,28 @@ export class ExplanationEngine {
       content: question.explanation || this._generateCorrectReasoning(question)
     });
 
-    // 2. Why each wrong option is wrong (if student got it wrong)
+    // 2. Why each wrong option is wrong — shown for both correct and
+    // incorrect attempts. Seeing why the distractors fail reinforces the
+    // correct reasoning even on a right answer (Copy Framework: this is
+    // teaching, not just correction), and it's the one place a student who
+    // guessed right ever finds out the guess wouldn't hold up next time.
+    const wrongOptions = question.options.filter(o => o.label !== question.correctOption);
+    const distractorExplanations = wrongOptions.map(o => ({
+      label: o.label,
+      text: o.text,
+      whyWrong: question.getDistractorExplanation(o.label) || this._genericWhyWrong(o.label, question),
+      misconception: this.lib.diagnoseQuestion(question, o.label)
+    }));
+
+    parts.push({
+      type: 'distractor_breakdown',
+      title: 'Why Each Option Is Wrong',
+      content: distractorExplanations
+    });
+
     if (!attempt.correct) {
-      const wrongOptions = question.options.filter(o => o.label !== question.correctOption);
-      const distractorExplanations = wrongOptions.map(o => ({
-        label: o.label,
-        text: o.text,
-        whyWrong: question.getDistractorExplanation(o.label) || this._genericWhyWrong(o.label, question),
-        misconception: this.lib.diagnoseQuestion(question, o.label)
-      }));
-
-      parts.push({
-        type: 'distractor_breakdown',
-        title: 'Why Each Option Is Wrong',
-        content: distractorExplanations
-      });
-
-      // 3. Common mistake (only if backed by data)
+      // 3. Common mistake (only if backed by data) — "students often pick
+      // X" only means something to surface to a student who picked it.
       const mostSelectedDistractor = this._getMostSelectedDistractor(question);
       if (mostSelectedDistractor) {
         parts.push({

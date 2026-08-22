@@ -5,14 +5,25 @@
  */
 
 const DB_NAME = 'kairo_learning_engine';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 
 const STORES = {
   CONCEPTS: 'concepts',
   SESSIONS: 'sessions',
   ATTEMPTS: 'attempts',
   PROFILE: 'profile',
-  QUEUE: 'queue'
+  QUEUE: 'queue',
+  // Durable mirror of SyncManager.pendingSync — without this, a queued
+  // attempt/session/cbt_result sitting offline is lost the moment the tab
+  // closes or reloads before sync() ever runs, since pendingSync itself is
+  // just an in-memory array.
+  PENDING_SYNC: 'pending_sync_queue',
+  // Pre-assembled daily-recommendation queues (RecommendationEngine.
+  // buildRankedQueue(), sliced into chunks with real resolved Question
+  // objects already attached) — built while online, popped when starting
+  // a recommendation session offline instead of failing on the network
+  // call ensureContentLoaded()/loadContentCatalog() would otherwise need.
+  PREFETCHED_QUEUES: 'prefetched_queues'
 };
 
 export class LocalStore {
@@ -48,6 +59,12 @@ export class LocalStore {
         if (!db.objectStoreNames.contains(STORES.QUEUE)) {
           db.createObjectStore(STORES.QUEUE, { keyPath: 'queueId' });
         }
+        if (!db.objectStoreNames.contains(STORES.PENDING_SYNC)) {
+          db.createObjectStore(STORES.PENDING_SYNC, { keyPath: 'syncId' });
+        }
+        if (!db.objectStoreNames.contains(STORES.PREFETCHED_QUEUES)) {
+          db.createObjectStore(STORES.PREFETCHED_QUEUES, { keyPath: 'queueId' });
+        }
       };
     });
   }
@@ -57,7 +74,7 @@ export class LocalStore {
   async put(store, data) {
     if (this.useMemory) {
       if (!this.memoryFallback.has(store)) this.memoryFallback.set(store, new Map());
-      const key = data.id || data.sessionId || data.attemptId || data.studentId || data.queueId || Date.now();
+      const key = data.id || data.sessionId || data.attemptId || data.studentId || data.queueId || data.syncId || Date.now();
       this.memoryFallback.get(store).set(String(key), data);
       return data;
     }
@@ -142,6 +159,18 @@ export class LocalStore {
   async getAttempts(conceptId) {
     const all = await this.getAll(STORES.ATTEMPTS);
     return all.filter(a => a.conceptId === conceptId);
+  }
+
+  async savePrefetchedQueue(queue) {
+    await this.put(STORES.PREFETCHED_QUEUES, queue);
+  }
+
+  async getPrefetchedQueues() {
+    return this.getAll(STORES.PREFETCHED_QUEUES);
+  }
+
+  async deletePrefetchedQueue(queueId) {
+    await this.delete(STORES.PREFETCHED_QUEUES, queueId);
   }
 }
 

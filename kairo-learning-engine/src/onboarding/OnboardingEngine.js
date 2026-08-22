@@ -4,6 +4,8 @@
  * Simple, endearing, no decision fatigue. The system guides, the student follows.
  */
 
+import { StreakConstants } from "../utils/constants.js";
+
 export class OnboardingEngine {
   constructor(kairoEngine) {
     this.engine = kairoEngine;
@@ -168,6 +170,13 @@ export class OnboardingEngine {
     // in the flow. A route guard checks this, not targetSubjects, so
     // dashboard access stays blocked until the diagnostic is really done.
     this.engine.profile.diagnosticCompleted = true;
+
+    // First Streak Freeze, earned once, right here — the one genuine
+    // "onboarding complete" moment (see the comment on diagnosticCompleted
+    // above). Capped by MomentumStreak.earnFreeze() itself, so calling this
+    // again (e.g. a retried/duplicate buildInitialPlan()) can never push a
+    // student past FREEZE_CAPACITY.
+    this.engine.streak.earnFreeze(StreakConstants.FREEZE_EARNED_ON_ONBOARDING);
 
     // Generate personalized first session
     const plan = this.engine.startSession();

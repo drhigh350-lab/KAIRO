@@ -5,8 +5,11 @@
 
 import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
-import { RetentionState, ErrorTag } from "../src/utils/constants.js";
+import { RetentionState, ErrorTag, StreakConstants } from "../src/utils/constants.js";
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
+import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
+import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
+import { EliteScore } from "../src/engine/EliteScore.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -221,6 +224,25 @@ test('Error classifier detects guessing', () => {
   assertEqual(tag, ErrorTag.GUESSED, 'Very fast wrong should be guessed');
 });
 
+test('EliteScore.computeSessionDelta: appends the High-Yield bonus for recommendation/cbt, never for standard, and never alters the underlying total', () => {
+  const rec = EliteScore.computeSessionDelta(40, 42.3, 'recommendation');
+  assertEqual(rec.base, 3, 'Base delta should round UP (2.3 -> 3)');
+  assertEqual(rec.bonus, 10, 'Recommendation session type should earn the +10 bonus');
+  assertEqual(rec.total, 13, 'Displayed total should be base + bonus');
+
+  const cbt = EliteScore.computeSessionDelta(40, 42.3, 'cbt');
+  assertEqual(cbt.bonus, 10, 'CBT session type should earn the +10 bonus');
+
+  const standard = EliteScore.computeSessionDelta(40, 42.3, 'standard');
+  assertEqual(standard.base, 3, 'Base delta is identical regardless of session type');
+  assertEqual(standard.bonus, 0, 'Standard practice/topic sessions should never earn the bonus');
+  assertEqual(standard.total, 3, 'No bonus means displayed total equals the base delta');
+
+  const steady = EliteScore.computeSessionDelta(50, 50, 'recommendation');
+  assertEqual(steady.base, 0, 'No organic movement should floor at 0, not go negative');
+  assertEqual(steady.total, 10, 'The bonus still applies even when the organic curve held steady');
+});
+
 test('Adaptive difficulty respects macro-state ceiling', () => {
   engine.profile.macroState = 'recovering';
   const tier = engine.difficulty.selectDifficulty(
@@ -233,6 +255,66 @@ test('Momentum streak records session with status', () => {
   const status = engine.streak.recordSession(Date.now());
   assert(typeof status.momentum === 'number', 'Momentum should be number');
   assert(status.message && (status.message.text || status.message.level), 'Should have status message');
+});
+
+test('Momentum streak increments by exactly 1 per consecutive day, never silently decreases', () => {
+  const p = new StudentProfile({ studentId: 's_streak', name: 'S' });
+  const streak = new MomentumStreak(p);
+  const day = 24 * 60 * 60 * 1000;
+  const t0 = Date.parse('2026-06-01T09:00:00Z');
+  const s1 = streak.recordSession(t0);
+  assertEqual(s1.momentum, 1, 'First-ever session should start the streak at 1');
+  const s2 = streak.recordSession(t0 + day);
+  assertEqual(s2.momentum, 2, 'A session the very next calendar day should increment by 1');
+  // Same-day second session (e.g. re-called defensively) must not double count.
+  const s2b = streak.recordSession(t0 + day + 3600000);
+  assertEqual(s2b.momentum, 2, 'A second session the same calendar day should not increment again');
+  const s3 = streak.recordSession(t0 + 2 * day);
+  assertEqual(s3.momentum, 3, 'Third consecutive day should reach 3');
+  // Regression guard for the previous rolling-window bug: momentum must
+  // never drop below its last known value without a genuine, unbridged gap.
+  assert(s3.momentum >= s2.momentum, 'Momentum must never silently decrease across consecutive real sessions');
+});
+
+test('Momentum streak: a genuine unbridged gap resets to 1, not a silent partial decrement', () => {
+  const p = new StudentProfile({ studentId: 's_streak_break', name: 'S' });
+  const streak = new MomentumStreak(p);
+  const day = 24 * 60 * 60 * 1000;
+  const t0 = Date.parse('2026-06-01T09:00:00Z');
+  streak.recordSession(t0);
+  streak.recordSession(t0 + day);
+  streak.recordSession(t0 + 2 * day); // momentum = 3, no freezes earned
+  const broken = streak.recordSession(t0 + 10 * day); // 7-day gap, far beyond grace/freeze
+  assertEqual(broken.momentum, 1, 'A real, unbridged gap should reset the streak to 1');
+});
+
+test('Streak Freeze: earned on onboarding, capped at FREEZE_CAPACITY, and bridges a missed day without breaking the streak', () => {
+  const p = new StudentProfile({ studentId: 's_freeze', name: 'S' });
+  const streak = new MomentumStreak(p);
+  assertEqual(streak.data.freezesAvailable, 0, 'No freezes before any are earned');
+  streak.earnFreeze(StreakConstants.FREEZE_EARNED_ON_ONBOARDING);
+  assertEqual(streak.data.freezesAvailable, 1, 'Onboarding should award exactly one freeze');
+  streak.earnFreeze(5); // attempt to over-earn
+  assertEqual(streak.data.freezesAvailable, StreakConstants.FREEZE_CAPACITY, 'Freezes should never exceed FREEZE_CAPACITY');
+
+  const p2 = new StudentProfile({ studentId: 's_freeze_use', name: 'S' });
+  const streak2 = new MomentumStreak(p2);
+  streak2.earnFreeze(1);
+  const day = 24 * 60 * 60 * 1000;
+  const t0 = Date.parse('2026-06-01T09:00:00Z');
+  streak2.recordSession(t0);
+  // 3 missed days: 1 beyond what the free PROTECTED_GAP_DAYS (2) grace
+  // alone would cover — exactly what the single earned freeze should bridge.
+  const afterGap = streak2.recordSession(t0 + 4 * day);
+  assertEqual(afterGap.momentum, 2, 'A spent Streak Freeze should bridge a gap beyond the free grace and continue the streak');
+  assertEqual(afterGap.freezesAvailable, 0, 'The freeze used to bridge the gap should be spent, not refunded');
+
+  // Without a freeze, the same size gap should genuinely break the streak.
+  const p3 = new StudentProfile({ studentId: 's_freeze_none', name: 'S' });
+  const streak3 = new MomentumStreak(p3);
+  streak3.recordSession(t0);
+  const brokenNoFreeze = streak3.recordSession(t0 + 4 * day);
+  assertEqual(brokenNoFreeze.momentum, 1, 'The same gap with no freeze available should reset the streak to 1');
 });
 
 test('Weekly reflection generates data', () => {
@@ -405,6 +487,25 @@ test('Badge system has catalog and checks', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// RECOMMENDATION ENGINE — SUBJECT GUARDRAIL
+// ═══════════════════════════════════════════════════════════════
+
+test('RecommendationEngine.buildSessionPlan() hard-filters out concepts from non-enrolled subjects', () => {
+  const graph = new KnowledgeGraph();
+  const enrolledConcept = new ConceptNode({ id: 'guardrail_enrolled', name: 'Enrolled Subject Concept', subject: 'Physics', topic: 'Motion' });
+  const nonEnrolledConcept = new ConceptNode({ id: 'guardrail_not_enrolled', name: 'Non-Enrolled Subject Concept', subject: 'Mathematics', topic: 'Algebra' });
+  graph.addConcept(enrolledConcept);
+  graph.addConcept(nonEnrolledConcept);
+
+  const profile = new StudentProfile({ studentId: 'guardrail_student', name: 'S', targetSubjects: ['Physics'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+  const plan = rec.buildSessionPlan();
+
+  assert(plan.includes('guardrail_enrolled'), 'Enrolled-subject concept should be eligible for the recommendation queue');
+  assert(!plan.includes('guardrail_not_enrolled'), 'A concept from a subject the student is not enrolled in must never surface in the daily recommendation');
+});
+
+// ═══════════════════════════════════════════════════════════════
 // ONBOARDING
 // ═══════════════════════════════════════════════════════════════
 
@@ -461,6 +562,39 @@ test('Content pack manager tracks storage', async () => {
   const usage = await engine.contentPacks.getStorageUsage();
   assert(typeof usage.totalMB === 'number', 'Should have totalMB');
   assert(typeof usage.totalQuestions === 'number', 'Should have totalQuestions');
+});
+
+await test('prefetchRecommendationQueues()/popPrefetchedQueue(): builds real, resolved offline queues and pops them oldest-first without disturbing a live session', async () => {
+  const engine = new KairoEngine({ studentId: 'prefetch1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  for (let i = 0; i < 15; i++) {
+    const cid = engine.addConcept({ name: `Prefetch Concept ${i}`, subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+    engine.questionGraph.addQuestion(new Question({
+      id: `prefetch_q${i}`, subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+      conceptsTested: [{ conceptId: cid, weight: 1 }],
+      stem: `S${i}`, options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+      lifecycleState: 'live'
+    }));
+  }
+
+  // A real session already in progress must be completely unaffected.
+  const before = engine.startSession({ mode: 'standard' });
+
+  const { queued } = await engine.prefetchRecommendationQueues({ queueCount: 2, questionsPerQueue: 10 });
+  assertEqual(queued, 2, '15 concepts / 10 per queue should produce exactly 2 non-empty queues (10 + 5)');
+  assertEqual(engine.currentSession.plan, before.queue, 'Prefetching must never touch the already-in-progress live session plan');
+
+  const first = await engine.popPrefetchedQueue();
+  assert(first, 'First pop should return a real cached queue');
+  assertEqual(first.questions.length, 10, 'First (oldest) queue should carry its full 10 resolved questions');
+  assert(first.questions[0].id, 'Cached questions should be real, already-resolved question objects, not bare concept IDs');
+
+  const second = await engine.popPrefetchedQueue();
+  assert(second, 'Second pop should return the other cached queue');
+  assert(second.queueId !== first.queueId, 'Each pop should consume a distinct queue, not the same one twice');
+
+  const third = await engine.popPrefetchedQueue();
+  assertEqual(third, null, 'Once every cached queue is popped, there should honestly be nothing left rather than a fabricated one');
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1127,6 +1261,28 @@ test('ExplanationEngine: memory_anchor is omitted (not filler text) when no genu
   assert(!memoryAnchorPart, 'No memory_anchor part should be present when nothing genuine exists for this concept');
 });
 
+test('ExplanationEngine: distractor_breakdown ("why other options are wrong") is included on a CORRECT attempt too, not just incorrect ones', () => {
+  const q = new Question({
+    id: 'distractor_on_correct_1', subject: 'Chemistry', topic: 'Organic Chemistry', subtopic: 'Alkanes',
+    stem: 'What is the general formula for an alkane?',
+    options: [
+      { label: 'A', text: 'CnH2n+2', isCorrect: true },
+      { label: 'B', text: 'CnH2n', isCorrect: false },
+      { label: 'C', text: 'CnH2n-2', isCorrect: false },
+    ],
+    correctOption: 'A', explanation: 'Alkanes are saturated hydrocarbons with formula CnH2n+2.',
+    lifecycleState: 'live'
+  });
+  const correctExplanation = learnEngine.explanations.generate({ question: q, attempt: { correct: true }, concept: null, macroState: 'building' });
+  const breakdownOnCorrect = correctExplanation.parts.find(p => p.type === 'distractor_breakdown');
+  assert(breakdownOnCorrect, 'distractor_breakdown should be present even when the attempt was correct');
+  assertEqual(breakdownOnCorrect.content.length, 2, 'Should include both wrong options');
+
+  const incorrectExplanation = learnEngine.explanations.generate({ question: q, attempt: { correct: false }, concept: null, macroState: 'building' });
+  const breakdownOnIncorrect = incorrectExplanation.parts.find(p => p.type === 'distractor_breakdown');
+  assert(breakdownOnIncorrect, 'distractor_breakdown should still be present on an incorrect attempt');
+});
+
 test("Learn: commonMisconceptions come from the question's own distractor data, not the legacy mapDistractor() table", () => {
   const freshConceptId = learnEngine.addConcept({ name: 'Osmosis', subject: 'Biology', topic: 'Cell Biology', subtopic: 'Transport' });
   const freshQuestion = new Question({
@@ -1764,12 +1920,16 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
     contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
     submitAnswer: () => {},
     sync: { queue: () => {} },
-    // finish() calls this.engine.profile.recordSession() — every real
-    // KairoEngine has one, so this was missing only because this fake is
-    // deliberately minimal for testing the mid-exam withholding behavior
-    // below, not because finish() is broken (a real-engine test covers
-    // finish() itself further down this file).
-    profile: { recordSession: () => {} }
+    // finish() calls this.engine.profile.recordSession() and (to update
+    // the real weighted Kairo Score for a completed mock) this.engine.
+    // eliteScore.calculate() — every real KairoEngine has both, so these
+    // were missing only because this fake is deliberately minimal for
+    // testing the mid-exam withholding behavior below, not because
+    // finish() is broken (a real-engine test covers finish() itself
+    // further down this file).
+    profile: { recordSession: () => {}, sessions: [] },
+    graph: { nodes: new Map() },
+    eliteScore: { history: [], calculate: () => ({ total: 0, accuracy: 0, retention: 0, consistency: 0, timestamp: Date.now() }) }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
@@ -1826,6 +1986,11 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
 
   const sessionPush = queued.find(q => q.type === 'session' && q.data.mode === 'cbt_exam');
   assert(sessionPush, 'CBT finish() should queue a kairo.sessions row tagged mode: cbt_exam — previously nothing did, and the crash meant it never got this far anyway');
+
+  assert(results.eliteScore, 'finish() should compute and return the real weighted eliteScore — previously nothing ever recalculated it for a completed CBT mock');
+  assertEqual(results.scoreDelta.sessionType, 'cbt', 'A completed CBT mock should carry sessionType "cbt"');
+  assertEqual(results.scoreDelta.bonus, 10, 'A full CBT simulation should earn the High-Yield Session bonus');
+  assertEqual(engine.eliteScore.history[engine.eliteScore.history.length - 1].total, results.eliteScore.total, 'The engine\'s real eliteScoreHistory should reflect this CBT mock, not just the returned copy');
 });
 
 await test("CBT: finish() doesn't submit unanswered questions as attempts (they'd fail kairo.attempts' anti-cheat trigger and silently take the whole sync down)", async () => {
@@ -1872,6 +2037,48 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   const topicResult = engine.startTopicPractice('Biology', 'Cells', 'Organelles', 5);
   assertEqual(engine.currentSession.mode, 'topic_practice', 'startTopicPractice() should tag the session mode: topic_practice');
   assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
+});
+
+await test('endSession(): scoreDelta carries the High-Yield bonus for a standard (recommendation) session, and the returned eliteScore is the real unaltered weighted snapshot', async () => {
+  const engine = new KairoEngine({ studentId: 'delta1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Delta Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'delta_q1', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+
+  engine.startSession({ mode: 'standard', plan: [conceptId] });
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'delta_q1', questionDifficulty: 1 });
+  const result = await engine.endSession();
+
+  assert(result.scoreDelta, 'endSession() should return a scoreDelta');
+  assertEqual(result.scoreDelta.sessionType, 'recommendation', "mode 'standard' should map to sessionType 'recommendation'");
+  assertEqual(result.scoreDelta.bonus, 10, 'A standard-mode (recommendation) session should earn the High-Yield bonus');
+  assertEqual(result.scoreDelta.total, result.scoreDelta.base + 10, 'Displayed total should be base + bonus');
+  const latestSnapshot = engine.eliteScore.history[engine.eliteScore.history.length - 1];
+  assertEqual(result.eliteScore.total, latestSnapshot.total, 'Returned eliteScore should be the real, unaltered weighted snapshot — the bonus never touches it');
+});
+
+await test('endSession(): a custom/topic practice session earns no High-Yield bonus', async () => {
+  const engine = new KairoEngine({ studentId: 'delta2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Delta Concept 2', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'delta_q2', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+
+  engine.startCustomPractice({ subjects: ['Biology'], count: 5 });
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'delta_q2', questionDifficulty: 1 });
+  const result = await engine.endSession();
+
+  assertEqual(result.scoreDelta.sessionType, 'standard', 'Custom practice should map to sessionType standard');
+  assertEqual(result.scoreDelta.bonus, 0, 'Custom practice should never earn the High-Yield bonus');
 });
 
 test('TopicPracticeEngine.buildSubtopicSession fills the session from a concept\'s real question pool, not just one slot per concept', () => {

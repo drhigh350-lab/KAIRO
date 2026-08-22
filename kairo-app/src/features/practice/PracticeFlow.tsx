@@ -4,7 +4,7 @@ import { PracticeHome } from './PracticeHome';
 import { SubjectSelect } from './SubjectSelect';
 import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
-import { PracticeHub } from './PracticeHub';
+import { PracticeHub, type PracticePacing } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation } from './PracticeQuestion';
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
@@ -12,6 +12,7 @@ import { subjects, type Subject } from './data';
 import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, type WeakTopicSummary } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
+import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 
@@ -20,6 +21,10 @@ import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, 
 // safely above any seeded subject's real question bank, not a target the
 // engine is expected to actually reach.
 const UNCAPPED_LIMIT = 500;
+
+// Matches PracticeHub's EXAM_PACE_SEC — kept in sync there, not imported,
+// since it's a small display/pacing constant, not shared behavior.
+const EXAM_PACE_SEC = 45;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
@@ -85,12 +90,18 @@ export function PracticeFlow() {
   // this resolves, so it doesn't need to be awaited before questions render.
   useEffect(() => { loadBookmarks(); }, []);
   const [screen, setScreen] = useState<Screen>(init.screen);
+  // Persistent bottom nav (AppTabs) hides only for the actual focused
+  // question/explanation screen — every other Practice screen (home,
+  // subject/topic pickers, hub, summary, review) keeps it visible.
+  useSetBottomNavHidden(screen === 'practiceQuestion');
   const [history, setHistory] = useState<Screen[]>([]);
   const [subject, setSubject] = useState<SubjectLike | null>(init.subject);
   const [topic, setTopic] = useState<string | null>(null);
   const [subtopic, setSubtopic] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<string | null>(init.difficulty);
   const [length, setLength] = useState(init.length);
+  const [pacing, setPacing] = useState<PracticePacing>('study');
+  const [customTimerSec, setCustomTimerSec] = useState(60);
   const [entryFlow, setEntryFlow] = useState(init.entryFlow);
   const [recentKeys, setRecentKeys] = useState<string[]>([]);
   const [hasHistory, setHasHistory] = useState(false);
@@ -102,9 +113,13 @@ export function PracticeFlow() {
   // restarts, via resetResults() below, so a genuinely new session always
   // gets its own remediation chance.
   const [remediationDone, setRemediationDone] = useState(false);
+  // The real weighted scoreDelta from endSession() ({ base, bonus, total,
+  // sessionType }) — null until the session actually ends.
+  const [scoreDelta, setScoreDelta] = useState<{ base: number; bonus: number; total: number; sessionType: string } | null>(null);
   function resetResults() {
     setResults([]);
     setRemediationDone(false);
+    setScoreDelta(null);
   }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
@@ -362,7 +377,7 @@ export function PracticeFlow() {
     navigate(`/learn/${encodeURIComponent(eq.conceptId)}`, { state: { returnTo: '/practice' } });
   }
 
-  function handleNextQuestion({ correct, confidence, selectedIndex, responseTimeMs }: PracticeQuestionResult) {
+  async function handleNextQuestion({ correct, confidence, selectedIndex, responseTimeMs }: PracticeQuestionResult) {
     const eq = engineQuestions?.[qIndex];
     const newResults = [...results, {
       correct, confidence, time: Math.round(responseTimeMs / 1000), subject: eq?.subject, topic: eq?.topic,
@@ -413,12 +428,17 @@ export function PracticeFlow() {
       setHasHistory(true);
       clearSessionSnapshot(kairo?.profile?.studentId, 'practice');
       if (kairo) {
-        // Score/streak/level/badges/persistence still all run — just not
-        // awaited or shown here. PracticeSummary displays a locally
-        // computed gained-score instead, so the summary never waits on
-        // this (previously slow: IndexedDB graph write + a real Supabase
-        // sync round trip) before rendering.
-        kairo.endSession().catch(() => {});
+        // endSession() itself no longer waits on IndexedDB/Supabase (that
+        // tail runs detached inside the engine now) — score/streak/level/
+        // badges/scoreDelta come back essentially instantly, so awaiting
+        // it here still means an instant summary transition, just with
+        // the real weighted score delta instead of a flat estimate.
+        try {
+          const result = await kairo.endSession();
+          setScoreDelta(result?.scoreDelta ?? null);
+        } catch {
+          setScoreDelta(null);
+        }
       }
       go('practiceSummary');
     } else {
@@ -541,13 +561,15 @@ export function PracticeFlow() {
         lockedType={lockedType}
         weakTopics={weakTopics}
         onBack={back}
-        onStart={({ type, difficulty: d, length: len, topic: pickedTopic, topicSubject }) => {
+        onStart={({ type, difficulty: d, length: len, topic: pickedTopic, topicSubject, pacing: p, customTimerSec: cts }) => {
           // len === 0 is PracticeHub's "no cap" sentinel (Mixed Practice /
           // a weak-topic boost, both of which hide the length picker).
           const uncapped = len === 0;
           setDifficulty(d);
           setLength(uncapped ? UNCAPPED_LIMIT : len);
           setShowPercent(uncapped);
+          setPacing(p);
+          if (cts) setCustomTimerSec(cts);
           if (type === 'topic') {
             go('topic');
           } else if (pickedTopic && topicSubject) {
@@ -640,11 +662,12 @@ export function PracticeFlow() {
         explanation={explanation}
         nextStepNote={decisionNote}
         showPercent={showPercent}
+        timerSec={pacing === 'exam' ? EXAM_PACE_SEC : pacing === 'custom' ? customTimerSec : null}
       />
     );
   }
   if (screen === 'practiceSummary') {
-    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} entryFlow={entryFlow} />;
+    return <PracticeSummary results={results} onHome={toHome} onAction={handleSummaryAction} scoreDelta={scoreDelta} />;
   }
   if (screen === 'practiceReview') {
     return <PracticeReview results={results} onBack={back} />;

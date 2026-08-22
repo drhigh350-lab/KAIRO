@@ -15,10 +15,10 @@ export interface PracticeHomeProps {
 }
 
 const quickActions = [
-  { key: 'subject', label: 'By Subject' },
-  { key: 'topic', label: 'By Topic' },
-  { key: 'mixed', label: 'Mixed Practice' },
-  { key: 'weak', label: 'Weak Areas' },
+  { key: 'subject', label: 'Subject Practice', benefit: 'Build depth in one subject at a time.' },
+  { key: 'topic', label: 'Topic Practice', benefit: 'Go deep on exactly the topic you need.' },
+  { key: 'mixed', label: 'Mixed Practice', benefit: 'Simulate the real spread of exam day.' },
+  { key: 'weak', label: 'Weak Areas', benefit: "Fix what's actually costing you marks." },
 ] as const;
 
 /**
@@ -70,12 +70,16 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
           onStart={onStartSuggested}
         />
 
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {quickActions.map((q) => (
             <button type="button" key={q.key} onClick={actionHandlers[q.key]} style={{
-              flexShrink: 0, padding: '10px 16px', borderRadius: 'var(--radius-pill)', minHeight: 'var(--touch-min)', fontFamily: 'inherit',
-              border: '1.5px solid var(--dark-border)', background: 'var(--dark-bg-surface)', color: 'var(--dark-text-body)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-            }}>{q.label}</button>
+              textAlign: 'left', padding: '14px 14px', borderRadius: 'var(--radius-md)', minHeight: 'var(--touch-min)', fontFamily: 'inherit',
+              border: '1.5px solid var(--dark-border)', background: 'var(--dark-bg-surface)', color: 'var(--dark-text-body)', cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', gap: 4,
+            }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{q.label}</span>
+              <span style={{ fontSize: 12, color: 'var(--dark-text-muted)', lineHeight: 1.4 }}>{q.benefit}</span>
+            </button>
           ))}
         </div>
 

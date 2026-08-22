@@ -389,7 +389,7 @@ export function Modal({ children, onClose, tone = 'light' }: ModalProps) {
   useEscapeToClose(onClose);
   return (
     <div onClick={onClose} role="presentation" style={{ position: 'absolute', inset: 0, background: 'rgba(11,23,32,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 30 }}>
-      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ background: dark ? 'var(--dark-bg-elevated)' : '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', fontFamily: 'var(--font-body)' }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ background: dark ? 'var(--dark-bg-elevated)' : '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }}>
         {children}
       </div>
     </div>
@@ -422,6 +422,9 @@ export function KairoScoreInfo({ iconColor = 'var(--dark-text-faint)' }: { iconC
           </div>
           <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.65, marginTop: 10 }}>
             It only ever goes up, and it moves slowly on purpose — one session won't swing it much, but showing up consistently will.
+          </div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65, marginTop: 10, fontWeight: 600 }}>
+            Pro Tip: Completing your Daily Recommendation or a full CBT Simulation instantly awards a massive +10 Bonus to your score.
           </div>
         </Modal>
       )}
