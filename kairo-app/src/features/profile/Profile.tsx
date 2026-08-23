@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Avatar, Badge, Button, Card } from '../../components';
-import { ScreenHeader, ChevronRight, KairoScoreInfo, KairoPointsInfo } from '../learning/shared';
-import { getEngine, getProfileSummary, signOutAndDisconnect } from '../../lib/kairoEngine';
+import { Avatar, Button, Card, ProgressBar } from '../../components';
+import { ScreenHeader, ChevronRight, KairoScoreInfo, KairoPointsInfo, Modal } from '../learning/shared';
+import { getProfileSummary, getPrestigeProgress, getDisplayBadges, getBadgeVault, isOnboarded, signOutAndDisconnect } from '../../lib/kairoEngine';
+import { BadgeVaultRow, BadgeVaultSheet } from './BadgeVault';
 
 export function Profile() {
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
+  const [openTrackKey, setOpenTrackKey] = useState<string | null>(null);
   const profile = getProfileSummary();
-  const badges = getEngine()?.getBadges();
-  const earnedBadges: { id: string; name: string }[] = badges?.earned ?? [];
+  const prestige = getPrestigeProgress();
+  const displayBadges = getDisplayBadges();
+  const vault = getBadgeVault();
+  const onboarded = isOnboarded();
 
   const firstName = profile?.name || 'there';
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
@@ -29,7 +33,7 @@ export function Profile() {
       <div className="desktop-grid" style={{ padding: '0 20px 24px' }}>
         <div className="desktop-main">
           <Card style={{ display: 'flex', gap: 14, alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-            <Avatar name={profile?.name} size={56} />
+            <Avatar name={profile?.name} size={56} prestigeTier={prestige ? { borderToken: prestige.borderToken, glow: prestige.glow } : null} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--dark-text-heading)' }}>{firstName}</div>
               <div style={{ fontSize: 13, color: 'var(--dark-text-muted)' }}>
@@ -43,6 +47,22 @@ export function Profile() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" /></svg>
             </button>
           </Card>
+          {prestige && (
+            <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: 'var(--dark-text-muted)' }}>PRESTIGE RANK</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>{prestige.name}</div>
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <ProgressBar value={prestige.progressPercent} tone="gold" height={7} />
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 8 }}>
+                {prestige.nextTierName
+                  ? `${prestige.points.toLocaleString()} / ${prestige.nextTierMinPoints?.toLocaleString()} pts to unlock ${prestige.nextTierName}`
+                  : prestige.message}
+              </div>
+            </Card>
+          )}
           {profile?.stats && (
             <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -94,14 +114,8 @@ export function Profile() {
 
         <div className="desktop-sidebar">
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>Achievement Highlights</div>
-            {earnedBadges.length ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {earnedBadges.map((b) => <Badge key={b.id} tone="gold">{b.name}</Badge>)}
-              </div>
-            ) : (
-              <div style={{ fontSize: 13, color: 'var(--dark-text-faint)' }}>Nothing to show yet — this fills in as you practise.</div>
-            )}
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>Badge Vault</div>
+            <BadgeVaultRow badges={displayBadges} onboarded={onboarded} onSelect={setOpenTrackKey} />
           </Card>
           <Card onClick={() => navigate('/profile/notifications')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
             <div>
@@ -123,6 +137,11 @@ export function Profile() {
           </Button>
         </div>
       </div>
+      {openTrackKey && vault && (
+        <Modal onClose={() => setOpenTrackKey(null)} tone="dark">
+          <BadgeVaultSheet trackKey={openTrackKey} vault={vault} />
+        </Modal>
+      )}
     </div>
   );
 }

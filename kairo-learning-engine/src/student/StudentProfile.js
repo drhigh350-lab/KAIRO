@@ -81,7 +81,7 @@ export class StudentProfile {
     // kairo.students.kairo_points_progress left as an inert column) rather
     // than a schema migration to drop it.
     this.kairoPointsProgress = { reinforcedConceptIds: [], heldConceptIds: [], consistencyDays: [], masteredTopics: [] };
-    this.badges = [];              // BadgeSystem.checkAndAward()'s earned-badge-id list (kairo.students.badges)
+    this.badges = [];              // BadgeSystem.checkAndAward()'s earned Badge Vault tier ids — "<trackKey>::tier<N>@<achievedAtMs>", one live entry per track (kairo.students.badges)
     this.preferences = null;       // ProfileSettings.updatePreferences()'s snapshot (kairo.students.preferences)
     this.sessions = [];          // completed session metadata
     this.responseTimeBaselines = {};

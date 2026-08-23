@@ -13,6 +13,17 @@
 --kairo-gold-500:#C9A227;
 --kairo-gold-200:#E9D18E;
 --kairo-gold-100:#F7EDD1;
+/* Prestige Level border tokens (Avatar.tsx / Profile header) — Candidate
+   through Outlier, cool-to-warm reading as a real rank progression.
+   Amber is the one glow-treatment tier, deliberately matching the warm
+   lit-flame tone StreakFlameBadge already uses (var(--kairo-gold-500,
+   #e0a039)'s own fallback) so "you're in rarefied territory" reads
+   consistent with the rest of the app's gold/amber achievement language. */
+--kairo-prestige-slate:#7A8CA3;
+--kairo-prestige-bronze:#B5651D;
+--kairo-prestige-silver:#B8C4CE;
+--kairo-prestige-amber:#E0A039;
+--kairo-prestige-amber-glow:rgba(224,160,57,0.55);
 --kairo-ink-900:#0B1720;
 --kairo-ink-700:#3A4A56;
 --kairo-ink-500:#5C6F7C;

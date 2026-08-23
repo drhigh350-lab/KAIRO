@@ -1,4 +1,4 @@
-import { KairoEngine, SupabaseSyncAdapter, CBTExamMode } from 'kairo-learning-engine';
+import { KairoEngine, SupabaseSyncAdapter, CBTExamMode, getPrestigeTier } from 'kairo-learning-engine';
 import { getSupabase } from './supabaseClient';
 import { selectedOptionLabel, type EngineFlatQuestion } from './engineAdapter';
 import type { PracticeExplanation } from '../features/practice/PracticeQuestion';
@@ -806,6 +806,59 @@ export async function setDailyGoal(goal: number | null): Promise<void> {
 export function getProfileSummary(): Engine | null {
   const kairo = getEngine();
   return kairo ? kairo.settings.getProfile() : null;
+}
+
+/** Batch 1 Prestige Level (kairo-learning-engine's PrestigeLevels.js) — derived purely from the same lifetime kairoPoints LevelSystem reads. null when nothing is signed in yet. */
+export function getPrestigeProgress(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.getPrestigeProgress() : null;
+}
+
+/** Batch 2 Badge Vault — every track's current tier, achieved-at date, and next-tier challenge framing, for the Vault bottom sheet. null when nothing is signed in yet. */
+export function getBadgeVault(): Engine | null {
+  const kairo = getEngine();
+  return kairo ? kairo.getBadgeVault() : null;
+}
+
+/** Up to 4 badge icons (3 universal tracks + the single strongest subject track) for the compact Profile summary row. Empty array when nothing is signed in yet. */
+export function getDisplayBadges(): Engine[] {
+  const kairo = getEngine();
+  return kairo ? kairo.getDisplayBadges() : [];
+}
+
+/**
+ * Batch 3 — real, specific toast lines for a just-finished session, sourced
+ * straight from what actually changed rather than a hand-written generic
+ * "achievement unlocked" string: a Badge Vault tier line per newly-earned
+ * badge (endSession()/finishRapidFire()/CBTExamMode.finish() all now
+ * return `newBadges`, each already carrying a calm, observant `desc` in
+ * Kairo's voice — see BadgeSystem.TRACK_CATALOG), plus one Prestige Level
+ * line if this session's real Kairo Points crossed into a new tier
+ * (derived from level.totalPoints - level.pointsEarned as the honest
+ * pre-session total, never a separately-tracked "previous tier" that could
+ * drift). Every session type funnels through this one function so a toast
+ * never has to be re-implemented per screen.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function detectTierUpgradeMessages(result: any): string[] {
+  if (!result) return [];
+  const lines: string[] = [];
+
+  for (const badge of result.newBadges ?? []) {
+    lines.push(`${badge.name}. ${badge.desc}`);
+  }
+
+  const level = result.level;
+  if (level && typeof level.totalPoints === 'number' && typeof level.pointsEarned === 'number') {
+    const previousTotal = level.totalPoints - level.pointsEarned;
+    const prevTier = getPrestigeTier(previousTotal);
+    const newTier = getPrestigeTier(level.totalPoints);
+    if (newTier.tierIndex > prevTier.tierIndex) {
+      lines.push(`${newTier.name}. ${newTier.message}`);
+    }
+  }
+
+  return lines;
 }
 
 export interface ProfileEditDetails {

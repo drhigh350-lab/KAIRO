@@ -156,6 +156,11 @@ export class RapidFireEngine {
     // same as any other non-bonus Practice mode in endSession().
     const levelUpdate = this.engine.levelSystem.update(correct, 0);
 
+    // Same gap levelSystem.update() had above: Rapid Fire runs outside
+    // endSession()'s lifecycle, so nothing here ever checked the Badge
+    // Vault either — see CBTExamMode.finish()'s identical fix.
+    const newBadges = this.engine.badgeSystem.checkAndAward(this.engine.graph);
+
     return {
       mode: 'rapid_fire',
       totalQuestions: this.sessionData.answers.length,
@@ -164,7 +169,8 @@ export class RapidFireEngine {
       avgTimeMs: Math.round(avgTime),
       bestStreak: this.sessionData.bestStreak,
       durationSec: Math.round((this.sessionData.endTime - this.sessionData.startTime) / 1000),
-      level: levelUpdate
+      level: levelUpdate,
+      newBadges
     };
   }
 }

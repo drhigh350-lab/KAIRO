@@ -9,7 +9,7 @@ import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type SessionRewards } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, type WeakTopicSummary } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, detectTierUpgradeMessages, type WeakTopicSummary } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
@@ -140,10 +140,15 @@ export function PracticeFlow() {
   // never carries a Kairo Score delta; that stays off this screen entirely
   // (KISS enforcement, the approved Kairo Score/Kairo Points directive).
   const [rewards, setRewards] = useState<SessionRewards | null>(null);
+  // Batch 3's tier-upgrade toast lines (Prestige Level + Badge Vault) —
+  // real, specific text derived from what this exact session actually
+  // changed (see detectTierUpgradeMessages()), not a generic "leveled up".
+  const [tierUpgrades, setTierUpgrades] = useState<string[]>([]);
   function resetResults() {
     setResults([]);
     setRemediationDone(false);
     setRewards(null);
+    setTierUpgrades([]);
   }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
@@ -492,6 +497,7 @@ export function PracticeFlow() {
               streakLit: hasCompletedTodaysRecommendation(),
               freezesAvailable: streak?.freezesAvailable ?? 0,
             });
+            setTierUpgrades(detectTierUpgradeMessages(result));
           } else {
             setRewards(null);
           }
@@ -736,6 +742,7 @@ export function PracticeFlow() {
         onHome={() => goHomeOrStreakSavior(navigate, entryFlow === 'suggested')}
         onAction={handleSummaryAction}
         rewards={rewards}
+        tierUpgrades={tierUpgrades}
       />
     );
   }

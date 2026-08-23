@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Card, Button } from '../../components';
-import { StatTile, ChevronRight, StreakFlameBadge } from '../learning/shared';
+import { StatTile, ChevronRight, StreakFlameBadge, InlineToast } from '../learning/shared';
 
 export interface PracticeResult {
   correct: boolean;
@@ -43,6 +44,28 @@ export interface PracticeSummaryProps {
   onAction?: (action: PracticeSummaryAction) => void;
   /** Real rewards from endSession() — null only if the session somehow ended without one (e.g. a sync/engine error), in which case no rewards badges render at all rather than showing made-up numbers. */
   rewards?: SessionRewards | null;
+  /** Batch 3 tier-upgrade toast lines (Prestige Level + Badge Vault), from detectTierUpgradeMessages() — real, specific copy per upgrade, cycled one at a time rather than shown all at once. */
+  tierUpgrades?: string[];
+}
+
+/**
+ * Sleek, non-intrusive, top-of-screen — reuses the same InlineToast/local-
+ * timer pattern already used across the app (ChallengesHub's share
+ * confirmation, PracticeQuestion's bookmark/report toasts) rather than a
+ * parallel toast system. Cycles through every real upgrade this session
+ * earned one at a time (usually just one) instead of stacking them.
+ */
+function useTierUpgradeToast(tierUpgrades: string[]) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    setIndex(0);
+    if (tierUpgrades.length === 0) return;
+    const timer = setInterval(() => {
+      setIndex((i) => (i + 1 < tierUpgrades.length ? i + 1 : i));
+    }, 3200);
+    return () => clearInterval(timer);
+  }, [tierUpgrades]);
+  return tierUpgrades[index] ?? null;
 }
 
 type SummaryTier = 'low' | 'mid' | 'high';
@@ -53,13 +76,14 @@ function tierFor(accuracy: number): SummaryTier {
   return 'high';
 }
 
-export function PracticeSummary({ results, onHome, onAction, rewards }: PracticeSummaryProps) {
+export function PracticeSummary({ results, onHome, onAction, rewards, tierUpgrades = [] }: PracticeSummaryProps) {
   const total = results.length;
   const correctCount = results.filter((r) => r.correct).length;
   const accuracy = total ? Math.round((correctCount / total) * 100) : 0;
   const totalTime = results.reduce((s, r) => s + (r.time || 0), 0);
   const avgTime = total ? Math.round(totalTime / total) : 0;
   const pointsEarned = rewards?.pointsEarned ?? 0;
+  const upgradeToast = useTierUpgradeToast(tierUpgrades);
 
   // Real per-subject accuracy from what was actually answered this session —
   // a comparison only means something with 2+ distinct subjects present.
@@ -111,7 +135,8 @@ export function PracticeSummary({ results, onHome, onAction, rewards }: Practice
   const [primary, secondary] = TIER_ACTIONS[tier];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', position: 'relative' }}>
+      {upgradeToast && <InlineToast>{upgradeToast}</InlineToast>}
       <div style={{ padding: '36px 20px 20px', textAlign: 'center' }}>
         <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--dark-bg-elevated)', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M4 12l5 5L20 6" /></svg>

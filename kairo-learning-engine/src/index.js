@@ -44,6 +44,7 @@ import { SegmentedLeaderboard, UniversityLeaderboard } from "./leaderboard/Leade
 
 // Progression
 import { LevelSystem, BadgeSystem } from "./progression/ProgressionSystem.js";
+import { getPrestigeTier, PrestigeTiers } from "./progression/PrestigeLevels.js";
 
 // Onboarding
 import { OnboardingEngine } from "./onboarding/OnboardingEngine.js";
@@ -960,9 +961,10 @@ export class KairoEngine {
         : 0;
     const levelUpdate = this.levelSystem.update(this.currentSession.correctCount, pointsBonus);
 
-    // Check badges
-    const badgeContext = this._buildBadgeContext();
-    const newBadges = this.badgeSystem.checkAndAward(badgeContext);
+    // Badge Vault: recomputed from real graph/profile state every session
+    // end, same spirit as EliteScore.calculate() — never a hand-tracked
+    // context object (see BadgeSystem's own doc comment).
+    const newBadges = this.badgeSystem.checkAndAward(this.graph);
 
     // Update leaderboards
     this.segmentedLeaderboard.addStudent(this.profile);
@@ -1036,25 +1038,6 @@ export class KairoEngine {
     return result;
   }
 
-  _buildBadgeContext() {
-    const concepts = Array.from(this.graph.nodes.values());
-    const sessions = this.profile.sessions;
-    const recent = sessions.slice(-1)[0];
-
-    return {
-      reinforcedCount: concepts.filter(c => c.retentionState === 'reinforced').length,
-      momentum: this.profile.streakData?.currentMomentum || 0,
-      perfectSession: recent && recent.questionsAnswered >= 10 && recent.correctCount === recent.questionsAnswered,
-      rapidFireAce: false, // set by RapidFireEngine
-      recoverySession: this.profile.macroState === 'recovering',
-      masteredTopics: 0, // calculate from graph
-      masteredSubjects: 0,
-      uniContribution: 0,
-      nightSessions: sessions.filter(s => new Date(s.completedAt).getHours() >= 22).length,
-      earlySessions: sessions.filter(s => new Date(s.completedAt).getHours() <= 7).length
-    };
-  }
-
   // ═══════════════════════════════════════════════════════════════
   // PRACTICE MODES
   // ═══════════════════════════════════════════════════════════════
@@ -1124,11 +1107,27 @@ export class KairoEngine {
     return this.levelSystem.getProgress();
   }
 
+  /** Prestige tier (Batch 1) — a coarser, slower-moving status band derived from the same lifetime kairoPoints LevelSystem reads, never blended with Level. */
+  getPrestigeProgress() {
+    return getPrestigeTier(this.profile.kairoPoints);
+  }
+
+  /** Backward-compatible {earned, available} shape — see BadgeSystem.getEarned/getAvailable's own doc comments. */
   getBadges() {
     return {
-      earned: this.badgeSystem.getEarned(),
-      available: this.badgeSystem.getAvailable()
+      earned: this.badgeSystem.getEarned(this.graph),
+      available: this.badgeSystem.getAvailable(this.graph)
     };
+  }
+
+  /** Full Badge Vault (Batch 2) — every track's current tier, achieved-at date, and next-tier challenge framing, for the Vault bottom sheet. */
+  getBadgeVault() {
+    return this.badgeSystem.getVault(this.graph);
+  }
+
+  /** Up to 4 badge icons (3 universal tracks + the single strongest subject track) for the compact Profile summary row. */
+  getDisplayBadges() {
+    return this.badgeSystem.getDisplayBadges(this.graph);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1305,6 +1304,8 @@ export {
   UniversityLeaderboard,
   LevelSystem,
   BadgeSystem,
+  getPrestigeTier,
+  PrestigeTiers,
   OnboardingEngine,
   ContentPackManager,
   SupabaseSyncAdapter,

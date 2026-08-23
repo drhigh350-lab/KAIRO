@@ -356,6 +356,15 @@ export class CBTExamMode {
     // the one session type that earns it, matching the endurance it takes.
     results.level = this.engine.levelSystem.update(results.correct, KairoPointsAwards.CBT_SESSION);
 
+    // Same gap as levelSystem.update() had above: CBT runs outside
+    // endSession()'s lifecycle, so nothing here ever checked the Badge
+    // Vault either — a finished CBT mock is exactly the kind of high-
+    // volume, high-accuracy session the Execution track is meant to
+    // credit, and recordSession() above already feeds it into
+    // profile.sessions, so skipping this check would silently exclude a
+    // student's exam runs from their own accuracy signal.
+    results.newBadges = this.engine.badgeSystem.checkAndAward(this.engine.graph);
+
     this.engine.sync.queue({
       type: 'session',
       data: {

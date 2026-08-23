@@ -3,7 +3,7 @@
  * Run with: node tests/engine.test.js
  */
 
-import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem } from "../src/index.js";
+import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem, BadgeSystem, getPrestigeTier, PrestigeTiers } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
 import { RetentionState, ErrorTag, StreakConstants, KairoPointsAwards } from "../src/utils/constants.js";
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
@@ -491,6 +491,207 @@ test('Badge system has catalog and checks', () => {
   assert(Array.isArray(badges.earned), 'Should have earned badges array');
   assert(Array.isArray(badges.available), 'Should have available badges array');
   assert(badges.available.length > 0, 'Should have available badges');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PRESTIGE LEVELS (Batch 1)
+// ═══════════════════════════════════════════════════════════════
+
+test('getPrestigeTier() maps kairoPoints to the correct tier at every real boundary', () => {
+  assertEqual(getPrestigeTier(0).name, 'The Candidate', '0 points is The Candidate');
+  assertEqual(getPrestigeTier(499).name, 'The Candidate', '499 points is still The Candidate');
+  assertEqual(getPrestigeTier(500).name, 'The Strategist', '500 points crosses into The Strategist');
+  assertEqual(getPrestigeTier(2499).name, 'The Strategist', '2,499 points is still The Strategist');
+  assertEqual(getPrestigeTier(2500).name, 'The Scholar', '2,500 points crosses into The Scholar');
+  assertEqual(getPrestigeTier(7499).name, 'The Scholar', '7,499 points is still The Scholar');
+  assertEqual(getPrestigeTier(7500).name, 'The Elite', '7,500 points crosses into The Elite');
+  assertEqual(getPrestigeTier(14999).name, 'The Elite', '14,999 points is still The Elite');
+  assertEqual(getPrestigeTier(15000).name, 'The Outlier', '15,000 points crosses into The Outlier');
+  assertEqual(getPrestigeTier(50000).name, 'The Outlier', 'Any points beyond 15,000 stays The Outlier — it never overflows past the top tier');
+});
+
+test('getPrestigeTier() reports the correct border tokens, glow, and next-tier framing', () => {
+  const candidate = getPrestigeTier(0);
+  assertEqual(candidate.borderToken, 'slate', 'The Candidate should carry the slate border token');
+  assertEqual(candidate.glow, false, 'Only The Outlier gets the glow treatment');
+  assertEqual(candidate.nextTierName, 'The Strategist', 'The Candidate should point at The Strategist as next');
+  assertEqual(candidate.pointsToNext, 500, 'A fresh student needs exactly 500 points to reach The Strategist');
+
+  const strategist = getPrestigeTier(1200);
+  assertEqual(strategist.borderToken, 'bronze', 'The Strategist should carry the bronze border token');
+  assertEqual(strategist.nextTierName, 'The Scholar', '1,200 points should point at The Scholar as next');
+  assertEqual(strategist.pointsToNext, 2500 - 1200, 'pointsToNext should be the exact real gap to the next tier boundary');
+
+  const outlier = getPrestigeTier(20000);
+  assertEqual(outlier.borderToken, 'amber', 'The Outlier should carry the amber border token');
+  assertEqual(outlier.glow, true, 'The Outlier is the one tier with the glow effect');
+  assertEqual(outlier.nextTierName, null, 'The Outlier has no next tier to point at — it is the top');
+  assertEqual(outlier.pointsToNext, 0, 'pointsToNext should be 0 once at the top tier');
+  assertEqual(outlier.progressPercent, 100, 'progressPercent should read 100 at the top tier');
+});
+
+test('getPrestigeTier() is monotonic and stateless — five tiers defined, never decreases as points rise', () => {
+  assertEqual(PrestigeTiers.length, 5, 'Exactly 5 Prestige tiers, per spec');
+  let lastTierIndex = -1;
+  for (const points of [0, 499, 500, 1000, 2499, 2500, 5000, 7499, 7500, 10000, 14999, 15000, 30000]) {
+    const tier = getPrestigeTier(points);
+    assert(tier.tierIndex >= lastTierIndex, `Tier index must never decrease as points rise — regressed at ${points}`);
+    lastTierIndex = tier.tierIndex;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// BADGE VAULT (Batch 2) — tiered tracks
+// ═══════════════════════════════════════════════════════════════
+
+test('Badge Vault — Consistency track thresholds (7/30/100-day longestMomentum, sticky signal)', () => {
+  const profile = new StudentProfile({ studentId: 'vault_consistency', name: 'V' });
+  profile.streakData = { longestMomentum: 6 };
+  assertEqual(BadgeSystem._consistencyTier(BadgeSystem._consistencyValue(profile)), 0, '6-day longest momentum should still be locked (tier 0)');
+
+  profile.streakData.longestMomentum = 7;
+  assertEqual(BadgeSystem._consistencyTier(BadgeSystem._consistencyValue(profile)), 1, '7-day longest momentum should unlock tier 1 (Momentum Builder)');
+
+  profile.streakData.longestMomentum = 30;
+  assertEqual(BadgeSystem._consistencyTier(BadgeSystem._consistencyValue(profile)), 2, '30-day longest momentum should unlock tier 2 (The Unbreakable)');
+
+  profile.streakData.longestMomentum = 100;
+  assertEqual(BadgeSystem._consistencyTier(BadgeSystem._consistencyValue(profile)), 3, '100-day longest momentum should unlock tier 3 (The Relentless)');
+
+  // Sticky: a real streak break (currentMomentum reset) must not undo a tier
+  // already earned via longestMomentum, which never decreases.
+  profile.streakData.currentMomentum = 1;
+  assertEqual(BadgeSystem._consistencyTier(BadgeSystem._consistencyValue(profile)), 3, 'A live streak break should not un-earn a Consistency tier already reached via longestMomentum');
+});
+
+test('Badge Vault — Resilience track combines recovery count and rebuilt-concept count', () => {
+  const profile = new StudentProfile({ studentId: 'vault_resilience', name: 'V' });
+  const graph = new KnowledgeGraph();
+
+  assertEqual(BadgeSystem._resilienceTier(BadgeSystem._resilienceValue(profile, graph)), 0, 'No recoveries and no rebuilt concepts should stay locked');
+
+  profile.macroStateHistory = [{ from: 'at_risk', to: 'recovering', at: Date.now() }];
+  assertEqual(BadgeSystem._resilienceTier(BadgeSystem._resilienceValue(profile, graph)), 1, 'A single real recovery should unlock tier 1 (The Comeback)');
+
+  for (let i = 0; i < 5; i++) {
+    const c = new ConceptNode({ id: `resil_${i}`, name: `C${i}`, subject: 'Biology', topic: 'T' });
+    c.reinforcedCycles = 1;
+    graph.addConcept(c);
+  }
+  assertEqual(BadgeSystem._resilienceTier(BadgeSystem._resilienceValue(profile, graph)), 2, '5 concepts rebuilt from Fading should unlock tier 2 (Ironclad Foundation), even with only 1 recovery');
+
+  profile.macroStateHistory.push(
+    { from: 'at_risk', to: 'recovering', at: Date.now() },
+    { from: 'at_risk', to: 'recovering', at: Date.now() }
+  );
+  for (let i = 5; i < 15; i++) {
+    const c = new ConceptNode({ id: `resil_${i}`, name: `C${i}`, subject: 'Biology', topic: 'T' });
+    c.reinforcedCycles = 2;
+    graph.addConcept(c);
+  }
+  assertEqual(BadgeSystem._resilienceTier(BadgeSystem._resilienceValue(profile, graph)), 3, '3 recoveries + 15 rebuilt concepts together should unlock tier 3 (The Architect)');
+});
+
+test('Badge Vault — Execution track requires both a rising accuracy bar and a rising sample-size floor', () => {
+  function fakeSessions(count, accuracy) {
+    return Array.from({ length: count }, () => ({ questionsAnswered: 10, correctCount: Math.round(10 * accuracy) }));
+  }
+  const profile = new StudentProfile({ studentId: 'vault_execution', name: 'V' });
+
+  profile.sessions = fakeSessions(1, 1.0); // 10 questions, 100% — high accuracy but too small a sample
+  assertEqual(BadgeSystem._executionTier(BadgeSystem._executionValue(profile)), 0, 'A single perfect 10-question session should not be enough volume for tier 1');
+
+  profile.sessions = fakeSessions(2, 0.8); // 20 questions, 80%
+  assertEqual(BadgeSystem._executionTier(BadgeSystem._executionValue(profile)), 1, '20 questions at 80% accuracy should unlock tier 1 (Sharp Shooter)');
+
+  profile.sessions = fakeSessions(5, 0.9); // 50 questions, 90%
+  assertEqual(BadgeSystem._executionTier(BadgeSystem._executionValue(profile)), 2, '50 questions at 90% accuracy should unlock tier 2 (The Sniper)');
+
+  profile.sessions = fakeSessions(10, 0.95); // 100 questions, 95%
+  assertEqual(BadgeSystem._executionTier(BadgeSystem._executionValue(profile)), 3, '100 questions at 95% accuracy should unlock tier 3 (Elite Operator)');
+
+  profile.sessions = fakeSessions(20, 0.99); // 200 questions at very high accuracy, but window caps at the most recent 20 sessions
+  assertEqual(BadgeSystem._executionTier(BadgeSystem._executionValue(profile)), 3, 'Still tier 3 — the rolling window is capped, not unbounded');
+});
+
+test('Badge Vault — Subject track needs real seeded volume (MIN_SUBJECT_CONCEPTS) before mastery % counts at all', () => {
+  const graph = new KnowledgeGraph();
+  for (let i = 0; i < 4; i++) {
+    const c = new ConceptNode({ id: `sub_small_${i}`, name: `C${i}`, subject: 'Geography', topic: 'T' });
+    c.retentionState = 'reinforced';
+    graph.addConcept(c);
+  }
+  assertEqual(BadgeSystem._subjectValues(graph).find(s => s.subject === 'Geography'), undefined, 'A subject with fewer than MIN_SUBJECT_CONCEPTS concepts should not get a track at all, even at 100% mastery');
+
+  const graph2 = new KnowledgeGraph();
+  for (let i = 0; i < 8; i++) {
+    const c = new ConceptNode({ id: `sub_big_${i}`, name: `C${i}`, subject: 'Physics', topic: 'T' });
+    c.retentionState = i < 2 ? 'held' : 'unseen'; // 2/8 = 25%
+    graph2.addConcept(c);
+  }
+  const physics = BadgeSystem._subjectValues(graph2).find(s => s.subject === 'Physics');
+  assertEqual(BadgeSystem._subjectTier(physics.masteryPct), 1, '25% mastery across 8 real concepts should unlock tier 1 (Initiate)');
+
+  for (const c of graph2.nodes.values()) c.retentionState = 'reinforced';
+  const physicsFull = BadgeSystem._subjectValues(graph2).find(s => s.subject === 'Physics');
+  assertEqual(BadgeSystem._subjectTier(physicsFull.masteryPct), 3, '100% mastery should unlock tier 3 (Authority)');
+});
+
+test('Badge Vault — checkAndAward() persists exactly one live entry per track and never re-fires an already-reached tier', () => {
+  const profile = new StudentProfile({ studentId: 'vault_persist', name: 'V' });
+  const graph = new KnowledgeGraph();
+  const badgeSystem = new BadgeSystem(profile);
+
+  profile.streakData = { longestMomentum: 7 };
+  const first = badgeSystem.checkAndAward(graph);
+  assertEqual(first.length, 1, 'Reaching Consistency tier 1 for the first time should report exactly one newly-earned badge');
+  assertEqual(first[0].trackKey, 'consistency', 'The newly-earned badge should be on the consistency track');
+  assertEqual(first[0].tier, 1, 'The newly-earned badge should be tier 1');
+  assertEqual(first[0].name, 'Momentum Builder', 'Tier 1 Consistency should be named Momentum Builder');
+  assert(profile.badges.some(id => id.startsWith('consistency::tier1@')), 'profile.badges should carry the encoded consistency tier-1 id with a real timestamp');
+
+  const second = badgeSystem.checkAndAward(graph);
+  assertEqual(second.length, 0, 'Calling checkAndAward() again with no new real progress should award nothing — no duplicate awards for a tier already held');
+
+  // Advance to tier 2 — the old tier-1 entry for this track must be
+  // replaced, not accumulated (a track shows only its CURRENT tier).
+  profile.streakData.longestMomentum = 30;
+  const third = badgeSystem.checkAndAward(graph);
+  assertEqual(third.length, 1, 'Crossing into tier 2 should report exactly one newly-earned badge');
+  assertEqual(third[0].tier, 2, 'The newly-earned badge should be tier 2 (The Unbreakable)');
+  const consistencyEntries = profile.badges.filter(id => id.startsWith('consistency::'));
+  assertEqual(consistencyEntries.length, 1, 'Only one live consistency entry should ever be persisted — the tier-1 entry must be replaced by tier-2, not kept alongside it');
+  assert(consistencyEntries[0].startsWith('consistency::tier2@'), 'The one live consistency entry should now be tier 2');
+});
+
+test('Badge Vault — getVault() reports achieved date, next-tier framing, and getDisplayBadges() caps at 4', () => {
+  const profile = new StudentProfile({ studentId: 'vault_display', name: 'V' });
+  const graph = new KnowledgeGraph();
+  const badgeSystem = new BadgeSystem(profile);
+
+  const vault = badgeSystem.getVault(graph);
+  assert(vault.tracks.consistency.locked, 'A fresh profile should start with Consistency locked');
+  assertEqual(vault.tracks.consistency.achievedAt, null, 'A locked track has no achieved date');
+  assertEqual(vault.tracks.consistency.nextTier.name, 'Momentum Builder', 'A locked track should frame tier 1 as the next challenge');
+  assertEqual(vault.subjects.length, 0, 'No graph content means no subject tracks at all');
+
+  profile.streakData = { longestMomentum: 30 };
+  badgeSystem.checkAndAward(graph);
+  const vault2 = badgeSystem.getVault(graph);
+  assert(!vault2.tracks.consistency.locked, 'Consistency should now be unlocked');
+  assertEqual(vault2.tracks.consistency.currentTierName, 'The Unbreakable', 'The current tier should be the highest one actually reached (tier 2), not tier 1');
+  assert(typeof vault2.tracks.consistency.achievedAt === 'number', 'An unlocked track should carry a real achieved-at timestamp');
+  assertEqual(vault2.tracks.consistency.nextTier.name, 'The Relentless', 'The next tier framing should point at tier 3');
+
+  for (let i = 0; i < 6; i++) {
+    const c = new ConceptNode({ id: `disp_${i}`, name: `C${i}`, subject: 'Mathematics', topic: 'T' });
+    c.retentionState = 'reinforced';
+    graph.addConcept(c);
+  }
+  const display = badgeSystem.getDisplayBadges(graph);
+  assert(display.length <= 4, 'getDisplayBadges() must never return more than 4 entries');
+  assertEqual(display.length, 4, 'With Consistency unlocked and a real qualifying subject present, all 4 slots should be filled');
+  assertEqual(display[3].trackKey, 'subject:Mathematics', 'The 4th slot should be the single strongest subject track');
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1966,10 +2167,11 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
     // the mid-exam withholding behavior below, not because finish() is
     // broken (a real-engine test covers finish() itself further down this
     // file).
-    profile: { recordSession: () => {}, sessions: [] },
+    profile: { recordSession: () => {}, sessions: [], streakData: {}, macroStateHistory: [] },
     graph: { nodes: new Map() },
     eliteScore: { history: [], calculate: () => ({ total: 0, accuracy: 0, retention: 0, consistency: 0, timestamp: Date.now() }) },
-    levelSystem: { update: () => ({ pointsEarned: 0, totalPoints: 0, level: { level: 1 }, leveledUp: false, nextLevelPoints: 100 }) }
+    levelSystem: { update: () => ({ pointsEarned: 0, totalPoints: 0, level: { level: 1 }, leveledUp: false, nextLevelPoints: 100 }) },
+    badgeSystem: { checkAndAward: () => [] }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
