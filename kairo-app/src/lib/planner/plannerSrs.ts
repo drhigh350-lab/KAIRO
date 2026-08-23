@@ -20,6 +20,44 @@ export function classifyAccuracyTier(accuracyPct: number): SrsTier {
   return 'critical';
 }
 
+// Velocity Tracking: a question answered correctly but slowly is real
+// signal the student hasn't built fluency yet, not genuine mastery -- JAMB/
+// UTME is timed, so "eventually correct" isn't the same skill as "correct
+// at exam pace." A single slow answer is normal friction; more than one in
+// the same Verification Session means the pattern is real.
+export const HIGH_FRICTION_SECONDS = 60;
+const HIGH_FRICTION_MASTERY_THROTTLE_COUNT = 2;
+
+export interface TimedAnswer {
+  correct: boolean;
+  /** Real elapsed seconds on this question. */
+  timeSec: number;
+}
+
+/** A correct answer that took longer than HIGH_FRICTION_SECONDS -- "eventually right," not "exam-ready." */
+export function isHighFrictionPass(answer: TimedAnswer): boolean {
+  return answer.correct && answer.timeSec > HIGH_FRICTION_SECONDS;
+}
+
+export function countHighFrictionPasses(answers: TimedAnswer[]): number {
+  return answers.filter(isHighFrictionPass).length;
+}
+
+/**
+ * Accuracy alone drives Critical/Forming; Mastery additionally requires
+ * getting there at real exam pace. Two or more High-Friction Passes in the
+ * same session throttle what would otherwise be a Mastery result down to
+ * Forming (+1/+3/+7 days) instead of Mastery (+3/+7/+14/+21) -- the student
+ * needs to come back sooner and build speed, not just eventual accuracy.
+ * Never throttles Forming/Critical further -- a slow-but-correct answer at
+ * a tier that already isn't Mastery carries no additional penalty.
+ */
+export function classifyTier(accuracyPct: number, highFrictionPassCount: number): SrsTier {
+  const tier = classifyAccuracyTier(accuracyPct);
+  if (tier === 'mastery' && highFrictionPassCount >= HIGH_FRICTION_MASTERY_THROTTLE_COUNT) return 'forming';
+  return tier;
+}
+
 const MASTERY_OFFSETS_DAYS = [3, 7, 14, 21];
 const FORMING_OFFSETS_DAYS = [1, 3, 7];
 
@@ -56,9 +94,9 @@ export interface TopicProgress {
 
 export type TopicProgressMap = Record<string, TopicProgress>;
 
-/** Applies one Verification/topic-session result to a topic's SRS state — the write side of the decay timer. */
-export function recordTopicAttempt(topicKey: string, accuracyPct: number, nowIso: string, progress: TopicProgressMap): TopicProgressMap {
-  const tier = classifyAccuracyTier(accuracyPct);
+/** Applies one Verification/topic-session result to a topic's SRS state — the write side of the decay timer. `highFrictionPassCount` (see classifyTier above) can throttle what would otherwise be a Mastery result down to Forming. */
+export function recordTopicAttempt(topicKey: string, accuracyPct: number, nowIso: string, progress: TopicProgressMap, highFrictionPassCount = 0): TopicProgressMap {
+  const tier = classifyTier(accuracyPct, highFrictionPassCount);
   return {
     ...progress,
     [topicKey]: {
@@ -76,6 +114,15 @@ export interface DueTopic {
   tier: SrsTier;
   /** True for a critical prerequisite gap; false for a due mastery/forming resurface. */
   isCriticalGap: boolean;
+  /**
+   * Set when this DueTopic is a Prerequisite Fallback reroute: topicKey is
+   * NOT the topic that actually failed Verification (<50%) but the earlier
+   * topic it depends on, per the Blueprint's dependency data. rerouteFromKey
+   * holds the original failed topic's key so callers can explain why this
+   * topic is being recommended instead. See findPrerequisiteTopicKey()
+   * (plannerEngine.ts) and getPinnedRecommendation() (plannerApi.ts).
+   */
+  rerouteFromKey?: string;
 }
 
 /**

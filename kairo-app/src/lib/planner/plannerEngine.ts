@@ -284,6 +284,31 @@ function orderByPrerequisites(topics: PlannedTopic[]): PlannedTopic[] {
   return ordered;
 }
 
+/**
+ * Resolves a PlannedTopic.key's first stated prerequisite to that
+ * prerequisite's own key, or null when the topic has none or its
+ * prerequisite title doesn't resolve to a real topic (same leniency as
+ * orderByPrerequisites). `startingStageIndex` should be the student's own
+ * chosen starting stage for this subject (the same value buildPlan() uses
+ * to schedule weeks) so a resolved key is always one that's actually
+ * reachable in the current plan, not a topic scheduling never surfaces.
+ *
+ * Used for the Verification Session "Prerequisite Fallback": a <50%
+ * result on a topic shouldn't just re-queue the same topic that was just
+ * tested -- if the Blueprint says it depends on an earlier one, that's
+ * the real gap to close first.
+ */
+export function findPrerequisiteTopicKey(key: string, subject: Subject, startingStageIndex: number): string | null {
+  const [, , ...rest] = key.split('::');
+  const topicTitle = rest.join('::');
+  const allTopics = flattenSubjectTopics(subject, startingStageIndex);
+  const current = allTopics.find((t) => t.topicTitle === topicTitle);
+  const prereqTitle = current?.prerequisites?.[0];
+  if (!prereqTitle) return null;
+  const prereq = allTopics.find((t) => t.topicTitle === prereqTitle);
+  return prereq ? prereq.key : null;
+}
+
 export interface BuildPlanOptions {
   input: PlannerInput;
   /** Real Blueprint subjects, e.g. from getSubjects(). Only subjects referenced in input.subjects are used. */

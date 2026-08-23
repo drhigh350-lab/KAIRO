@@ -505,6 +505,60 @@ export class KairoEngine {
   }
 
   /**
+   * The Synthesis Injector: for a student ranked The Scholar or higher
+   * (lifetime kairoPoints >= 2,500 — PrestigeTiers' own threshold, the same
+   * rank Profile's badge reads), a strictly single-topic 10-question queue
+   * gets exactly 2 slots (4 and 8, 1-indexed — index 3/7 here) replaced
+   * with a real question from a DIFFERENT topic the student has already
+   * mastered (Held/Reinforced). Deliberate context-switching friction: a
+   * single-topic drill never demands the topic-to-topic jumps a real JAMB/
+   * UTME paper does, so this is the one place that skill gets exercised.
+   *
+   * No-op below The Scholar, for anything other than a full 10-question
+   * queue (slots 4/8 aren't meaningful at any other length), or when
+   * there's no real mastered question outside this queue's own topic(s) to
+   * draw from — `questions` is returned unchanged in every one of those
+   * cases, never padded or shortened to force the shape.
+   */
+  injectSynthesisQuestions(questions, primaryConceptIds = []) {
+    const SYNTHESIS_SLOTS = [3, 7]; // 0-indexed -> "slot 4 and slot 8"
+    const SCHOLAR_TIER_INDEX = 2;
+    if (questions.length !== 10) return questions;
+    if (getPrestigeTier(this.profile.kairoPoints).tierIndex < SCHOLAR_TIER_INDEX) return questions;
+
+    const primaryTopics = new Set(
+      primaryConceptIds
+        .map(id => this.graph.getConcept(id))
+        .filter(Boolean)
+        .map(c => `${c.subject}::${c.topic}`)
+    );
+
+    const masteredElsewhere = Array.from(this.graph.nodes.values()).filter(c =>
+      (c.retentionState === 'held' || c.retentionState === 'reinforced') &&
+      !primaryTopics.has(`${c.subject}::${c.topic}`)
+    );
+    if (masteredElsewhere.length === 0) return questions;
+
+    const pool = shuffleArray(masteredElsewhere);
+    const injected = questions.slice();
+    const usedIds = new Set(questions.map(q => q.id));
+    let poolIndex = 0;
+
+    for (const slot of SYNTHESIS_SLOTS) {
+      while (poolIndex < pool.length) {
+        const concept = pool[poolIndex++];
+        const q = this.getQuestionForConcept(concept.id, { excludeIds: Array.from(usedIds) });
+        if (q) {
+          injected[slot] = q;
+          usedIds.add(q.id);
+          break;
+        }
+      }
+    }
+    return injected;
+  }
+
+  /**
    * Fetch one exact, specific question by ID — unlike getQuestionForConcept
    * (which picks any question that tests a concept), this is for Review's
    * Reflection Moment (Review Module §5.5), which must reconstruct the

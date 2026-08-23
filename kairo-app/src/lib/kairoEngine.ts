@@ -420,7 +420,12 @@ export async function startSuggestedSession(limit = 5, anchorConceptId?: string 
         }
         if (questions.length === before) break; // no real questions left in this topic — stop rather than loop
       }
-      if (questions.length > 0) return { questions, kaiMessage };
+      if (questions.length > 0) {
+        // Batch 3's Synthesis Injector — a no-op below The Scholar rank or
+        // for anything shorter than a full 10-question queue, see
+        // KairoEngine.injectSynthesisQuestions().
+        return { questions: kairo.injectSynthesisQuestions(questions, ordered), kaiMessage };
+      }
       // Genuinely nothing real for this topic — fall through to the general queue below.
     }
   }

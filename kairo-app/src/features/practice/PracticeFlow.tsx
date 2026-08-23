@@ -16,6 +16,7 @@ import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 import { recordVerificationResult } from '../../lib/planner/plannerApi';
+import { countHighFrictionPasses } from '../../lib/planner/plannerSrs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
 
 /** Batch 2's "Trust, but Verify" loop — a strictly scoped 10-question session on exactly one Planner topic, launched instantly with no picker screens. */
@@ -479,7 +480,12 @@ export function PracticeFlow() {
       // never blocks the summary transition.
       if (entryFlow === 'verify' && plannerTopicKeyRef.current) {
         const accuracyPct = newResults.length ? Math.round((newResults.filter((r) => r.correct).length / newResults.length) * 100) : 0;
-        recordVerificationResult(plannerTopicKeyRef.current, accuracyPct).catch(() => {});
+        // Velocity Tracking: a correct-but-slow answer (> HIGH_FRICTION_SECONDS)
+        // is "eventually right," not exam-ready -- two or more of these in
+        // the same session throttle what would otherwise be a Mastery tier
+        // down to Forming (see classifyTier() in plannerSrs.ts).
+        const highFrictionPassCount = countHighFrictionPasses(newResults.map((r) => ({ correct: r.correct, timeSec: r.time ?? 0 })));
+        recordVerificationResult(plannerTopicKeyRef.current, accuracyPct, highFrictionPassCount).catch(() => {});
       }
       if (kairo) {
         // endSession() itself no longer waits on IndexedDB/Supabase (that
