@@ -89,13 +89,29 @@ export const EliteScorePoints = Object.freeze({
   CONSISTENCY_DAY_BONUS: 3    // per distinct calendar day a session was ever completed
 });
 
-// Gamification layer on top of the weighted Kairo Score — display-only,
-// never blended into the weighted math above (EliteScore.calculate()'s
-// total/history are untouched by this). A fixed, transparent bonus shown
-// alongside the real session-to-session delta for the two session types
-// that matter most: the daily recommendation and a full CBT simulation.
-export const EliteScoreBonus = Object.freeze({
-  HIGH_YIELD_SESSION: 10
+// ─── Kairo Points (ProgressionSystem.LevelSystem) ───
+// Two deliberately different kinds of number, never blended:
+//   Kairo Score (above) — bounded 0-100, asymptotic, recomputed fresh from
+//     cumulative signals every session. A true UTME-readiness gauge: it
+//     can plateau, and is meant to.
+//   Kairo Points (here) — unbounded, strictly additive, never recomputed
+//     from a snapshot. Every award below is a one-time credit for a
+//     genuine, permanent milestone (LevelSystem.awardFromProgress() checks
+//     "have I already banked this specific concept/day/topic" before
+//     awarding, never "does the current count look right"), so the total
+//     can never fall even if the underlying state that earned it later
+//     regresses — e.g. a concept decaying back out of Reinforced doesn't
+//     claw back the points it already earned. This is also where the
+//     High-Yield Session bonus lives now — it used to be a display-only
+//     add-on to the Kairo Score delta that never actually reached any
+//     persisted total (the exact "+15 shown, +5 landed" bug this constant
+//     replaces the cause of).
+export const KairoPointsAwards = Object.freeze({
+  REINFORCED_CONCEPT: 50,  // once per concept, the first time it ever reaches Reinforced
+  HELD_CONCEPT: 20,        // once per concept, the first time it ever reaches Held (or above)
+  CONSISTENCY_DAY: 10,     // once per distinct calendar day a session is ever completed
+  TOPIC_MASTERED: 100,     // once per topic, the first time it crosses 80% Held/Reinforced
+  HIGH_YIELD_SESSION: 10   // once per completed daily-recommendation session or full CBT simulation
 });
 
 // ─── Decay & Scheduling ───

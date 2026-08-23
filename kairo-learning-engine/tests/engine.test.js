@@ -224,23 +224,18 @@ test('Error classifier detects guessing', () => {
   assertEqual(tag, ErrorTag.GUESSED, 'Very fast wrong should be guessed');
 });
 
-test('EliteScore.computeSessionDelta: appends the High-Yield bonus for recommendation/cbt, never for standard, and never alters the underlying total', () => {
+test('EliteScore.computeSessionDelta: pure organic movement only, no flat bonus for any session type — Kairo Score stays untouched by bonuses', () => {
   const rec = EliteScore.computeSessionDelta(40, 42.3, 'recommendation');
-  assertEqual(rec.base, 3, 'Base delta should round UP (2.3 -> 3)');
-  assertEqual(rec.bonus, 10, 'Recommendation session type should earn the +10 bonus');
-  assertEqual(rec.total, 13, 'Displayed total should be base + bonus');
+  assertEqual(rec.total, 3, 'Delta should round UP (2.3 -> 3), with no bonus added');
 
   const cbt = EliteScore.computeSessionDelta(40, 42.3, 'cbt');
-  assertEqual(cbt.bonus, 10, 'CBT session type should earn the +10 bonus');
+  assertEqual(cbt.total, 3, 'CBT session type earns no Kairo Score bonus either — that reward lives in Kairo Points instead');
 
   const standard = EliteScore.computeSessionDelta(40, 42.3, 'standard');
-  assertEqual(standard.base, 3, 'Base delta is identical regardless of session type');
-  assertEqual(standard.bonus, 0, 'Standard practice/topic sessions should never earn the bonus');
-  assertEqual(standard.total, 3, 'No bonus means displayed total equals the base delta');
+  assertEqual(standard.total, 3, 'Delta is identical regardless of session type — session type never affects Kairo Score');
 
   const steady = EliteScore.computeSessionDelta(50, 50, 'recommendation');
-  assertEqual(steady.base, 0, 'No organic movement should floor at 0, not go negative');
-  assertEqual(steady.total, 10, 'The bonus still applies even when the organic curve held steady');
+  assertEqual(steady.total, 0, 'No organic movement should floor at 0, not go negative, and no bonus should inflate it');
 });
 
 test('Adaptive difficulty respects macro-state ceiling', () => {
@@ -449,34 +444,40 @@ test('getTopicJourney() and getLearningJourney() report real question counts, no
 // PROGRESSION
 // ═══════════════════════════════════════════════════════════════
 
-test('Level system calculates XP and progress', () => {
+test('Level system calculates Kairo Points and progress', () => {
   const progress = engine.getLevelProgress();
   assert(typeof progress.level === 'number', 'Should have level');
-  assert(typeof progress.xp === 'number', 'Should have XP');
+  assert(typeof progress.points === 'number', 'Should have Kairo Points');
   assert(typeof progress.progressPercent === 'number', 'Should have progress %');
   assert(progress.level >= 1, 'Should be at least level 1');
 });
 
-test('LevelSystem.calculateXP() awards the topic-completion bonus via retentionState, not a nonexistent .state field', () => {
+test('LevelSystem.awardFromProgress() credits Held/Reinforced/topic-mastery milestones exactly once, tracked by id rather than a recomputed snapshot', () => {
   const graph = new KnowledgeGraph();
-  const c1 = new ConceptNode({ id: 'xp_topic_c1', name: 'Kinematics Basics', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
-  const c2 = new ConceptNode({ id: 'xp_topic_c2', name: 'Kinematics Graphs', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
+  const c1 = new ConceptNode({ id: 'kp_topic_c1', name: 'Kinematics Basics', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
+  const c2 = new ConceptNode({ id: 'kp_topic_c2', name: 'Kinematics Graphs', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
   c1.retentionState = RetentionState.HELD;
   c2.retentionState = RetentionState.REINFORCED;
   graph.addConcept(c1);
   graph.addConcept(c2);
 
-  const profile = new StudentProfile({ studentId: 'xp_topic_test', name: 'XP Tester' });
+  const profile = new StudentProfile({ studentId: 'kp_topic_test', name: 'Kairo Points Tester' });
   const level = new LevelSystem(profile);
-  const xp = level.calculateXP(graph, []);
+  const earned = level.awardFromProgress(graph, []);
 
-  // held (20) + reinforced (50) + topic-completion bonus (100, since both
-  // concepts in Physics:Motion are Held/Reinforced = 100% >= the 80%
-  // threshold) = 170. Before the fix, the topic-completion filter read
-  // ConceptNode's nonexistent `.state` field (always undefined), so
-  // `mastered` was always 0 and this bonus never fired — the total would
-  // have been 70.
-  assertEqual(xp, 170, 'calculateXP() should include the 100-XP topic-completion bonus once every concept in a topic is Held/Reinforced');
+  // c1 (held only): +20 HELD_CONCEPT.
+  // c2 (reinforced): +50 REINFORCED_CONCEPT, and reinforced also satisfies
+  // the held-or-reinforced check so it earns +20 HELD_CONCEPT too (70 total).
+  // Both concepts in Physics:Motion are Held/Reinforced = 100% >= the 80%
+  // topic-mastery threshold, so +100 TOPIC_MASTERED once for the topic.
+  // 20 + 70 + 100 = 190.
+  assertEqual(earned, 190, 'awardFromProgress() should credit HELD_CONCEPT, REINFORCED_CONCEPT, and the one-time TOPIC_MASTERED bonus');
+
+  // Calling again with the exact same graph state must award nothing more
+  // — every id is already banked in kairoPointsProgress, proving this is
+  // strictly additive/idempotent rather than a recompute-from-snapshot.
+  const earnedAgain = level.awardFromProgress(graph, []);
+  assertEqual(earnedAgain, 0, 'Re-scanning unchanged state should award 0 — milestones are credited exactly once, tracked by id');
 });
 
 test('Badge system has catalog and checks', () => {
@@ -1687,7 +1688,8 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   p.email = 'ada@example.com';
   p.avatar = 'avatar_3.png';
   p.completedChallenges = ['daily_5_reinforced'];
-  p.totalXP = 420;
+  p.kairoPoints = 420;
+  p.kairoPointsProgress = { reinforcedConceptIds: ['c1'], heldConceptIds: ['c1', 'c2'], consistencyDays: ['2026-8-1'], masteredTopics: ['Chemistry:Stoichiometry'] };
   p.badges = ['first_reinforced', 'three_day_streak'];
   p.preferences = { notifications: { dailyRecap: false } };
 
@@ -1718,7 +1720,8 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   assertEqual(restored.email, 'ada@example.com', 'email should round-trip exactly');
   assertEqual(restored.avatar, 'avatar_3.png', 'avatar should round-trip exactly');
   assertEqual(restored.completedChallenges.length, 1, 'completedChallenges should round-trip exactly — ChallengesModule.checkAndAward() wrote directly onto the profile without this field ever being declared, so it was silently dropped on every save');
-  assertEqual(restored.totalXP, 420, 'totalXP should round-trip exactly — without this a returning student\'s level would incorrectly reset to 1 on every fresh load until their next completed session recalculated it');
+  assertEqual(restored.kairoPoints, 420, 'kairoPoints should round-trip exactly — without this a returning student\'s level would incorrectly reset to 1 on every fresh load until their next completed session recalculated it');
+  assertEqual(restored.kairoPointsProgress.masteredTopics.length, 1, 'kairoPointsProgress should round-trip exactly — without this, already-credited milestones would be forgotten on reload and re-awarded, breaking the strictly-additive ledger guarantee');
   assertEqual(restored.badges.length, 2, 'badges should round-trip exactly — without this, every earned badge would be silently lost on reload and immediately re-awarded (and re-notified) the next time its condition was checked');
   assertEqual(restored.preferences.notifications.dailyRecap, false, 'preferences should round-trip exactly — without this, a student\'s notification/practice/accessibility/privacy/offline settings would silently reset to defaults on every fresh load');
 });
@@ -1949,16 +1952,18 @@ await test('CBT: submitAnswer withholds correctness feedback during a live attem
     contentPacks: { getOfflineQuestions: async ({ subject, count }) => fakeQuestions(subject, count) },
     submitAnswer: () => {},
     sync: { queue: () => {} },
-    // finish() calls this.engine.profile.recordSession() and (to update
-    // the real weighted Kairo Score for a completed mock) this.engine.
-    // eliteScore.calculate() — every real KairoEngine has both, so these
-    // were missing only because this fake is deliberately minimal for
-    // testing the mid-exam withholding behavior below, not because
-    // finish() is broken (a real-engine test covers finish() itself
-    // further down this file).
+    // finish() calls this.engine.profile.recordSession(), this.engine.
+    // eliteScore.calculate() (to update the real weighted Kairo Score for
+    // a completed mock), and this.engine.levelSystem.update() (to award
+    // Kairo Points) — every real KairoEngine has all three, so these were
+    // missing only because this fake is deliberately minimal for testing
+    // the mid-exam withholding behavior below, not because finish() is
+    // broken (a real-engine test covers finish() itself further down this
+    // file).
     profile: { recordSession: () => {}, sessions: [] },
     graph: { nodes: new Map() },
-    eliteScore: { history: [], calculate: () => ({ total: 0, accuracy: 0, retention: 0, consistency: 0, timestamp: Date.now() }) }
+    eliteScore: { history: [], calculate: () => ({ total: 0, accuracy: 0, retention: 0, consistency: 0, timestamp: Date.now() }) },
+    levelSystem: { update: () => ({ pointsEarned: 0, totalPoints: 0, level: { level: 1 }, leveledUp: false, nextLevelPoints: 100 }) }
   };
   const cbt = new CBTExamMode(fakeEngine);
   cbt.setup({ subjects: ['Mathematics'] });
@@ -2018,8 +2023,14 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
 
   assert(results.eliteScore, 'finish() should compute and return the real weighted eliteScore — previously nothing ever recalculated it for a completed CBT mock');
   assertEqual(results.scoreDelta.sessionType, 'cbt', 'A completed CBT mock should carry sessionType "cbt"');
-  assertEqual(results.scoreDelta.bonus, 10, 'A full CBT simulation should earn the High-Yield Session bonus');
+  assert(!('bonus' in results.scoreDelta), 'Kairo Score delta should never carry a bonus field — Kairo Score stays pure and untouched by flat bonuses');
   assertEqual(engine.eliteScore.history[engine.eliteScore.history.length - 1].total, results.eliteScore.total, 'The engine\'s real eliteScoreHistory should reflect this CBT mock, not just the returned copy');
+  assert(results.level, 'finish() should return a Kairo Points/level update — previously nothing ever awarded Kairo Points for a completed CBT mock');
+  // 10 (CONSISTENCY_DAY — this is the profile's first-ever completed
+  // session) + 10 (HIGH_YIELD_SESSION flat bonus, into Kairo Points, not
+  // Kairo Score) = 20. The single correct answer only reaches FORMING,
+  // not Held/Reinforced, so no concept-based award fires here.
+  assertEqual(results.level.pointsEarned, 20, 'A full CBT simulation should earn the +10 High-Yield Session award (into Kairo Points, not Kairo Score) on top of the genuine +10 consistency-day award');
 });
 
 await test("CBT: finish() doesn't submit unanswered questions as attempts (they'd fail kairo.attempts' anti-cheat trigger and silently take the whole sync down)", async () => {
@@ -2068,7 +2079,7 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
 });
 
-await test('endSession(): scoreDelta carries the High-Yield bonus for a standard (recommendation) session, and the returned eliteScore is the real unaltered weighted snapshot', async () => {
+await test('endSession(): scoreDelta is a pure, bonus-free Kairo Score movement, while the High-Yield Session award lands on Kairo Points instead for a standard (recommendation) session', async () => {
   const engine = new KairoEngine({ studentId: 'delta1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
   await engine.init();
   const conceptId = engine.addConcept({ name: 'Delta Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
@@ -2085,13 +2096,17 @@ await test('endSession(): scoreDelta carries the High-Yield bonus for a standard
 
   assert(result.scoreDelta, 'endSession() should return a scoreDelta');
   assertEqual(result.scoreDelta.sessionType, 'recommendation', "mode 'standard' should map to sessionType 'recommendation'");
-  assertEqual(result.scoreDelta.bonus, 10, 'A standard-mode (recommendation) session should earn the High-Yield bonus');
-  assertEqual(result.scoreDelta.total, result.scoreDelta.base + 10, 'Displayed total should be base + bonus');
+  assert(!('bonus' in result.scoreDelta), 'Kairo Score delta should never carry a bonus field — Kairo Score stays pure and untouched by flat bonuses');
   const latestSnapshot = engine.eliteScore.history[engine.eliteScore.history.length - 1];
-  assertEqual(result.eliteScore.total, latestSnapshot.total, 'Returned eliteScore should be the real, unaltered weighted snapshot — the bonus never touches it');
+  assertEqual(result.eliteScore.total, latestSnapshot.total, 'Returned eliteScore should be the real, unaltered weighted snapshot');
+  assertEqual(result.scoreDelta.total, Math.ceil(latestSnapshot.total), 'scoreDelta.total should be exactly the organic movement (previousTotal was 0, this is the first session) — nothing added on top');
+  // 10 (CONSISTENCY_DAY, first-ever session) + 10 (HIGH_YIELD_SESSION for
+  // the completed daily recommendation) — the reward the old design put
+  // on Kairo Score now lands entirely on Kairo Points.
+  assertEqual(result.level.pointsEarned, 20, 'A standard-mode (recommendation) session should earn the High-Yield Session award into Kairo Points, not Kairo Score');
 });
 
-await test('endSession(): a custom/topic practice session earns no High-Yield bonus', async () => {
+await test('endSession(): a custom/topic practice session earns no High-Yield Kairo Points award', async () => {
   const engine = new KairoEngine({ studentId: 'delta2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
   await engine.init();
   const conceptId = engine.addConcept({ name: 'Delta Concept 2', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
@@ -2107,7 +2122,11 @@ await test('endSession(): a custom/topic practice session earns no High-Yield bo
   const result = await engine.endSession();
 
   assertEqual(result.scoreDelta.sessionType, 'standard', 'Custom practice should map to sessionType standard');
-  assertEqual(result.scoreDelta.bonus, 0, 'Custom practice should never earn the High-Yield bonus');
+  assert(!('bonus' in result.scoreDelta), 'Kairo Score delta should never carry a bonus field');
+  // Only the genuine +10 consistency-day award (first-ever session) —
+  // no High-Yield Session award, since custom practice isn't the daily
+  // recommendation or a full CBT simulation.
+  assertEqual(result.level.pointsEarned, 10, 'Custom practice should never earn the High-Yield Session award');
 });
 
 await test('endSession() durably saves locally before resolving — a reload immediately after sees the real score/streak, not a stale pre-session snapshot', async () => {

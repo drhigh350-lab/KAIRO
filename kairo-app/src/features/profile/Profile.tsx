@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Badge, Button, Card } from '../../components';
-import { ScreenHeader, ChevronRight, KairoScoreInfo } from '../learning/shared';
+import { ScreenHeader, ChevronRight, KairoScoreInfo, KairoPointsInfo } from '../learning/shared';
 import { getEngine, getProfileSummary, signOutAndDisconnect } from '../../lib/kairoEngine';
 
 export function Profile() {
@@ -56,12 +56,21 @@ export function Profile() {
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>LEVEL {profile.stats.level?.level ?? 1}</div>
                   <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>{profile.stats.level?.name || '—'}</div>
+                  {/* Secondary metric, deliberately never merged with Kairo Score above — Kairo Points is the unbounded effort ledger, Kairo Score is the bounded readiness gauge. */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>{(profile.stats.kairoPoints ?? 0).toLocaleString()} Kairo Points</span>
+                    <KairoPointsInfo iconColor="rgba(255,255,255,0.75)" />
+                  </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 14, columnGap: 8, marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
                 <div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Streak</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Current Streak</div>
                   <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.currentStreak} day{profile.stats.currentStreak === 1 ? '' : 's'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Longest Streak</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.longestStreak ?? 0} day{(profile.stats.longestStreak ?? 0) === 1 ? '' : 's'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Accuracy</div>

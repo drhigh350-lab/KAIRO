@@ -1,5 +1,5 @@
 import { Card, Button } from '../../components';
-import { StatTile, ChevronRight } from '../learning/shared';
+import { StatTile, ChevronRight, StreakFlameBadge } from '../learning/shared';
 
 export interface PracticeResult {
   correct: boolean;
@@ -20,20 +20,29 @@ export interface PracticeResult {
 
 export type PracticeSummaryAction = 'weak' | 'topic' | 'challenge' | 'cbt' | 'review';
 
-/** The real weighted delta from KairoEngine.endSession() — base is the organic movement in the underlying Kairo Score this session (rounded up), bonus is the fixed High-Yield Session add-on for a completed daily recommendation. */
-export interface ScoreDelta {
-  base: number;
-  bonus: number;
-  total: number;
-  sessionType: string;
+/**
+ * Short-term gamification only, by design (KISS enforcement — the approved
+ * Kairo Score/Kairo Points directive). Kairo Score (the bounded UTME-
+ * readiness gauge) never appears on this screen at all; it's housed in
+ * Insights/Profile instead. This is just the two things worth celebrating
+ * right after a session: Kairo Points earned, and current streak progress.
+ */
+export interface SessionRewards {
+  /** Real pointsEarned from endSession()'s levelUpdate — the Kairo Points this session actually added to the ledger (0 if none). */
+  pointsEarned: number;
+  /** Current streak day count, after this session's update (if any). */
+  streakDays: number;
+  /** Whether today's flame should render lit — i.e. today's daily recommendation is done. */
+  streakLit: boolean;
+  freezesAvailable: number;
 }
 
 export interface PracticeSummaryProps {
   results: PracticeResult[];
   onHome: () => void;
   onAction?: (action: PracticeSummaryAction) => void;
-  /** Real scoreDelta from endSession() — null only if the session somehow ended without one (e.g. a sync/engine error), in which case no score badge renders at all rather than showing a made-up number. */
-  scoreDelta?: ScoreDelta | null;
+  /** Real rewards from endSession() — null only if the session somehow ended without one (e.g. a sync/engine error), in which case no rewards badges render at all rather than showing made-up numbers. */
+  rewards?: SessionRewards | null;
 }
 
 type SummaryTier = 'low' | 'mid' | 'high';
@@ -44,14 +53,13 @@ function tierFor(accuracy: number): SummaryTier {
   return 'high';
 }
 
-export function PracticeSummary({ results, onHome, onAction, scoreDelta }: PracticeSummaryProps) {
+export function PracticeSummary({ results, onHome, onAction, rewards }: PracticeSummaryProps) {
   const total = results.length;
   const correctCount = results.filter((r) => r.correct).length;
   const accuracy = total ? Math.round((correctCount / total) * 100) : 0;
   const totalTime = results.reduce((s, r) => s + (r.time || 0), 0);
   const avgTime = total ? Math.round(totalTime / total) : 0;
-  const gainedScore = scoreDelta?.total ?? 0;
-  const hasBonus = !!scoreDelta && scoreDelta.bonus > 0;
+  const pointsEarned = rewards?.pointsEarned ?? 0;
 
   // Real per-subject accuracy from what was actually answered this session —
   // a comparison only means something with 2+ distinct subjects present.
@@ -110,16 +118,14 @@ export function PracticeSummary({ results, onHome, onAction, scoreDelta }: Pract
         </div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)', marginTop: 14 }}>Practice Complete</div>
         <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{total} questions · {formatTime(totalTime)}</div>
-        {gainedScore > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginTop: 12 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.15)' }}>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: 'var(--dark-accent-blue)' }}>+{gainedScore} Kairo Score</span>
-            </div>
-            {hasBonus && (
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--kairo-gold-500, #e0a039)' }}>
-                (Includes +{scoreDelta!.bonus} High-Yield Bonus!)
+        {rewards && (pointsEarned > 0 || rewards.streakDays > 0) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 12 }}>
+            {pointsEarned > 0 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.15)' }}>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: 'var(--dark-accent-blue)' }}>+{pointsEarned} Kairo Points</span>
               </div>
             )}
+            <StreakFlameBadge lit={rewards.streakLit} days={rewards.streakDays} freezesAvailable={rewards.freezesAvailable} />
           </div>
         )}
       </div>

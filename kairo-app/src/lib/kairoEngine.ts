@@ -1090,6 +1090,16 @@ export async function finishCbtExam(): Promise<Engine> {
   // (already populated by CBTExamMode.finish()'s sync.queue() calls)
   // covers retrying this if it fails or never gets the chance to run.
   kairo.sync.sync().catch(() => {});
+  // CbtSummary shows only short-term gamification (KISS enforcement, the
+  // approved Kairo Score/Kairo Points directive) — Kairo Score itself
+  // (results.scoreDelta/results.eliteScore) never reaches that screen.
+  const streak = kairo.getStreakStatus?.();
+  results.rewards = {
+    pointsEarned: results.level?.pointsEarned ?? 0,
+    streakDays: streak?.momentum ?? 0,
+    streakLit: hasCompletedTodaysRecommendation(),
+    freezesAvailable: streak?.freezesAvailable ?? 0,
+  };
   return results;
 }
 

@@ -32,6 +32,7 @@ import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.
 import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
 import { conceptId } from "./utils/helpers.js";
+import { KairoPointsAwards } from "./utils/constants.js";
 
 // Practice Modes
 import { RapidFireEngine } from "./practice/RapidFireEngine.js";
@@ -299,7 +300,8 @@ export class KairoEngine {
       macroState: this.profile.macroState,
       macroStateHistory: this.profile.macroStateHistory,
       badges: this.profile.badges,
-      totalXP: this.profile.totalXP,
+      kairoPoints: this.profile.kairoPoints,
+      kairoPointsProgress: this.profile.kairoPointsProgress,
       atRiskTriggeredAt: this.profile.atRiskTriggeredAt,
       recoverySessionCount: this.profile.recoverySessionCount
     } : null;
@@ -341,6 +343,34 @@ export class KairoEngine {
     this.continuation = ContinuationEngine.fromJSON(this.profile, this.profile.continuation);
     this.comms = CommsService.fromJSON(this.profile, this.profile.comms);
     this.notificationOrchestrator = NotificationOrchestrator.fromJSON(this.profile, this.profile.notificationOrchestrator);
+    this.learn = LearnModule.fromJSON(this, this.profile.learn);
+
+    // The rest of this engine's profile-bound subsystems have the exact
+    // same staleness problem as the six above, just not yet caught in
+    // production: constructed once at engine-construction time against a
+    // blank profile, and never rebuilt here even though Object.assign()
+    // just replaced this.profile's score/streak/level/badge fields with
+    // real remote values. Confirmed live: a genuinely fresh sign-in (a new
+    // device, or any browser with no IndexedDB profile yet — the exact
+    // path _doInit()'s own `if (savedProfile)` rebuild block never runs
+    // for) left this.eliteScore/this.streak/this.levelSystem/this.settings
+    // etc. silently reading their original construction-time snapshot —
+    // Insights' score trend stuck on "insufficient_data" and Home's streak
+    // flame/Profile's Level both showing stale defaults, even though
+    // this.profile itself held the correct just-synced numbers the whole
+    // time. Same fix _doInit() already applies when local data exists.
+    this.decayModel = new DecayModel(this.profile);
+    this.classifier = new ErrorPatternClassifier(this.profile);
+    this.eliteScore = new EliteScore(this.profile);
+    this.difficulty = new AdaptiveDifficulty(this.profile);
+    this.kai = new KaiBehavior(this.profile);
+    this.scheduler = new RevisionScheduler(this.decayModel, this.profile.examDate);
+    this.streak = new MomentumStreak(this.profile);
+    this.emotionalProfile = new EmotionalProfile(this.profile);
+    this.learningState = LearningStateTracker.fromJSON(this.profile);
+    this.levelSystem = new LevelSystem(this.profile);
+    this.badgeSystem = new BadgeSystem(this.profile);
+    this.settings = new ProfileSettings(this);
 
     this.sync.attachRemote(adapter, this);
     this._snapshotSjeeState();
@@ -910,10 +940,13 @@ export class KairoEngine {
     // rapid_fire, recovery) is "standard practice" for bonus purposes —
     // only the recommendation and CBT (handled separately in
     // CBTExamMode.finish(), which never calls endSession()) earn the
-    // High-Yield Session bonus.
+    // High-Yield Session award. Kairo Score itself never receives this —
+    // it stays pure and untouched by flat bonuses (see EliteScore.js);
+    // the award goes entirely to Kairo Points instead.
     const sessionType = this.currentSession.mode === 'standard' ? 'recommendation' : 'standard';
     const scoreDelta = EliteScore.computeSessionDelta(previousTotal, score.total, sessionType);
-    const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions);
+    const flatBonus = sessionType === 'recommendation' ? KairoPointsAwards.HIGH_YIELD_SESSION : 0;
+    const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions, flatBonus);
 
     // Check badges
     const badgeContext = this._buildBadgeContext();

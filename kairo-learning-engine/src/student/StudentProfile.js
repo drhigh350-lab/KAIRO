@@ -72,7 +72,13 @@ export class StudentProfile {
     this.learn = null;             // LearnModule.toJSON() snapshot
     this.notificationHistory = []; // NotificationEngine's local candidate history (kairo.students.notification_history)
     this.completedChallenges = []; // ChallengesModule.checkAndAward()'s earned-challenge-id list (kairo.students.completed_challenges)
-    this.totalXP = 0;              // LevelSystem.update()'s recalculated XP (kairo.students.total_xp)
+    this.kairoPoints = 0;          // LevelSystem's strictly-additive effort ledger — unbounded, never recomputed from a snapshot (kairo.students.kairo_points). Distinct from eliteScoreHistory: that's the bounded 0-100 readiness gauge, this is "how much have you shown up and earned."
+    // Which specific milestones have already been credited toward
+    // kairoPoints — LevelSystem.awardFromProgress() checks membership here
+    // before awarding, never a recomputed count, so a concept that later
+    // decays back out of Reinforced can't claw back points it already
+    // earned (kairo.students.kairo_points_progress).
+    this.kairoPointsProgress = { reinforcedConceptIds: [], heldConceptIds: [], consistencyDays: [], masteredTopics: [] };
     this.badges = [];              // BadgeSystem.checkAndAward()'s earned-badge-id list (kairo.students.badges)
     this.preferences = null;       // ProfileSettings.updatePreferences()'s snapshot (kairo.students.preferences)
     this.sessions = [];          // completed session metadata
@@ -84,6 +90,12 @@ export class StudentProfile {
     this.totalCorrect = 0;
     this.streakData = {
       currentMomentum: 0,
+      // The best currentMomentum has ever reached — unlike currentMomentum
+      // itself (which is meant to reset on a real break), this only ever
+      // rises. Kept alongside it rather than derived, since a live streak
+      // break happens by resetting currentMomentum in place, which would
+      // otherwise lose the record of what it peaked at.
+      longestMomentum: 0,
       protectedGapsUsed: 0,
       lastSessionDate: null,
       windowSessions: [],
@@ -274,7 +286,8 @@ export class StudentProfile {
       learn: this.learn,
       notificationHistory: this.notificationHistory,
       completedChallenges: this.completedChallenges,
-      totalXP: this.totalXP,
+      kairoPoints: this.kairoPoints,
+      kairoPointsProgress: this.kairoPointsProgress,
       badges: this.badges,
       preferences: this.preferences,
       sessions: this.sessions,

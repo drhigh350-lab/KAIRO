@@ -132,11 +132,17 @@ export class SupabaseSyncAdapter {
       streak_window_sessions: profileData.streakData?.windowSessions || [],
       streak_freezes_available: profileData.streakData?.freezesAvailable || 0,
       streak_freezes_used: profileData.streakData?.freezesUsed || 0,
+      streak_longest_momentum: profileData.streakData?.longestMomentum || 0,
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
       notification_history: profileData.notificationHistory || [],
       completed_challenges: profileData.completedChallenges || [],
-      total_xp: profileData.totalXP || 0,
+      // Kairo Points (formerly "XP") — a strictly additive ledger, distinct
+      // from Kairo Score. See ProgressionSystem.js's LevelSystem for the
+      // full rationale. kairo_points_progress is the "already credited"
+      // tracking (concept/day/topic ids) that makes it monotonic.
+      kairo_points: profileData.kairoPoints || 0,
+      kairo_points_progress: profileData.kairoPointsProgress || { reinforcedConceptIds: [], heldConceptIds: [], consistencyDays: [], masteredTopics: [] },
       badges: profileData.badges || [],
       preferences: profileData.preferences || null,
 
@@ -213,13 +219,15 @@ export class SupabaseSyncAdapter {
         lastSessionDate: row.streak_last_session_date ? fromLocalDateString(row.streak_last_session_date) : null,
         windowSessions: row.streak_window_sessions || [],
         freezesAvailable: row.streak_freezes_available || 0,
-        freezesUsed: row.streak_freezes_used || 0
+        freezesUsed: row.streak_freezes_used || 0,
+        longestMomentum: row.streak_longest_momentum || 0
       },
       atRiskTriggeredAt: row.at_risk_triggered_at ? new Date(row.at_risk_triggered_at).getTime() : null,
       recoverySessionCount: row.recovery_session_count,
       notificationHistory: row.notification_history || [],
       completedChallenges: row.completed_challenges || [],
-      totalXP: row.total_xp || 0,
+      kairoPoints: row.kairo_points || 0,
+      kairoPointsProgress: row.kairo_points_progress || { reinforcedConceptIds: [], heldConceptIds: [], consistencyDays: [], masteredTopics: [] },
       badges: row.badges || [],
       preferences: row.preferences || null,
 

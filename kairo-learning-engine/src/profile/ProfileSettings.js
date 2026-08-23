@@ -73,9 +73,19 @@ export class ProfileSettings {
           ? Math.round((p.totalCorrect / p.totalQuestionsAnswered) * 100)
           : 0,
         currentStreak: p.streakData?.currentMomentum || 0,
+        // Profile tab only — per the approved Kairo Score/Kairo Points
+        // directive, Home shows just the active current streak; the
+        // longest-ever run is a Profile-only stat (visual noise on Home).
+        longestStreak: p.streakData?.longestMomentum || 0,
+        // Kairo Score: bounded 0-100, the pure UTME-readiness gauge —
+        // primarily housed in Insights/Profile, per the approved directive.
         eliteScore: p.eliteScoreHistory?.length > 0
           ? p.eliteScoreHistory[p.eliteScoreHistory.length - 1].total
           : 0,
+        // Kairo Points: unbounded, strictly additive gamification ledger —
+        // shown here as a secondary metric alongside level, never blended
+        // with Kairo Score on the same summary view.
+        kairoPoints: p.kairoPoints || 0,
         level: this.engine.levelSystem.getProgress()
       }
     };

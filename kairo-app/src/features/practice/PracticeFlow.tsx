@@ -6,10 +6,10 @@ import { TopicSelect } from './TopicSelect';
 import { SubtopicSelect } from './SubtopicSelect';
 import { PracticeHub, type PracticePacing } from './PracticeHub';
 import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation } from './PracticeQuestion';
-import { PracticeSummary, type PracticeResult, type PracticeSummaryAction } from './PracticeSummary';
+import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type SessionRewards } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, type WeakTopicSummary } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, type WeakTopicSummary } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
@@ -135,13 +135,15 @@ export function PracticeFlow() {
   // restarts, via resetResults() below, so a genuinely new session always
   // gets its own remediation chance.
   const [remediationDone, setRemediationDone] = useState(false);
-  // The real weighted scoreDelta from endSession() ({ base, bonus, total,
-  // sessionType }) — null until the session actually ends.
-  const [scoreDelta, setScoreDelta] = useState<{ base: number; bonus: number; total: number; sessionType: string } | null>(null);
+  // Session-end rewards for the summary screen (Kairo Points earned +
+  // streak progress) — null until the session actually ends. Deliberately
+  // never carries a Kairo Score delta; that stays off this screen entirely
+  // (KISS enforcement, the approved Kairo Score/Kairo Points directive).
+  const [rewards, setRewards] = useState<SessionRewards | null>(null);
   function resetResults() {
     setResults([]);
     setRemediationDone(false);
-    setScoreDelta(null);
+    setRewards(null);
   }
   const [engineQuestions, setEngineQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [engineLoadError, setEngineLoadError] = useState<string | null>(null);
@@ -477,14 +479,24 @@ export function PracticeFlow() {
       if (kairo) {
         // endSession() itself no longer waits on IndexedDB/Supabase (that
         // tail runs detached inside the engine now) — score/streak/level/
-        // badges/scoreDelta come back essentially instantly, so awaiting
-        // it here still means an instant summary transition, just with
-        // the real weighted score delta instead of a flat estimate.
+        // badges come back essentially instantly, so awaiting it here
+        // still means an instant summary transition, just with the real
+        // Kairo Points earned and streak status instead of a flat estimate.
         try {
           const result = await kairo.endSession();
-          setScoreDelta(result?.scoreDelta ?? null);
+          if (result) {
+            const streak = result.streak ?? kairo.getStreakStatus?.() ?? null;
+            setRewards({
+              pointsEarned: result.level?.pointsEarned ?? 0,
+              streakDays: streak?.momentum ?? 0,
+              streakLit: hasCompletedTodaysRecommendation(),
+              freezesAvailable: streak?.freezesAvailable ?? 0,
+            });
+          } else {
+            setRewards(null);
+          }
         } catch {
-          setScoreDelta(null);
+          setRewards(null);
         }
       }
       go('practiceSummary');
@@ -723,7 +735,7 @@ export function PracticeFlow() {
         results={results}
         onHome={() => goHomeOrStreakSavior(navigate, entryFlow === 'suggested')}
         onAction={handleSummaryAction}
-        scoreDelta={scoreDelta}
+        rewards={rewards}
       />
     );
   }

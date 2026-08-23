@@ -21,7 +21,7 @@
  *   Consistency (20%) — distinct calendar days ever practiced
  */
 
-import { EliteScoreWeights, EliteScorePointScale, EliteScorePoints, EliteScoreBonus } from "../utils/constants.js";
+import { EliteScoreWeights, EliteScorePointScale, EliteScorePoints } from "../utils/constants.js";
 import { clamp } from "../utils/helpers.js";
 
 export class EliteScore {
@@ -148,23 +148,18 @@ export class EliteScore {
   }
 
   /**
-   * Display-only session delta for the summary screen. Two parts:
-   *   base  — the real, organic weighted movement this session produced
-   *           (current.total - previous.total), rounded UP so a genuine
-   *           but fractional gain never displays as "+0".
-   *   bonus — a fixed, transparent "High-Yield Session" bonus for the two
-   *           session types that matter most (the daily recommendation,
-   *           a full CBT simulation) — never for standard practice/topic
-   *           sessions.
+   * Display-only session delta for the summary screen — the real, organic
+   * weighted movement this session produced (current.total - previous.total),
+   * rounded UP so a genuine but fractional gain never displays as "+0".
+   * No flat bonus is ever added here: Kairo Score stays pure and untouched
+   * by session-type bonuses. High-Yield session rewards live entirely in
+   * Kairo Points (see ProgressionSystem.js's LevelSystem flatBonus).
    * Purely a read of two already-computed totals — never mutates
-   * history/profile, never feeds back into calculate()'s own math. The
-   * underlying weighted score is exactly what it would be without this
-   * method existing at all.
+   * history/profile, never feeds back into calculate()'s own math.
    */
   static computeSessionDelta(previousTotal, currentTotal, sessionType) {
-    const base = Math.max(0, Math.ceil(currentTotal - previousTotal));
-    const bonus = (sessionType === 'recommendation' || sessionType === 'cbt') ? EliteScoreBonus.HIGH_YIELD_SESSION : 0;
-    return { base, bonus, total: base + bonus, sessionType };
+    const total = Math.max(0, Math.ceil(currentTotal - previousTotal));
+    return { total, sessionType };
   }
 
   /** The score is monotonic, so this only ever distinguishes genuine growth from a plateau — never a fall. */

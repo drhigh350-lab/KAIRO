@@ -237,6 +237,26 @@ export function StatTile({ label, value, dark = false }: { label: string; value:
   );
 }
 
+/**
+ * Same lit/dimmed flame glyph as Home's streak indicator, reused wherever a
+ * session summary needs to show current streak progress (Practice/CBT
+ * Summary) — this is Current Streak only, matching Home. Longest Streak is
+ * a Profile-tab-only stat and never appears here.
+ */
+export function StreakFlameBadge({ lit, days, freezesAvailable = 0 }: { lit: boolean; days: number; freezesAvailable?: number }) {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: lit ? 'rgba(224,160,57,0.15)' : 'var(--dark-bg-elevated)' }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill={lit ? 'var(--kairo-gold-500, #e0a039)' : 'none'} stroke={lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-text-faint)'} strokeWidth="2">
+        <path d="M12 2c1 4-4 5-4 9a4 4 0 008 0c1.5 1 2 3 2 4a6 6 0 01-12 0c0-5 3-6 3-9 0-1.5.5-3 3-4z" />
+      </svg>
+      <span style={{ fontWeight: 700, fontSize: 14, color: lit ? 'var(--kairo-gold-500, #e0a039)' : 'var(--dark-text-muted)' }}>{days} day{days === 1 ? '' : 's'}</span>
+      {freezesAvailable > 0 && (
+        <span title={`${freezesAvailable} Streak Freeze${freezesAvailable === 1 ? '' : 's'} in reserve`} style={{ fontSize: 12, color: 'var(--dark-accent-blue)' }}>{'❄'.repeat(freezesAvailable)}</span>
+      )}
+    </div>
+  );
+}
+
 export interface InlineToastProps {
   children: ReactNode;
   tone?: 'default' | 'danger' | 'caution';
@@ -424,7 +444,39 @@ export function KairoScoreInfo({ iconColor = 'var(--dark-text-faint)' }: { iconC
             It only ever goes up, and it moves slowly on purpose — one session won't swing it much, but showing up consistently will.
           </div>
           <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65, marginTop: 10, fontWeight: 600 }}>
-            Pro Tip: Completing your Daily Recommendation or a full CBT Simulation instantly awards a massive +10 Bonus to your score.
+            Pro Tip: Your Kairo Score never gets a flat bonus — it only moves from real, organic progress. Completing your Daily Recommendation or a full CBT Simulation instead awards you bonus Kairo Points, a separate effort-and-consistency tally you'll see on your Profile.
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/**
+ * Small "ⓘ" affordance for wherever Kairo Points is shown (currently just
+ * Profile, as a secondary metric next to Level) — Kairo Points is a
+ * deliberately different kind of number from Kairo Score above, so this
+ * explains it on its own terms rather than leaving students to guess how
+ * the two relate.
+ */
+export function KairoPointsInfo({ iconColor = 'var(--dark-text-faint)' }: { iconColor?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label="How Kairo Points work" style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, flexShrink: 0,
+        background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: iconColor,
+      }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 16v-5M12 8h.01" /></svg>
+      </button>
+      {open && (
+        <Modal onClose={() => setOpen(false)} tone="dark">
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 10 }}>How Kairo Points work</div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65 }}>
+            Kairo Points reward effort and consistency — real, one-time milestones like reaching Held or Reinforced on a concept, mastering a whole topic, showing up on a new day, or completing your Daily Recommendation or a full CBT Simulation.
+          </div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.65, marginTop: 10 }}>
+            Unlike your Kairo Score, Kairo Points never has a ceiling and never goes down — every milestone you earn stays banked for good, even if your grasp of that concept fades later. It drives your Level, not your UTME readiness.
           </div>
         </Modal>
       )}

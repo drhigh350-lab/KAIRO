@@ -28,6 +28,7 @@ export class MomentumStreak {
     this.profile = studentProfile;
     this.data = studentProfile.streakData || {
       currentMomentum: 0,
+      longestMomentum: 0,
       protectedGapsUsed: 0,
       lastSessionDate: null,
       windowSessions: [], // timestamps of sessions in rolling window (kept for history/analytics, not for the momentum count itself)
@@ -36,6 +37,7 @@ export class MomentumStreak {
     };
     if (this.data.freezesAvailable == null) this.data.freezesAvailable = 0;
     if (this.data.freezesUsed == null) this.data.freezesUsed = 0;
+    if (this.data.longestMomentum == null) this.data.longestMomentum = this.data.currentMomentum || 0;
   }
 
   /**
@@ -55,6 +57,7 @@ export class MomentumStreak {
       this._save();
       return {
         momentum: this.data.currentMomentum,
+        longestMomentum: this.data.longestMomentum,
         protectedGapsRemaining: Math.max(0, StreakConstants.PROTECTED_GAP_DAYS - this.data.protectedGapsUsed),
         freezesAvailable: this.data.freezesAvailable,
         message: this._statusMessage()
@@ -99,10 +102,12 @@ export class MomentumStreak {
     }
 
     this.data.lastSessionDate = now;
+    this.data.longestMomentum = Math.max(this.data.longestMomentum || 0, this.data.currentMomentum);
     this._save();
 
     return {
       momentum: this.data.currentMomentum,
+      longestMomentum: this.data.longestMomentum,
       protectedGapsRemaining: Math.max(0, StreakConstants.PROTECTED_GAP_DAYS - this.data.protectedGapsUsed),
       freezesAvailable: this.data.freezesAvailable,
       message: this._statusMessage()
@@ -141,6 +146,7 @@ export class MomentumStreak {
   getStatus() {
     return {
       momentum: this.data.currentMomentum,
+      longestMomentum: this.data.longestMomentum,
       protectedGapsUsed: this.data.protectedGapsUsed,
       lastSessionDate: this.data.lastSessionDate,
       freezesAvailable: this.data.freezesAvailable,
