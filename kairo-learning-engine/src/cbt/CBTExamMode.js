@@ -351,15 +351,10 @@ export class CBTExamMode {
 
     // Unlike standard Practice's endSession(), nothing here ever called
     // levelSystem.update() either — a finished CBT mock earned no Kairo
-    // Points at all, even though it's a High-Yield session type by
-    // definition. Awarded here on the same graph/sessions state already
-    // updated above (submitAnswer()/recordSession()), so
-    // awardFromProgress() sees this exam's concept/day/topic progress too.
-    results.level = this.engine.levelSystem.update(
-      this.engine.graph,
-      this.engine.profile.sessions,
-      KairoPointsAwards.HIGH_YIELD_SESSION
-    );
+    // Points at all. Kairo Points Tight Economy: +2 per correct answer,
+    // plus the flat CBT_SESSION bonus — a full JAMB-length simulation is
+    // the one session type that earns it, matching the endurance it takes.
+    results.level = this.engine.levelSystem.update(results.correct, KairoPointsAwards.CBT_SESSION);
 
     this.engine.sync.queue({
       type: 'session',

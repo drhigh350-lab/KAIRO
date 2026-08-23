@@ -612,7 +612,7 @@ export async function getRealSubtopics(subjectLabel: string, topic: string): Pro
  * (the SubtopicSelect screen's "practise all of this topic" skip) pulls
  * from every subtopic under the topic instead of one.
  */
-export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10, difficulty?: string): Promise<SuggestedSessionResult> {
+export async function startTopicPracticeSession(subjectLabel: string, topic: string, subtopic?: string, limit = 10, difficulty?: string, isVerification = false): Promise<SuggestedSessionResult> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const subject = normalizeSubjectName(subjectLabel);
@@ -647,7 +647,7 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
     }
   }
 
-  kairo.startSession({ mode: 'topic_practice', plan: queue });
+  kairo.startSession({ mode: 'topic_practice', plan: queue, isVerification });
 
   const { minDifficulty, maxDifficulty } = difficultyWindow(difficulty);
   const questions: Engine[] = [];

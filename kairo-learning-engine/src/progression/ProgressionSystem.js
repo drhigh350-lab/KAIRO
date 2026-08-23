@@ -2,25 +2,24 @@
  * Kairo — ProgressionSystem
  * Levels and Kairo Points that reward learning behavior, not just volume.
  *
- * Kairo Points is a strictly additive ledger, deliberately distinct from
+ * Kairo Points is a "Tight Economy" ledger, deliberately distinct from
  * Kairo Score (EliteScore.js): Kairo Score is a bounded 0-100 recompute-
  * from-scratch quality curve, meant to plateau — a UTME-readiness gauge.
- * Kairo Points is unbounded and never recomputed from a snapshot of
- * current state; every award below is a permanent, one-time credit for a
- * genuine milestone, checked against kairoPointsProgress (which specific
- * concepts/days/topics have already been credited) rather than derived
- * from a current count. A concept that later decays back out of
- * Reinforced doesn't claw back the points it already earned for reaching
- * it — the ledger only ever grows.
+ * Kairo Points is unbounded but strictly linear — every award is a flat,
+ * predictable function of one completed session's own real results (+2
+ * per correct answer, plus at most one flat session-type bonus), never a
+ * scan of cumulative graph/profile state. A prior "milestone ledger"
+ * design (crediting lifetime firsts — a concept reaching Held, a topic
+ * crossing 80% mastery) let several such firsts land in the same session
+ * and stack into a payout with no relationship to session length — this
+ * design deliberately can't do that: total earned this call is always
+ * exactly correctCount * CORRECT_ANSWER + sessionBonus.
  */
 import { KairoPointsAwards } from '../utils/constants.js';
 
 export class LevelSystem {
   constructor(studentProfile) {
     this.profile = studentProfile;
-    if (!this.profile.kairoPointsProgress) {
-      this.profile.kairoPointsProgress = { reinforcedConceptIds: [], heldConceptIds: [], consistencyDays: [], masteredTopics: [] };
-    }
     this.levels = this._defineLevels();
     this.current = this._calculateCurrentLevel();
   }
@@ -41,64 +40,6 @@ export class LevelSystem {
     ];
   }
 
-  /**
-   * Scans current graph/session state for milestones not yet present in
-   * kairoPointsProgress and credits each exactly once. Safe to call every
-   * session — a concept/day/topic already recorded is skipped even if it's
-   * still true, and one that later becomes false (a concept decaying back
-   * out of Reinforced) stays credited since its id was already banked.
-   * Returns the points newly earned this call, not the running total.
-   */
-  awardFromProgress(graph, sessions) {
-    const progress = this.profile.kairoPointsProgress;
-    const reinforcedIds = new Set(progress.reinforcedConceptIds);
-    const heldIds = new Set(progress.heldConceptIds);
-    const days = new Set(progress.consistencyDays);
-    const masteredTopics = new Set(progress.masteredTopics);
-    let earned = 0;
-
-    const concepts = Array.from(graph.nodes.values());
-    for (const c of concepts) {
-      if (c.retentionState === 'reinforced' && !reinforcedIds.has(c.id)) {
-        reinforcedIds.add(c.id);
-        earned += KairoPointsAwards.REINFORCED_CONCEPT;
-      }
-      if ((c.retentionState === 'held' || c.retentionState === 'reinforced') && !heldIds.has(c.id)) {
-        heldIds.add(c.id);
-        earned += KairoPointsAwards.HELD_CONCEPT;
-      }
-    }
-
-    for (const s of sessions) {
-      if (!s.completedAt) continue;
-      const d = new Date(s.completedAt);
-      const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (!days.has(dayKey)) {
-        days.add(dayKey);
-        earned += KairoPointsAwards.CONSISTENCY_DAY;
-      }
-    }
-
-    const topicKeys = new Set(concepts.map(c => `${c.subject}:${c.topic}`));
-    for (const topicKey of topicKeys) {
-      if (masteredTopics.has(topicKey)) continue;
-      const [subject, topic] = topicKey.split(':');
-      const topicConcepts = concepts.filter(c => c.subject === subject && c.topic === topic);
-      const masteredCount = topicConcepts.filter(c => c.retentionState === 'held' || c.retentionState === 'reinforced').length;
-      if (topicConcepts.length > 0 && masteredCount / topicConcepts.length >= 0.8) {
-        masteredTopics.add(topicKey);
-        earned += KairoPointsAwards.TOPIC_MASTERED;
-      }
-    }
-
-    progress.reinforcedConceptIds = [...reinforcedIds];
-    progress.heldConceptIds = [...heldIds];
-    progress.consistencyDays = [...days];
-    progress.masteredTopics = [...masteredTopics];
-
-    return earned;
-  }
-
   _calculateCurrentLevel() {
     const points = this.profile.kairoPoints || 0;
     let level = this.levels[0];
@@ -109,15 +50,17 @@ export class LevelSystem {
   }
 
   /**
-   * Credits any newly-reached progress milestones, plus an optional flat
-   * bonus (the High-Yield Session award — never part of progress-tracked
-   * milestones, since it's per-session, not per-concept/day/topic), then
-   * recomputes the level tier from the updated total. Call once per
-   * completed session (Practice's endSession(), CBTExamMode.finish()).
+   * Credits this session's Kairo Points: +2 per correct answer (0 for
+   * incorrect/skipped/unsure), plus at most one flat session-type bonus
+   * (RECOMMENDATION_SESSION / VERIFICATION_SESSION / CBT_SESSION / 0 for
+   * everything else — see the caller). Strictly linear, never a scan of
+   * graph/profile state, so a session's payout is always exactly
+   * predictable from its own results. Call once per completed session
+   * (endSession(), CBTExamMode.finish(), RapidFireEngine.finish()).
    */
-  update(graph, sessions, flatBonus = 0) {
-    const progressEarned = this.awardFromProgress(graph, sessions);
-    const earned = progressEarned + flatBonus;
+  update(correctCount, sessionBonus = 0) {
+    const basePoints = Math.max(0, correctCount) * KairoPointsAwards.CORRECT_ANSWER;
+    const earned = basePoints + sessionBonus;
     this.profile.kairoPoints = (this.profile.kairoPoints || 0) + earned;
 
     const newLevel = this._calculateCurrentLevel();

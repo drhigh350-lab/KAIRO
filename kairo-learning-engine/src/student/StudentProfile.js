@@ -72,12 +72,14 @@ export class StudentProfile {
     this.learn = null;             // LearnModule.toJSON() snapshot
     this.notificationHistory = []; // NotificationEngine's local candidate history (kairo.students.notification_history)
     this.completedChallenges = []; // ChallengesModule.checkAndAward()'s earned-challenge-id list (kairo.students.completed_challenges)
-    this.kairoPoints = 0;          // LevelSystem's strictly-additive effort ledger — unbounded, never recomputed from a snapshot (kairo.students.kairo_points). Distinct from eliteScoreHistory: that's the bounded 0-100 readiness gauge, this is "how much have you shown up and earned."
-    // Which specific milestones have already been credited toward
-    // kairoPoints — LevelSystem.awardFromProgress() checks membership here
-    // before awarding, never a recomputed count, so a concept that later
-    // decays back out of Reinforced can't claw back points it already
-    // earned (kairo.students.kairo_points_progress).
+    this.kairoPoints = 0;          // LevelSystem's Tight Economy ledger: +2 per correct answer, plus at most one flat session bonus — unbounded, never recomputed from a snapshot (kairo.students.kairo_points). Distinct from eliteScoreHistory: that's the bounded 0-100 readiness gauge, this is "how much have you shown up and earned."
+    // Deprecated: was the milestone-tracking bookkeeping for the old
+    // awardFromProgress() design (which concepts/days/topics had already
+    // been credited). LevelSystem no longer reads or writes this — the
+    // Tight Economy rewrite (correctCount * CORRECT_ANSWER + a flat
+    // session bonus) needs no such state. Left as an inert field (and
+    // kairo.students.kairo_points_progress left as an inert column) rather
+    // than a schema migration to drop it.
     this.kairoPointsProgress = { reinforcedConceptIds: [], heldConceptIds: [], consistencyDays: [], masteredTopics: [] };
     this.badges = [];              // BadgeSystem.checkAndAward()'s earned-badge-id list (kairo.students.badges)
     this.preferences = null;       // ProfileSettings.updatePreferences()'s snapshot (kairo.students.preferences)

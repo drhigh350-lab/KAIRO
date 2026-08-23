@@ -5,7 +5,7 @@
 
 import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
-import { RetentionState, ErrorTag, StreakConstants } from "../src/utils/constants.js";
+import { RetentionState, ErrorTag, StreakConstants, KairoPointsAwards } from "../src/utils/constants.js";
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
 import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
 import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
@@ -452,32 +452,38 @@ test('Level system calculates Kairo Points and progress', () => {
   assert(progress.level >= 1, 'Should be at least level 1');
 });
 
-test('LevelSystem.awardFromProgress() credits Held/Reinforced/topic-mastery milestones exactly once, tracked by id rather than a recomputed snapshot', () => {
-  const graph = new KnowledgeGraph();
-  const c1 = new ConceptNode({ id: 'kp_topic_c1', name: 'Kinematics Basics', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
-  const c2 = new ConceptNode({ id: 'kp_topic_c2', name: 'Kinematics Graphs', subject: 'Physics', topic: 'Motion', subtopic: 'Kinematics' });
-  c1.retentionState = RetentionState.HELD;
-  c2.retentionState = RetentionState.REINFORCED;
-  graph.addConcept(c1);
-  graph.addConcept(c2);
-
-  const profile = new StudentProfile({ studentId: 'kp_topic_test', name: 'Kairo Points Tester' });
+test('LevelSystem.update() is a strictly linear "Tight Economy" — no multipliers, no milestone stacking, only +2/correct plus a flat session bonus', () => {
+  const profile = new StudentProfile({ studentId: 'kp_tight_economy_test', name: 'Kairo Points Tester' });
   const level = new LevelSystem(profile);
-  const earned = level.awardFromProgress(graph, []);
 
-  // c1 (held only): +20 HELD_CONCEPT.
-  // c2 (reinforced): +50 REINFORCED_CONCEPT, and reinforced also satisfies
-  // the held-or-reinforced check so it earns +20 HELD_CONCEPT too (70 total).
-  // Both concepts in Physics:Motion are Held/Reinforced = 100% >= the 80%
-  // topic-mastery threshold, so +100 TOPIC_MASTERED once for the topic.
-  // 20 + 70 + 100 = 190.
-  assertEqual(earned, 190, 'awardFromProgress() should credit HELD_CONCEPT, REINFORCED_CONCEPT, and the one-time TOPIC_MASTERED bonus');
+  // Regression for a real reported bug: a 5-question Rapid Fire round paid
+  // out 360 Kairo Points under the old milestone-ledger design (several
+  // concepts crossing Held/Reinforced/topic-mastery thresholds in the same
+  // session stacked into one huge payout, with no relationship to session
+  // length). The Tight Economy can't do that — a 5-question session with
+  // every answer correct is capped at 5 * CORRECT_ANSWER, plus at most one
+  // flat session bonus.
+  const five = level.update(5, 0);
+  assertEqual(five.pointsEarned, 10, 'A 5-question, all-correct session with no session bonus should earn exactly 10 points (5 * 2), never more');
 
-  // Calling again with the exact same graph state must award nothing more
-  // — every id is already banked in kairoPointsProgress, proving this is
-  // strictly additive/idempotent rather than a recompute-from-snapshot.
-  const earnedAgain = level.awardFromProgress(graph, []);
-  assertEqual(earnedAgain, 0, 'Re-scanning unchanged state should award 0 — milestones are credited exactly once, tracked by id');
+  // A wrong/skipped/unsure answer earns nothing — no partial credit, no
+  // guessing upside. Only the 6 real corrects (of 10) count.
+  const partial = level.update(6, 0);
+  assertEqual(partial.pointsEarned, 12, 'Incorrect/skipped/unsure answers should earn 0 — only correct answers count toward the base');
+
+  // The three real session-type bonuses, each applied exactly once and
+  // additively on top of the base — never stacked with each other.
+  const recommendation = level.update(8, KairoPointsAwards.RECOMMENDATION_SESSION);
+  assertEqual(recommendation.pointsEarned, 26, '8 correct + the Daily Recommendation bonus should be 16 + 10 = 26');
+
+  const verification = level.update(9, KairoPointsAwards.VERIFICATION_SESSION);
+  assertEqual(verification.pointsEarned, 28, '9 correct + the Verification Session bonus should be 18 + 10 = 28');
+
+  const cbt = level.update(120, KairoPointsAwards.CBT_SESSION);
+  assertEqual(cbt.pointsEarned, 290, '120 correct + the full CBT Simulation bonus should be 240 + 50 = 290');
+
+  const totalSoFar = 10 + 12 + 26 + 28 + 290;
+  assertEqual(profile.kairoPoints, totalSoFar, 'kairoPoints should be the exact running sum of every update() call — no hidden extra credit anywhere');
 });
 
 test('Badge system has catalog and checks', () => {
@@ -2026,11 +2032,10 @@ await test('CBT: finish() no longer throws on a conceptId-bearing question, and 
   assert(!('bonus' in results.scoreDelta), 'Kairo Score delta should never carry a bonus field — Kairo Score stays pure and untouched by flat bonuses');
   assertEqual(engine.eliteScore.history[engine.eliteScore.history.length - 1].total, results.eliteScore.total, 'The engine\'s real eliteScoreHistory should reflect this CBT mock, not just the returned copy');
   assert(results.level, 'finish() should return a Kairo Points/level update — previously nothing ever awarded Kairo Points for a completed CBT mock');
-  // 10 (CONSISTENCY_DAY — this is the profile's first-ever completed
-  // session) + 10 (HIGH_YIELD_SESSION flat bonus, into Kairo Points, not
-  // Kairo Score) = 20. The single correct answer only reaches FORMING,
-  // not Held/Reinforced, so no concept-based award fires here.
-  assertEqual(results.level.pointsEarned, 20, 'A full CBT simulation should earn the +10 High-Yield Session award (into Kairo Points, not Kairo Score) on top of the genuine +10 consistency-day award');
+  // Tight Economy: 1 correct answer * 2 = 2, plus the flat CBT_SESSION
+  // bonus of 50 = 52. Strictly linear — no concept/day/topic milestones
+  // involved at all.
+  assertEqual(results.level.pointsEarned, 52, 'A full CBT simulation should earn 2 points for the correct answer plus the flat +50 CBT_SESSION bonus');
 });
 
 await test("CBT: finish() doesn't submit unanswered questions as attempts (they'd fail kairo.attempts' anti-cheat trigger and silently take the whole sync down)", async () => {
@@ -2079,7 +2084,7 @@ await test('Custom Practice and Topic Practice sessions are tagged with their re
   assert(topicResult.queue.includes(cpConceptId), 'startTopicPractice() should still return the built subtopic plan alongside the session');
 });
 
-await test('endSession(): scoreDelta is a pure, bonus-free Kairo Score movement, while the High-Yield Session award lands on Kairo Points instead for a standard (recommendation) session', async () => {
+await test('endSession(): scoreDelta is a pure, bonus-free Kairo Score movement, while the Daily Recommendation bonus lands on Kairo Points instead for a standard (recommendation) session', async () => {
   const engine = new KairoEngine({ studentId: 'delta1', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
   await engine.init();
   const conceptId = engine.addConcept({ name: 'Delta Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
@@ -2100,13 +2105,12 @@ await test('endSession(): scoreDelta is a pure, bonus-free Kairo Score movement,
   const latestSnapshot = engine.eliteScore.history[engine.eliteScore.history.length - 1];
   assertEqual(result.eliteScore.total, latestSnapshot.total, 'Returned eliteScore should be the real, unaltered weighted snapshot');
   assertEqual(result.scoreDelta.total, Math.ceil(latestSnapshot.total), 'scoreDelta.total should be exactly the organic movement (previousTotal was 0, this is the first session) — nothing added on top');
-  // 10 (CONSISTENCY_DAY, first-ever session) + 10 (HIGH_YIELD_SESSION for
-  // the completed daily recommendation) — the reward the old design put
-  // on Kairo Score now lands entirely on Kairo Points.
-  assertEqual(result.level.pointsEarned, 20, 'A standard-mode (recommendation) session should earn the High-Yield Session award into Kairo Points, not Kairo Score');
+  // Tight Economy: 1 correct answer * 2 = 2, plus the flat
+  // RECOMMENDATION_SESSION bonus of 10 = 12.
+  assertEqual(result.level.pointsEarned, 12, 'A standard-mode (recommendation) session should earn 2 points for the correct answer plus the flat +10 Daily Recommendation bonus');
 });
 
-await test('endSession(): a custom/topic practice session earns no High-Yield Kairo Points award', async () => {
+await test('endSession(): a custom/topic practice session earns no session bonus, only the base per-correct-answer points', async () => {
   const engine = new KairoEngine({ studentId: 'delta2', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
   await engine.init();
   const conceptId = engine.addConcept({ name: 'Delta Concept 2', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
@@ -2123,13 +2127,39 @@ await test('endSession(): a custom/topic practice session earns no High-Yield Ka
 
   assertEqual(result.scoreDelta.sessionType, 'standard', 'Custom practice should map to sessionType standard');
   assert(!('bonus' in result.scoreDelta), 'Kairo Score delta should never carry a bonus field');
-  // Only the genuine +10 consistency-day award (first-ever session) —
-  // no High-Yield Session award, since custom practice isn't the daily
-  // recommendation or a full CBT simulation.
-  assertEqual(result.level.pointsEarned, 10, 'Custom practice should never earn the High-Yield Session award');
+  // Tight Economy: 1 correct answer * 2 = 2, no session bonus — custom
+  // practice isn't the daily recommendation, a verification session, or a
+  // full CBT simulation.
+  assertEqual(result.level.pointsEarned, 2, 'Custom practice should earn only the base 2 points per correct answer — no session bonus');
 });
 
-await test('finishRapidFire(): RapidFire now earns real Kairo Points (progress-based awards only, no High-Yield Session bonus)', async () => {
+await test("endSession(): a Study Planner verification session (topic_practice + isVerification) earns the VERIFICATION_SESSION bonus, a plain topic_practice session doesn't", async () => {
+  const engine = new KairoEngine({ studentId: 'delta3', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'Delta Concept 3', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'delta_q3', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+
+  // Plain topic practice (isVerification defaults to false): no bonus.
+  engine.startSession({ mode: 'topic_practice', plan: [conceptId] });
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'delta_q3', questionDifficulty: 1 });
+  const plainResult = await engine.endSession();
+  assertEqual(plainResult.level.pointsEarned, 2, 'A plain topic_practice session should earn only the base 2 points per correct answer');
+
+  // Same shape, but flagged as a Verification Session (the Study Planner's
+  // Verification CTA loop) — earns the flat VERIFICATION_SESSION bonus on
+  // top, same base math.
+  engine.startSession({ mode: 'topic_practice', plan: [conceptId], isVerification: true });
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'delta_q3', questionDifficulty: 1 });
+  const verifyResult = await engine.endSession();
+  assertEqual(verifyResult.level.pointsEarned, 2 + KairoPointsAwards.VERIFICATION_SESSION, 'A topic_practice session flagged isVerification should earn the base 2 points plus the flat +10 Verification Session bonus');
+});
+
+await test('finishRapidFire(): RapidFire now earns real Kairo Points under the Tight Economy (2 per correct answer, no session bonus)', async () => {
   // Regression: RapidFireEngine.finish() never called levelSystem.update()
   // at all — a completed Rapid Fire round earned zero Kairo Points no
   // matter what it did to the graph, unlike every other Practice mode.
@@ -2142,9 +2172,6 @@ await test('finishRapidFire(): RapidFire now earns real Kairo Points (progress-b
     stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
     lifecycleState: 'live'
   }));
-  // Set up as already-Held so the round's own recall check keeps it there
-  // (see the "rather than depending on leftover state" comment above) —
-  // this is what makes the round's Kairo Points award deterministic.
   engine.graph.getConcept(conceptId).retentionState = RetentionState.HELD;
 
   engine.startRapidFire({ questionCount: 1 });
@@ -2152,13 +2179,13 @@ await test('finishRapidFire(): RapidFire now earns real Kairo Points (progress-b
   const result = engine.finishRapidFire();
 
   assert(result.level, 'finish() should return a Kairo Points/level update');
-  // 10 (CONSISTENCY_DAY, first-ever session on this profile) + 20
-  // (HELD_CONCEPT, first time this concept is ever credited as Held) + 100
-  // (TOPIC_MASTERED, since this is the only concept in Cells:Organelles
-  // and it's already Held — 100% >= the 80% threshold) — no
-  // HIGH_YIELD_SESSION bonus, since RapidFire isn't the daily
-  // recommendation or a full CBT simulation.
-  assertEqual(result.level.pointsEarned, 130, 'RapidFire should earn the same progress-based Kairo Points awards as any other Practice mode, but never the High-Yield Session bonus');
+  // Tight Economy: 1 correct answer * 2 = 2, no session bonus — RapidFire
+  // isn't the daily recommendation, a verification session, or a full CBT
+  // simulation. Reaching Held on the concept earns nothing extra — the
+  // milestone-ledger design that used to award +20/+50/+100 for exactly
+  // this kind of state change (and could stack several such awards into
+  // one huge payout) is gone.
+  assertEqual(result.level.pointsEarned, 2, 'RapidFire should earn only the base 2 points per correct answer — no session bonus, no concept/topic milestone awards');
 });
 
 await test('endSession() durably saves locally before resolving — a reload immediately after sees the real score/streak, not a stale pre-session snapshot', async () => {

@@ -89,29 +89,28 @@ export const EliteScorePoints = Object.freeze({
   CONSISTENCY_DAY_BONUS: 3    // per distinct calendar day a session was ever completed
 });
 
-// ─── Kairo Points (ProgressionSystem.LevelSystem) ───
+// ─── Kairo Points (ProgressionSystem.LevelSystem) — "Tight Economy" ───
 // Two deliberately different kinds of number, never blended:
 //   Kairo Score (above) — bounded 0-100, asymptotic, recomputed fresh from
 //     cumulative signals every session. A true UTME-readiness gauge: it
 //     can plateau, and is meant to.
-//   Kairo Points (here) — unbounded, strictly additive, never recomputed
-//     from a snapshot. Every award below is a one-time credit for a
-//     genuine, permanent milestone (LevelSystem.awardFromProgress() checks
-//     "have I already banked this specific concept/day/topic" before
-//     awarding, never "does the current count look right"), so the total
-//     can never fall even if the underlying state that earned it later
-//     regresses — e.g. a concept decaying back out of Reinforced doesn't
-//     claw back the points it already earned. This is also where the
-//     High-Yield Session bonus lives now — it used to be a display-only
-//     add-on to the Kairo Score delta that never actually reached any
-//     persisted total (the exact "+15 shown, +5 landed" bug this constant
-//     replaces the cause of).
+//   Kairo Points (here) — unbounded but strictly linear: every award is a
+//     flat, predictable function of what actually happened in *this*
+//     session, never a scan of cumulative graph/profile state. The prior
+//     design (LevelSystem.awardFromProgress()) credited lifetime milestones
+//     — a concept reaching Held/Reinforced, a topic crossing 80% mastery —
+//     which meant several concepts crossing a threshold in the same
+//     session (routine on a student's first session, or after any bulk
+//     state change) could stack into a huge one-time payout with no
+//     relationship to session length — a 5-question round paying out 360
+//     points was that design working as built, not a bug in it. No
+//     multipliers, time bonuses, or difficulty scalers ever applied here —
+//     only these two flat numbers.
 export const KairoPointsAwards = Object.freeze({
-  REINFORCED_CONCEPT: 50,  // once per concept, the first time it ever reaches Reinforced
-  HELD_CONCEPT: 20,        // once per concept, the first time it ever reaches Held (or above)
-  CONSISTENCY_DAY: 10,     // once per distinct calendar day a session is ever completed
-  TOPIC_MASTERED: 100,     // once per topic, the first time it crosses 80% Held/Reinforced
-  HIGH_YIELD_SESSION: 10   // once per completed daily-recommendation session or full CBT simulation
+  CORRECT_ANSWER: 2,           // per correct answer, every mode, no exceptions — incorrect/skipped/unsure earn 0
+  RECOMMENDATION_SESSION: 10,  // flat bonus for completing the daily recommendation (mode 'standard')
+  VERIFICATION_SESSION: 10,    // flat bonus for completing a Study Planner verification session
+  CBT_SESSION: 50              // flat bonus for completing a full CBT simulation
 });
 
 // ─── Decay & Scheduling ───

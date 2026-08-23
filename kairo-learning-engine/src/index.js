@@ -530,7 +530,7 @@ export class KairoEngine {
    * queue with nowhere to run it, so a session in either mode could never
    * actually be recorded or synced (mode always defaulted to 'standard').
    */
-  startSession({ mode = 'standard', plan: externalPlan = null } = {}) {
+  startSession({ mode = 'standard', plan: externalPlan = null, isVerification = false } = {}) {
     this.profile.computeMacroState(this.graph);
     this.emotionalProfile.compute(this.graph);
     this.learningState.compute(this.graph);
@@ -566,7 +566,14 @@ export class KairoEngine {
       // pipeline isn't wired to a launch action yet), so every real
       // session today genuinely is unprompted — false is the honest
       // default, not a placeholder.
-      prompted: false
+      prompted: false,
+      // Set by the Study Planner's Verification CTA loop (a topic_practice
+      // session under the hood — see startTopicPractice()) so endSession()
+      // can apply the Kairo Points Tight Economy's VERIFICATION_SESSION
+      // bonus. Deliberately not folded into `mode` itself: kairo.sessions'
+      // mode CHECK constraint has no 'verification' value, and this is a
+      // Kairo Points concern, not a session-analytics one.
+      isVerification
     };
 
     const kaiOpen = this.kai.proactiveMessage('session_open');
@@ -936,17 +943,22 @@ export class KairoEngine {
       : 0;
     const score = this.eliteScore.calculate(this.graph, this.profile.sessions);
     // 'standard' is the daily recommendation (see the streak comment
-    // above); every other Practice mode (custom_practice, topic_practice,
-    // rapid_fire, recovery) is "standard practice" for bonus purposes —
-    // only the recommendation and CBT (handled separately in
-    // CBTExamMode.finish(), which never calls endSession()) earn the
-    // High-Yield Session award. Kairo Score itself never receives this —
-    // it stays pure and untouched by flat bonuses (see EliteScore.js);
-    // the award goes entirely to Kairo Points instead.
+    // above). Kairo Score itself never receives a flat bonus — it stays
+    // pure and untouched (see EliteScore.js); every bonus lives on Kairo
+    // Points instead.
     const sessionType = this.currentSession.mode === 'standard' ? 'recommendation' : 'standard';
     const scoreDelta = EliteScore.computeSessionDelta(previousTotal, score.total, sessionType);
-    const flatBonus = sessionType === 'recommendation' ? KairoPointsAwards.HIGH_YIELD_SESSION : 0;
-    const levelUpdate = this.levelSystem.update(this.graph, this.profile.sessions, flatBonus);
+    // Kairo Points Tight Economy: a flat, capped session-type bonus, never
+    // stacked with anything else — the daily recommendation and a Study
+    // Planner verification session each earn one, everything else (custom
+    // practice, plain topic practice, rapid fire, recovery) earns 0 bonus
+    // and only the +2-per-correct-answer base below.
+    const pointsBonus = sessionType === 'recommendation'
+      ? KairoPointsAwards.RECOMMENDATION_SESSION
+      : this.currentSession.isVerification
+        ? KairoPointsAwards.VERIFICATION_SESSION
+        : 0;
+    const levelUpdate = this.levelSystem.update(this.currentSession.correctCount, pointsBonus);
 
     // Check badges
     const badgeContext = this._buildBadgeContext();
@@ -1086,9 +1098,9 @@ export class KairoEngine {
   }
 
   /** Same fix as startCustomPractice(), for Topic Practice's subtopic sessions. */
-  startTopicPractice(subject, topic, subtopic, count) {
+  startTopicPractice(subject, topic, subtopic, count, { isVerification = false } = {}) {
     const built = this.topicPractice.buildSubtopicSession(subject, topic, subtopic, count);
-    const session = this.startSession({ mode: 'topic_practice', plan: built.queue });
+    const session = this.startSession({ mode: 'topic_practice', plan: built.queue, isVerification });
     return { ...session, ...built };
   }
 

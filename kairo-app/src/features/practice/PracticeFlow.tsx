@@ -204,7 +204,7 @@ export function PracticeFlow() {
       setEngineLoadError('Missing verification target — go back to the Planner and try again.');
       return;
     }
-    startTopicSession(verifyTarget.subjectLabel, verifyTarget.topic, undefined, VERIFICATION_SESSION_LENGTH, undefined);
+    startTopicSession(verifyTarget.subjectLabel, verifyTarget.topic, undefined, VERIFICATION_SESSION_LENGTH, undefined, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -239,10 +239,10 @@ export function PracticeFlow() {
    * committed yet, so reading `length`/`difficulty` here would still see the
    * previous selection.
    */
-  function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string, limitOverride?: number, difficultyOverride?: string) {
+  function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string, limitOverride?: number, difficultyOverride?: string, isVerification = false) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    startTopicPracticeSession(subjectLabel, topicName, subtopicName, limitOverride ?? (length || 10), difficultyOverride ?? (difficulty ?? undefined))
+    startTopicPracticeSession(subjectLabel, topicName, subtopicName, limitOverride ?? (length || 10), difficultyOverride ?? (difficulty ?? undefined), isVerification)
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions for this topic yet.");

@@ -473,10 +473,13 @@ export function KairoPointsInfo({ iconColor = 'var(--dark-text-faint)' }: { icon
         <Modal onClose={() => setOpen(false)} tone="dark">
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginBottom: 10 }}>How Kairo Points work</div>
           <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65 }}>
-            Kairo Points reward effort and consistency — real, one-time milestones like reaching Held or Reinforced on a concept, mastering a whole topic, showing up on a new day, or completing your Daily Recommendation or a full CBT Simulation.
+            Every correct answer earns you 2 Kairo Points. Wrong, skipped, or unsure earns nothing — so there's no upside to guessing, only to actually knowing it.
+          </div>
+          <div style={{ fontSize: 13.5, color: 'var(--dark-text-body)', lineHeight: 1.65, marginTop: 10 }}>
+            Three sessions carry an extra bonus, because they take real discipline: +10 for your Daily Recommendation, +10 for a Planner Verification session, +50 for a full CBT Simulation.
           </div>
           <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.65, marginTop: 10 }}>
-            Unlike your Kairo Score, Kairo Points never has a ceiling and never goes down — every milestone you earn stays banked for good, even if your grasp of that concept fades later. It drives your Level, not your UTME readiness.
+            Unlike your Kairo Score, Kairo Points never goes down — every point you earn stays banked for good. It's a straight record of real work, and it drives your Level, not your UTME readiness.
           </div>
         </Modal>
       )}
