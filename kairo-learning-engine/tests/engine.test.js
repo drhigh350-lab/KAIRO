@@ -2129,6 +2129,38 @@ await test('endSession(): a custom/topic practice session earns no High-Yield Ka
   assertEqual(result.level.pointsEarned, 10, 'Custom practice should never earn the High-Yield Session award');
 });
 
+await test('finishRapidFire(): RapidFire now earns real Kairo Points (progress-based awards only, no High-Yield Session bonus)', async () => {
+  // Regression: RapidFireEngine.finish() never called levelSystem.update()
+  // at all — a completed Rapid Fire round earned zero Kairo Points no
+  // matter what it did to the graph, unlike every other Practice mode.
+  const engine = new KairoEngine({ studentId: 'rf_points_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await engine.init();
+  const conceptId = engine.addConcept({ name: 'RF Points Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'rf_points_q1', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+  // Set up as already-Held so the round's own recall check keeps it there
+  // (see the "rather than depending on leftover state" comment above) —
+  // this is what makes the round's Kairo Points award deterministic.
+  engine.graph.getConcept(conceptId).retentionState = RetentionState.HELD;
+
+  engine.startRapidFire({ questionCount: 1 });
+  engine.submitRapidFireAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'rf_points_q1' });
+  const result = engine.finishRapidFire();
+
+  assert(result.level, 'finish() should return a Kairo Points/level update');
+  // 10 (CONSISTENCY_DAY, first-ever session on this profile) + 20
+  // (HELD_CONCEPT, first time this concept is ever credited as Held) + 100
+  // (TOPIC_MASTERED, since this is the only concept in Cells:Organelles
+  // and it's already Held — 100% >= the 80% threshold) — no
+  // HIGH_YIELD_SESSION bonus, since RapidFire isn't the daily
+  // recommendation or a full CBT simulation.
+  assertEqual(result.level.pointsEarned, 130, 'RapidFire should earn the same progress-based Kairo Points awards as any other Practice mode, but never the High-Yield Session bonus');
+});
+
 await test('endSession() durably saves locally before resolving — a reload immediately after sees the real score/streak, not a stale pre-session snapshot', async () => {
   // Regression for a real production report: a student's streak lit up
   // and their Kairo Score jumped right after a session, then both reset

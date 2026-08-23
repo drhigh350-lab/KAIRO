@@ -147,6 +147,19 @@ export class RapidFireEngine {
       }
     });
 
+    // Same gap CBT had before CBTExamMode.finish() was fixed: RapidFire
+    // runs outside endSession()'s lifecycle, so nothing here ever called
+    // levelSystem.update() either — a completed Rapid Fire round earned
+    // zero Kairo Points no matter how many concepts it moved to Held/
+    // Reinforced, how many topics it pushed past mastery, or that it was
+    // the day's first session. Awarded here on the graph/sessions state
+    // already updated above (submitAnswer()'s engine.submitAnswer() calls
+    // during the round, recordSession() just above), with no flat bonus —
+    // RapidFire isn't a High-Yield Session type (that's reserved for the
+    // daily recommendation and a full CBT simulation), same as any other
+    // non-recommendation Practice mode in endSession().
+    const levelUpdate = this.engine.levelSystem.update(this.engine.graph, this.engine.profile.sessions, 0);
+
     return {
       mode: 'rapid_fire',
       totalQuestions: this.sessionData.answers.length,
@@ -154,7 +167,8 @@ export class RapidFireEngine {
       accuracy: Math.round(accuracy * 100),
       avgTimeMs: Math.round(avgTime),
       bestStreak: this.sessionData.bestStreak,
-      durationSec: Math.round((this.sessionData.endTime - this.sessionData.startTime) / 1000)
+      durationSec: Math.round((this.sessionData.endTime - this.sessionData.startTime) / 1000),
+      level: levelUpdate
     };
   }
 }

@@ -2,6 +2,7 @@ import { KairoEngine, SupabaseSyncAdapter, CBTExamMode } from 'kairo-learning-en
 import { getSupabase } from './supabaseClient';
 import { selectedOptionLabel, type EngineFlatQuestion } from './engineAdapter';
 import type { PracticeExplanation } from '../features/practice/PracticeQuestion';
+import type { SessionRewards } from '../features/practice/PracticeSummary';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Engine = any;
@@ -1541,6 +1542,8 @@ export interface RapidFireResults {
   avgTimeMs: number;
   bestStreak: number;
   durationSec: number;
+  /** Real rewards from RapidFireEngine.finish()'s levelUpdate (Kairo Points earned + streak progress) — null only if it somehow finished without one. Kairo Score never appears here (KISS enforcement, the approved Kairo Score/Kairo Points directive). */
+  rewards?: SessionRewards | null;
 }
 
 export async function finishRapidFire(): Promise<RapidFireResults> {
@@ -1559,6 +1562,17 @@ export async function finishRapidFire(): Promise<RapidFireResults> {
   kairo._snapshotSjeeState();
   await kairo.store.saveProfile(kairo.profile);
   await kairo.sync.sync();
+  // RapidFireEngine.finish() now returns a real levelUpdate (previously it
+  // never called levelSystem.update() at all, so RapidFire never earned any
+  // Kairo Points) — surface it the same way CBT/Practice do, so the results
+  // screen can show the real number instead of nothing.
+  const streak = kairo.getStreakStatus?.();
+  results.rewards = {
+    pointsEarned: results.level?.pointsEarned ?? 0,
+    streakDays: streak?.momentum ?? 0,
+    streakLit: hasCompletedTodaysRecommendation(),
+    freezesAvailable: streak?.freezesAvailable ?? 0,
+  };
   return results;
 }
 

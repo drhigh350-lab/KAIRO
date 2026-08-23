@@ -1,5 +1,5 @@
 import { Button, Card } from '../../components';
-import { StatTile } from '../learning/shared';
+import { StatTile, StreakFlameBadge } from '../learning/shared';
 import type { RapidFireResults as RapidFireResultsData } from '../../lib/kairoEngine';
 
 export interface RapidFireResultsProps {
@@ -10,6 +10,7 @@ export interface RapidFireResultsProps {
 
 export function RapidFireResults({ results, onHome, onRetry }: RapidFireResultsProps) {
   const avgSec = Math.round(results.avgTimeMs / 100) / 10;
+  const pointsEarned = results.rewards?.pointsEarned ?? 0;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <div style={{ padding: '36px 20px 20px', textAlign: 'center' }}>
@@ -18,6 +19,16 @@ export function RapidFireResults({ results, onHome, onRetry }: RapidFireResultsP
         </div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)', marginTop: 14 }}>Round Complete</div>
         <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{results.durationSec}s total</div>
+        {results.rewards && (pointsEarned > 0 || results.rewards.streakDays > 0) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 12 }}>
+            {pointsEarned > 0 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.15)' }}>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: 'var(--dark-accent-blue)' }}>+{pointsEarned} Kairo Points</span>
+              </div>
+            )}
+            <StreakFlameBadge lit={results.rewards.streakLit} days={results.rewards.streakDays} freezesAvailable={results.rewards.freezesAvailable} />
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
