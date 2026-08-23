@@ -164,3 +164,19 @@ export function seededShuffle(array, seed) {
   }
   return arr;
 }
+
+/**
+ * Real (non-seeded) Fisher-Yates shuffle — `pool.sort(() => Math.random() - 0.5)`
+ * is a well-known broken shuffle (biased, not uniform); this is the real
+ * algorithm. Used wherever a question/candidate pool must be randomized
+ * before slicing off a fixed-size selection, so the same pool doesn't
+ * keep handing back the same prefix/order on every call.
+ */
+export function shuffleArray(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}

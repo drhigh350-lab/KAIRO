@@ -31,7 +31,7 @@ import { CommsService } from "./comms/CommsService.js";
 import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.js";
 import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
-import { conceptId } from "./utils/helpers.js";
+import { conceptId, shuffleArray } from "./utils/helpers.js";
 import { KairoPointsAwards } from "./utils/constants.js";
 
 // Practice Modes
@@ -481,7 +481,26 @@ export class KairoEngine {
       if (harder.length > 0) candidates = harder;
     }
     if (candidates.length === 0) return null;
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+    // The real "unseen questions" pool: this student's own attemptHistory
+    // for this concept, not just excludeIds (which only ever tracked
+    // questions already picked within the *current* queue build). Without
+    // this, a topic bank bigger than one session's worth of questions
+    // still kept resurfacing the same handful every session, since nothing
+    // remembered what had already been asked in a previous one. Falls back
+    // to the full (now-difficulty-filtered) candidate pool only once every
+    // question for this concept has genuinely been attempted before.
+    const concept = this.graph.getConcept(cid);
+    const attemptedIds = new Set((concept?.attemptHistory || []).map(a => a.questionId));
+    const unseen = candidates.filter(q => !attemptedIds.has(q.id));
+    const pool = unseen.length > 0 ? unseen : candidates;
+
+    // Shuffle rather than a single Math.random() index pick — this pool
+    // backs every 10-slot recommendation/practice queue, so it must be
+    // randomized before selection, not just individually sampled from the
+    // same static ordering (Map insertion order == DB fetch order) every
+    // single call.
+    const chosen = shuffleArray(pool)[0];
     return this._flattenQuestion(chosen);
   }
 

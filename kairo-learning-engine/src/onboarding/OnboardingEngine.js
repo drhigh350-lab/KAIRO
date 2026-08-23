@@ -188,6 +188,22 @@ export class OnboardingEngine {
     // diagnostic isn't a scored session, so this call can't double-pay them.
     const levelUpdate = this.engine.levelSystem.update(0, KairoPointsAwards.ONBOARDING_BONUS);
 
+    // Durably write the diagnostic before the engine builds anything off of
+    // it. Each diagnostic answer already mutated this.engine.graph live via
+    // submitAnswer(), but that's in-memory only — saveGraph() otherwise
+    // isn't called until the student's first real session ends, so a
+    // reload between onboarding and that first endSession() previously
+    // came back to a blank graph on the next _doInit() (loadGraph() finds
+    // nothing saved), silently discarding every diagnostic result. sync()
+    // is awaited too, not fire-and-forget, so the diagnostic attempts
+    // (queued live by each submitAnswer() call) actually land in the
+    // student's historical ledger (kairo.attempts) before startSession()
+    // below reads this graph to build the first recommendation queue —
+    // best-effort only insofar as sync() itself degrades to 'offline'
+    // rather than throwing when there's no connectivity yet.
+    await this.engine.store.saveGraph(this.engine.graph);
+    await this.engine.sync.sync();
+
     // Generate personalized first session
     const plan = this.engine.startSession();
 

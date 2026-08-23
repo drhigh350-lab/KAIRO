@@ -301,6 +301,21 @@ export async function signOutAndDisconnect(): Promise<void> {
     // best-effort
   }
   try {
+    // Purge IndexedDB (LocalStore) before dropping the engine reference —
+    // CONCEPTS/ATTEMPTS/QUEUE/PREFETCHED_QUEUES aren't scoped per student,
+    // so leaving them behind means the next sign-in on this device (a
+    // different account, or the same one) boots with the previous
+    // account's cached retention states and pre-built recommendation
+    // queues still sitting in local storage. This is a best-effort final
+    // flush, not a guarantee: an item still pending sync at this point
+    // (e.g. genuinely offline) is discarded along with everything else —
+    // accepted here since leaving it behind to leak into a different
+    // account on this device is worse.
+    if (engine) await engine.store.clearAll();
+  } catch {
+    // best-effort — still drop the local session below even if this fails
+  }
+  try {
     const supabase = getSupabase();
     await supabase.auth.signOut();
   } catch {
