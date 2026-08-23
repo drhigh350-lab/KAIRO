@@ -50,8 +50,8 @@ export function PlannerFlow() {
 
   async function handleToggleTopic(topic: PlannedTopic, done: boolean) {
     if (!state) return;
-    const completedTopicKeys = await markTopicComplete(topic.key, done);
-    setState({ ...state, completedTopicKeys });
+    const { completedTopicKeys, pendingVerificationKeys } = await markTopicComplete(topic.key, done);
+    setState({ ...state, completedTopicKeys, pendingVerificationKeys });
   }
 
   /** Bypasses every custom-configuration modal (subject/topic/subtopic pickers) — the Batch 2 "Trust, but Verify" loop launches straight into a scoped 10-question session on this exact topic. */
