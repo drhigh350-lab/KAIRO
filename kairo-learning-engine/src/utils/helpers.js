@@ -20,10 +20,48 @@ export function isPrimaryConceptLink(c) {
 
 /**
  * Time-safe date comparison. Returns days between two timestamps.
+ *
+ * Both arguments must already be epoch-ms numbers (or Date instances) —
+ * this does raw arithmetic subtraction, not Date parsing. A date-only
+ * string (e.g. "2026-08-23", the shape Postgres `date` columns round-trip
+ * as) silently coerces to NaN here instead of throwing, so a caller that
+ * ever hands this a raw column value instead of toLocalDateNumber()'s
+ * output gets a NaN gap that then satisfies no numeric comparison in
+ * MomentumStreak.recordSession() and falls through every branch straight
+ * to "genuine break" — resetting a real streak to 1 on every session that
+ * isn't literally the same calendar day as the last one.
  */
 export function daysBetween(a, b) {
   const msPerDay = 1000 * 60 * 60 * 24;
   return Math.abs((a - b) / msPerDay);
+}
+
+/**
+ * Formats a timestamp's own LOCAL calendar date as YYYY-MM-DD — never
+ * `.toISOString().slice(0, 10)`, which converts to UTC first. For anyone
+ * in a positive UTC offset (Nigeria, this product's primary market, is
+ * UTC+1), a session completed shortly after local midnight can land on
+ * the *previous* UTC calendar day, silently storing the wrong date.
+ */
+export function toLocalDateString(timestamp) {
+  const d = new Date(timestamp);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * The inverse of toLocalDateString() — parses a YYYY-MM-DD date-only
+ * string (e.g. from a Postgres `date` column) back into an epoch-ms
+ * number anchored to *local* midnight, not `new Date(dateString)`'s
+ * UTC-midnight interpretation of a date-only ISO string. Restores the
+ * exact type MomentumStreak.recordSession()'s arithmetic (daysBetween,
+ * dayKey) expects — see the daysBetween() comment above for what breaks
+ * when a raw string reaches it instead.
+ */
+export function fromLocalDateString(dateString) {
+  return new Date(`${dateString}T00:00:00`).getTime();
 }
 
 /**

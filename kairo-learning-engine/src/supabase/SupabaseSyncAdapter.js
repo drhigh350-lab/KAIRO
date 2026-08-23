@@ -39,6 +39,8 @@
  *                              kairo.students.notification_history instead.
  */
 
+import { toLocalDateString, fromLocalDateString } from '../utils/helpers.js';
+
 export class SupabaseSyncAdapter {
   constructor(supabaseClient, localStore) {
     this.supabase = supabaseClient;
@@ -121,7 +123,12 @@ export class SupabaseSyncAdapter {
       // field value out of range", which silently broke every profile sync
       // after every single session (score/streak/badges never actually
       // reached kairo.students, even though the request otherwise succeeded).
-      streak_last_session_date: profileData.streakData?.lastSessionDate ? new Date(profileData.streakData.lastSessionDate).toISOString().slice(0, 10) : null,
+      // toLocalDateString() (not .toISOString().slice(0,10), which converts
+      // to UTC first) — a session completed shortly after local midnight in
+      // a positive UTC offset (Nigeria, UTC+1) would otherwise store the
+      // previous day, corrupting streak continuity right at the boundary
+      // where it matters most.
+      streak_last_session_date: profileData.streakData?.lastSessionDate ? toLocalDateString(profileData.streakData.lastSessionDate) : null,
       streak_window_sessions: profileData.streakData?.windowSessions || [],
       streak_freezes_available: profileData.streakData?.freezesAvailable || 0,
       streak_freezes_used: profileData.streakData?.freezesUsed || 0,
@@ -192,7 +199,18 @@ export class SupabaseSyncAdapter {
       streakData: {
         currentMomentum: row.streak_current_momentum,
         protectedGapsUsed: row.streak_protected_gaps_used,
-        lastSessionDate: row.streak_last_session_date,
+        // Real bug, confirmed live: kept as the raw "YYYY-MM-DD" string
+        // Postgres returns for a `date` column, but MomentumStreak.
+        // recordSession() does raw arithmetic (daysBetween: `(a - b) /
+        // msPerDay`) against this value — subtracting a string from a
+        // number coerces to NaN, not a parsed date. NaN satisfies no
+        // numeric comparison in recordSession()'s gap-handling branches,
+        // so every one of them falls through to "genuine break," resetting
+        // a real streak to 1 on the very next session after any reload/
+        // sign-in that pulled this row — even a same-day-consecutive one.
+        // fromLocalDateString() restores the epoch-ms number type a fresh
+        // local session's lastSessionDate always has.
+        lastSessionDate: row.streak_last_session_date ? fromLocalDateString(row.streak_last_session_date) : null,
         windowSessions: row.streak_window_sessions || [],
         freezesAvailable: row.streak_freezes_available || 0,
         freezesUsed: row.streak_freezes_used || 0

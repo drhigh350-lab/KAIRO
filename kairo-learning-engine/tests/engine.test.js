@@ -1723,6 +1723,35 @@ test('Supabase adapter: every StudentProfile.toJSON() field survives the kairo.s
   assertEqual(restored.preferences.notifications.dailyRecap, false, 'preferences should round-trip exactly — without this, a student\'s notification/practice/accessibility/privacy/offline settings would silently reset to defaults on every fresh load');
 });
 
+test('streakData.lastSessionDate survives a kairo.students round-trip as a number, not a date-only string', () => {
+  // Regression for a real production report: a streak that lit up right
+  // after a session reset on the very next reload/sign-in — even for a
+  // genuinely consecutive day. Root cause: streak_last_session_date is a
+  // Postgres `date` column, so _rowToProfile() used to hand the raw
+  // "YYYY-MM-DD" string straight back onto profile.streakData.lastSessionDate,
+  // while MomentumStreak.recordSession() always sets it to an epoch-ms
+  // number (Date.now()) locally. daysBetween()'s raw arithmetic
+  // (`(a - b) / msPerDay`) subtracting a string from a number coerces to
+  // NaN — not a parsed date — and NaN satisfies none of recordSession()'s
+  // numeric branches, so every session after a round-trip fell straight
+  // through to "genuine break," resetting momentum to 1 regardless of
+  // whether the gap was real.
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
+  const realSessionTimestamp = new Date('2026-08-22T14:00:00').getTime(); // a real local epoch-ms value, exactly what MomentumStreak.recordSession() actually stores
+  const row = adapter._profileToRow({ streakData: { lastSessionDate: realSessionTimestamp } }, 'auth1');
+  assertEqual(row.streak_last_session_date, '2026-08-22', '_profileToRow() should store the local calendar date, not a UTC-shifted one');
+
+  const restored = adapter._rowToProfile({ ...row, id: 'sp2' });
+  assertEqual(typeof restored.streakData.lastSessionDate, 'number', '_rowToProfile() must hand back a number (matching MomentumStreak\'s own type), not the raw date-only string Postgres returns');
+
+  // The real end-to-end check: a genuinely consecutive-day session against
+  // a round-tripped lastSessionDate must increment, not reset.
+  const streak = new MomentumStreak({ streakData: { currentMomentum: 5, protectedGapsUsed: 0, lastSessionDate: restored.streakData.lastSessionDate, windowSessions: [], freezesAvailable: 0, freezesUsed: 0 } });
+  const nextDay = new Date('2026-08-23T09:00:00').getTime();
+  const status = streak.recordSession(nextDay);
+  assertEqual(status.momentum, 6, 'A real next-day session against a round-tripped lastSessionDate should extend the streak to 6, not silently reset it to 1');
+});
+
 test('SyncManager applies a genuinely newer remote concept state onto the live graph', () => {
   const syncEngine = new (engine.constructor)({
     studentId: 'sync_test_001', name: 'Sync Student',
