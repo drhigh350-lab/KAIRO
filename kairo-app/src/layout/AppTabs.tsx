@@ -11,15 +11,14 @@ const TABS: { key: string; path: string; label: string; d: string }[] = [
   { key: 'practice', path: '/practice', label: 'Practice', d: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z' },
   { key: 'cbt', path: '/cbt', label: 'CBT', d: 'M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z' },
   { key: 'review', path: '/review', label: 'Review', d: 'M12 8v4l3 3M12 22a10 10 0 100-20 10 10 0 000 20z' },
-  { key: 'insights', path: '/insights', label: 'Insights', d: 'M4 20V10M11 20V4M18 20v-7' },
 ];
 
 // Practice and CBT each drive their own internal screen-stack (not real
 // routes) inside a single /practice/* or /cbt/* route, so AppTabs can't
 // tell "hub screen" from "actively answering a question" just by looking
-// at location.pathname the way it can for /home, /review, /insights. This
-// context lets those flow controllers report their own hide/show intent
-// up to the persistent nav shell they're now nested inside.
+// at location.pathname the way it can for /home, /review. This context
+// lets those flow controllers report their own hide/show intent up to the
+// persistent nav shell they're now nested inside.
 const NavVisibilityContext = createContext<(hidden: boolean) => void>(() => {});
 
 /** Call with `true` while the current screen is a focused question/explanation screen that must hide the bottom nav, `false` (or unmount) once it's showing a hub/browsing screen again. */
@@ -33,8 +32,10 @@ export function useSetBottomNavHidden(hidden: boolean) {
 
 /**
  * Persistent bottom navigation shell for the main app section (Home / Practice /
- * CBT / Review / Insights). Profile is reached via the avatar in each screen's
- * own header, not a tab — per the product's explicit navigation spec.
+ * CBT / Review). Profile is reached via the avatar in each screen's own
+ * header, not a tab — per the product's explicit navigation spec. Insights
+ * lives inside Profile as its own sub-section (see ProfileInsights.tsx),
+ * not a bottom-nav tab of its own.
  */
 export function AppTabs() {
   const navigate = useNavigate();

@@ -558,6 +558,89 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
   return { questions };
 }
 
+/**
+ * The Theory vs. Calculation Insight's "Launch Speed/Theory Drill" CTA — a
+ * real session strictly scoped to one heuristic category (see
+ * KairoEngine.buildHeuristicDrillQueue()/isCalculationQuestion() in
+ * kairo-learning-engine), across the student's own enrolled subjects.
+ */
+export async function startHeuristicDrillSession(category: 'calculation' | 'theory', limit = 10): Promise<SuggestedSessionResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(kairo.profile.targetSubjects || []);
+  const { kaiMessage } = kairo.startSession({ mode: 'custom_practice' });
+  const { questions, conceptIds } = kairo.buildHeuristicDrillQueue(category, limit);
+  kairo.currentSession.plan = conceptIds;
+  return { questions, kaiMessage };
+}
+
+/** What tapping a card's CTA should actually launch — kept as structured data (not re-derived from ctaLabel text) so the UI layer never has to parse copy to know what to do. */
+export type ActionableInsightCta =
+  | { kind: 'drill'; category: 'calculation' | 'theory' }
+  | { kind: 'suggested' }
+  | { kind: 'weak' };
+
+export interface ActionableInsightCard {
+  id: 'theory_vs_calculation' | 'cognitive_prime_time' | 'hesitation_penalty';
+  header: string;
+  mentorCopy: string;
+  ctaLabel: string;
+  cta: ActionableInsightCta;
+}
+
+/**
+ * The Profile "Action Cards" carousel's data — three real, behavior-
+ * derived insights (see InsightsModule.getTheoryVsCalculationSplit() /
+ * getCognitivePrimeTime() / getHesitationPenalty() in kairo-learning-
+ * engine's src/insights/InsightsModule.js). Each is included only once
+ * there's genuinely enough real attempt/session data behind it — an
+ * insight with nothing to say yet is simply omitted, never rendered with
+ * a fabricated or zeroed-out number.
+ */
+export function getActionableInsightCards(): ActionableInsightCard[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  const cards: ActionableInsightCard[] = [];
+
+  const split = kairo.insights.getTheoryVsCalculationSplit();
+  if (split) {
+    const weakLabel = split.weakerCategory === 'calculation' ? 'Calculation' : 'Theory';
+    cards.push({
+      id: 'theory_vs_calculation',
+      header: `${split.theoryAccuracy}% Theory · ${split.calculationAccuracy}% Calculation`,
+      mentorCopy: split.weakerCategory === 'calculation'
+        ? `You're strong on concept recall, but numbers are costing you — ${split.calculationAccuracy}% on calculation questions versus ${split.theoryAccuracy}% on theory. That gap is worth closing before the real exam.`
+        : `You're stronger on calculation than on theory — ${split.calculationAccuracy}% versus ${split.theoryAccuracy}%. A little more time on definitions and concepts will even that out.`,
+      ctaLabel: `Launch ${weakLabel} Drill`,
+      cta: { kind: 'drill', category: split.weakerCategory },
+    });
+  }
+
+  const prime = kairo.insights.getCognitivePrimeTime();
+  if (prime) {
+    cards.push({
+      id: 'cognitive_prime_time',
+      header: `${prime.bestAccuracy}% in the ${prime.bestWindowLabel}`,
+      mentorCopy: `Your accuracy is highest in the ${prime.bestWindowLabel.toLowerCase()} (${prime.bestAccuracy}%) and lowest in the ${prime.worstWindowLabel.toLowerCase()} (${prime.worstAccuracy}%). Same you, same syllabus — just a ${prime.gap}-point swing based on when you study.`,
+      ctaLabel: 'Start a Session Now',
+      cta: { kind: 'suggested' },
+    });
+  }
+
+  const hesitation = kairo.insights.getHesitationPenalty();
+  if (hesitation) {
+    cards.push({
+      id: 'hesitation_penalty',
+      header: `${hesitation.confidentAccuracy}% First Pick · ${hesitation.hesitatedAccuracy}% After Changing`,
+      mentorCopy: `When you go with your first answer, you're right ${hesitation.confidentAccuracy}% of the time. When you switch options before submitting, that drops to ${hesitation.hesitatedAccuracy}%. Second-guessing is costing you more than the questions themselves.`,
+      ctaLabel: 'Launch Decisive Practice',
+      cta: { kind: 'weak' },
+    });
+  }
+
+  return cards;
+}
+
 export interface WeakTopicSummary {
   subject: string;
   topic: string;

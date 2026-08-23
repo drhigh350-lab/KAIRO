@@ -117,6 +117,13 @@ export function Profile() {
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>Badge Vault</div>
             <BadgeVaultRow badges={displayBadges} onboarded={onboarded} onSelect={setOpenTrackKey} />
           </Card>
+          <Card onClick={() => navigate('/profile/insights')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--dark-text-heading)' }}>Insights</div>
+              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>Your real behavioral patterns, and what to do about them</div>
+            </div>
+            <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
+          </Card>
           <Card onClick={() => navigate('/profile/notifications')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--dark-text-heading)' }}>Notifications</div>

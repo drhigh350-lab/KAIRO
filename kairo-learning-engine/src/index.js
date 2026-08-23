@@ -31,7 +31,7 @@ import { CommsService } from "./comms/CommsService.js";
 import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.js";
 import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
-import { conceptId, shuffleArray } from "./utils/helpers.js";
+import { conceptId, shuffleArray, isCalculationQuestion } from "./utils/helpers.js";
 import { KairoPointsAwards } from "./utils/constants.js";
 
 // Practice Modes
@@ -559,6 +559,34 @@ export class KairoEngine {
   }
 
   /**
+   * The Profile Insights "Launch Speed Drill" / "Launch Theory Drill" CTA:
+   * a real, resolved session queue scoped to exactly one heuristic category
+   * (see isCalculationQuestion() in utils/helpers.js) across the student's
+   * own enrolled subjects — not a generic mixed/weak-areas session, since
+   * the whole point of the Theory vs. Calculation Insight is to let a
+   * student drill the specific skill they're weaker on. Returns
+   * { questions, conceptIds } — conceptIds is the deduplicated list of
+   * concepts backing those questions, for a caller to set as the real
+   * session plan (see startSession()'s `plan` override) the same way
+   * startCustomSession()/startTopicPracticeSession() already do.
+   */
+  buildHeuristicDrillQueue(category, limit = 10) {
+    const enrolled = this.profile.targetSubjects;
+    const wantsCalculation = category === 'calculation';
+
+    const candidates = Array.from(this.questionGraph.questions.values()).filter(q => {
+      if (q.lifecycleState !== 'live') return false;
+      if (enrolled && enrolled.length > 0 && !enrolled.includes(q.subject)) return false;
+      return isCalculationQuestion(q.stem) === wantsCalculation;
+    });
+
+    const shuffled = shuffleArray(candidates).slice(0, limit);
+    const questions = shuffled.map(q => this._flattenQuestion(q));
+    const conceptIds = Array.from(new Set(questions.map(q => q.conceptId).filter(Boolean)));
+    return { questions, conceptIds };
+  }
+
+  /**
    * Fetch one exact, specific question by ID — unlike getQuestionForConcept
    * (which picks any question that tests a concept), this is for Review's
    * Reflection Moment (Review Module §5.5), which must reconstruct the
@@ -838,7 +866,7 @@ export class KairoEngine {
    * call this directly with neither set, so both are optional here — only
    * the concept-state/attempt-recording work below is universal.
    */
-  submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single' }) {
+  submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single', answerChangeCount = 0 }) {
     const concept = this.graph.getConcept(cid);
     if (!concept) {
       throw new Error(`Concept ${cid} not found.`);
@@ -880,6 +908,18 @@ export class KairoEngine {
     // Recording them here is also what lets Review's Reflection Moment
     // (CBT Exam Mode Spec's Review Module §5.5) show a student their own
     // original answer later — there is no other place that answer is kept.
+    // answerChangeCount (Hesitation Penalty Insight): how many times the
+    // student switched their selected option before hitting Submit — real
+    // instrumentation from PracticeQuestion.tsx, not derived from anything
+    // already recorded. Carried on `attempt` for local storage/Review's
+    // "reconstruct the original answer" use, and separately on the object
+    // handed to processAnswer() below so it lands on
+    // concept.attemptHistory too (RecommendationEngine.processAnswer()
+    // passes that object straight into concept.recordAttempt()) — that's
+    // the read path InsightsModule.getHesitationPenalty() actually uses.
+    // Deliberately NOT added to SupabaseSyncAdapter._attemptToRow(): no
+    // answer_change_count column exists on kairo.attempts yet, so this
+    // stays a local-only (same-device) signal until that migration lands.
     const attempt = {
       conceptId: cid,
       correct,
@@ -890,7 +930,8 @@ export class KairoEngine {
       selectedOption,
       correctOption,
       difficulty: questionDifficulty,
-      genuineConfidence: genuine
+      genuineConfidence: genuine,
+      answerChangeCount
     };
 
     this.store.logAttempt(attempt);
@@ -906,7 +947,8 @@ export class KairoEngine {
           questionId,
           selectedOption,
           correctOption,
-          difficulty: questionDifficulty
+          difficulty: questionDifficulty,
+          answerChangeCount
         })
       : null;
 

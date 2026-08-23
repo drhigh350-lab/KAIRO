@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Card, ProgressBar, ScoreBadge } from '../../components';
-import { getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped } from '../../lib/kairoEngine';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, ProgressBar, ScoreBadge, Button } from '../../components';
+import { ScreenHeader, KairoScoreInfo } from '../learning/shared';
+import {
+  getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped,
+  getActionableInsightCards, type ActionableInsightCard, type ActionableInsightCta,
+} from '../../lib/kairoEngine';
 import { generateKaiText } from '../../lib/kaiAi';
-import { KairoScoreInfo } from '../learning/shared';
 
 const trendCopy: Record<string, string> = {
   rising: "Your score moved up mostly because you're getting harder questions right more often, not just more questions overall.",
@@ -11,20 +15,109 @@ const trendCopy: Record<string, string> = {
   insufficient_data: "I'll be able to show a trend once you've completed a few more sessions.",
 };
 
-export function Insights() {
+/** Routes an Action Card's CTA to a real Practice session — kept here (not in kairoEngine.ts) since navigation is a UI-layer concern. */
+function launchCta(navigate: ReturnType<typeof useNavigate>, cta: ActionableInsightCta) {
+  if (cta.kind === 'drill') {
+    navigate('/practice', { state: { entry: 'drill', drillCategory: cta.category } });
+  } else if (cta.kind === 'suggested') {
+    navigate('/practice', { state: { entry: 'suggested' } });
+  } else {
+    navigate('/practice', { state: { entry: 'weak' } });
+  }
+}
+
+/** One "Action Card" (Batch 2's Card Anatomy: minimal header metric, mentor copy, a primary Gold CTA) — sized to fill exactly one carousel page. */
+function ActionCard({ card, onAction }: { card: ActionableInsightCard; onAction: () => void }) {
+  return (
+    <div style={{
+      flex: '0 0 100%', scrollSnapAlign: 'center', minWidth: '100%', boxSizing: 'border-box',
+      padding: '0 20px',
+    }}>
+      <div style={{
+        borderRadius: 'var(--radius-lg)', padding: 22,
+        background: 'linear-gradient(160deg, var(--dark-bg-elevated), var(--dark-bg-surface))',
+        border: '1px solid rgba(201,162,39,0.35)',
+        boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+        minHeight: 200, display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--kairo-gold-500)', textTransform: 'uppercase' }}>
+          Actionable Insight
+        </div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--dark-text-heading)', marginTop: 10, lineHeight: 1.25 }}>
+          {card.header}
+        </div>
+        <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', lineHeight: 1.55, marginTop: 12, flex: 1 }}>
+          {card.mentorCopy}
+        </div>
+        <div style={{ marginTop: 18 }}>
+          <Button variant="gold" size="md" fullWidth onClick={onAction}>{card.ctaLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Batch 2's horizontal snap-scroll carousel — one card visible at a time, dot pagination tracks scroll position. */
+function ActionCardCarousel({ cards, onAction }: { cards: ActionableInsightCard[]; onAction: (card: ActionableInsightCard) => void }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  function handleScroll() {
+    const el = scrollerRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setActiveIndex(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  if (cards.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div
+        ref={scrollerRef}
+        onScroll={handleScroll}
+        style={{
+          display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory',
+          scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        {cards.map((card) => (
+          <ActionCard key={card.id} card={card} onAction={() => onAction(card)} />
+        ))}
+      </div>
+      {cards.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 6 }}>
+          {cards.map((card, i) => (
+            <div key={card.id} style={{
+              width: i === activeIndex ? 16 : 6, height: 6, borderRadius: 3,
+              background: i === activeIndex ? 'var(--kairo-gold-500)' : 'var(--dark-border)',
+              transition: 'width var(--dur-base), background var(--dur-base)',
+            }} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Profile's Insights sub-section: Batch 2's Action Card carousel up top
+ * (the three real behavioral insights, when there's enough data for them),
+ * then the existing Weekly Review / Kairo Wrapped / Subject Health content
+ * that used to live at the standalone /insights bottom-nav tab — moved
+ * here (not deleted) when that tab was removed, so nothing already valued
+ * by a returning student silently disappears.
+ */
+export function ProfileInsights() {
+  const navigate = useNavigate();
   const insights = getInsightsSummary();
   const weekly = getWeeklyReviewSummary();
   const monthly = getMonthlyWrapped();
+  const actionCards = getActionableInsightCards();
   const hasScore = !!insights?.eliteScore;
   const subjectHealth = insights?.strengths ?? [];
   const reinforcedNames: string[] = weekly?.reinforced?.map((c: { name: string }) => c.name) ?? [];
   const hasMonthlyStory = !!monthly && (monthly.reinforcedCount > 0 || monthly.biggestTurnaround || monthly.totalSessions > 0);
 
-  // Both reflections already have a real, template-generated Kai note
-  // (weekly.kaiNote) or no note at all (monthly has none yet) — this
-  // quietly upgrades to a freshly-generated version in Kai's voice once
-  // Gemini responds, using only the same already-computed facts. Nothing
-  // on screen ever depends on this call succeeding.
   const [weeklyKaiNote, setWeeklyKaiNote] = useState<string | null>(weekly?.kaiNote ?? null);
   const [monthlyKaiNote, setMonthlyKaiNote] = useState<string | null>(null);
 
@@ -63,14 +156,14 @@ export function Insights() {
   }, [hasMonthlyStory, monthly?.timestamp]);
 
   return (
-    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
-      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>Insights</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', flex: 1 }}>
+      <ScreenHeader onBack={() => navigate(-1)} title="Insights" tone="dark" />
 
-      {/* Tablet/desktop (>=768px): the reflective, narrative cards (This Week,
-          Kairo Wrapped) as the main column, the at-a-glance numbers
-          (score, subject health) as a sticky sidebar — reading vs.
-          scanning, rather than one long stacked column. */}
-      <div className="desktop-grid">
+      {actionCards.length > 0 && (
+        <ActionCardCarousel cards={actionCards} onAction={(card) => launchCta(navigate, card.cta)} />
+      )}
+
+      <div className="desktop-grid" style={{ padding: '0 20px 24px' }}>
         <div className="desktop-main">
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>This Week</div>

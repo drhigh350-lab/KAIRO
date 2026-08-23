@@ -14,6 +14,8 @@ export interface PracticeQuestionResult {
   selectedIndex: number | null;
   /** Real elapsed time from this question rendering to the student submitting — same stopwatch pattern as CBT Exam Mode and Rapid Fire, not an estimate. */
   responseTimeMs: number;
+  /** How many times the student switched their selected option before hitting Submit (0 = went with their first pick). Feeds the Hesitation Penalty Insight — see KairoEngine.submitAnswer()'s answerChangeCount. */
+  answerChanges: number;
 }
 
 /** Shape of ExplanationEngine.generate()'s output (kairo-learning-engine's
@@ -54,7 +56,7 @@ export interface PracticeQuestionProps {
   onNext: (result: PracticeQuestionResult) => void;
   onExit: () => void;
   /** Fires once, right when the answer is graded — before the student advances — so a caller can record the real attempt and offer a "Learn this" follow-up immediately. */
-  onAnswered?: (result: { correct: boolean; selectedIndex: number | null; responseTimeMs: number }) => void;
+  onAnswered?: (result: { correct: boolean; selectedIndex: number | null; responseTimeMs: number; answerChanges: number }) => void;
   /** Only rendered when the answer was wrong and a caller passes this — routes to the real Learn Module lesson for the concept just missed. */
   onLearnThis?: () => void;
   /** Kai's real, context-aware response to this specific attempt (from submitAnswer()'s kaiResponse, optionally upgraded by generateKaiText()) — falls back to question.kai if not provided. */
@@ -107,6 +109,12 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   const [timeLeft, setTimeLeft] = useState<number | null>(timerSec);
   const submittedRef = useRef(false);
   const selectedRef = useRef<number | null>(null);
+  // Hesitation Penalty Insight: real count of option switches before
+  // Submit, not the final answer alone — a ref (not state) since the
+  // auto-submit timer callback below needs the latest value without
+  // re-subscribing its interval on every change.
+  const [answerChanges, setAnswerChanges] = useState(0);
+  const answerChangesRef = useRef(0);
 
   // Re-syncs against the real bookmark set in case loadBookmarks() (called
   // once when Practice starts) hadn't resolved yet when this question's
@@ -117,6 +125,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
 
   useEffect(() => { submittedRef.current = submitted; }, [submitted]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { answerChangesRef.current = answerChanges; }, [answerChanges]);
 
   // One countdown per question (this component remounts per question via
   // its `key`, so timeLeft always starts fresh at timerSec). Ticks down
@@ -130,7 +139,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
         if (t !== null && t <= 1) {
           submittedRef.current = true;
           setSubmitted(true);
-          onAnswered?.({ correct: selectedRef.current === question.correct, selectedIndex: selectedRef.current, responseTimeMs: Date.now() - questionStartedAt.current });
+          onAnswered?.({ correct: selectedRef.current === question.correct, selectedIndex: selectedRef.current, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges: answerChangesRef.current });
           return 0;
         }
         return t !== null ? t - 1 : null;
@@ -142,7 +151,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
 
   function submit() {
     setSubmitted(true);
-    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current });
+    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges });
   }
   function flashToast(msg: string) { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2200); }
   async function handleBookmarkToggle() {
@@ -284,7 +293,12 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             if (showCorrect) { border = 'var(--dark-success)'; bg = 'var(--dark-success-bg)'; }
             if (showWrongPick && !hideElim) { border = 'var(--dark-danger)'; bg = 'var(--dark-danger-bg)'; }
             return (
-              <button key={i} disabled={submitted} onClick={() => setSelected(i)} style={{
+              <button key={i} disabled={submitted} onClick={() => {
+                setSelected((prev) => {
+                  if (prev !== null && prev !== i) setAnswerChanges((c) => c + 1);
+                  return i;
+                });
+              }} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `1.5px solid ${border}`,
                 background: bg, color: 'var(--dark-text-body)', fontSize: 16, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
                 display: 'flex', gap: 10, alignItems: 'center', transition: 'background var(--dur-base), border-color var(--dur-base)',
@@ -367,7 +381,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
           <Button variant="darkAccent" size="lg" fullWidth disabled={hasAdvancedRef.current} onClick={() => {
             if (hasAdvancedRef.current) return;
             hasAdvancedRef.current = true;
-            onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current });
+            onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges });
           }}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
         )}
       </div>
