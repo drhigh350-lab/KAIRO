@@ -2081,6 +2081,44 @@ await test('endSession(): a custom/topic practice session earns no High-Yield bo
   assertEqual(result.scoreDelta.bonus, 0, 'Custom practice should never earn the High-Yield bonus');
 });
 
+await test('endSession() durably saves locally before resolving — a reload immediately after sees the real score/streak, not a stale pre-session snapshot', async () => {
+  // Regression for a real production report: a student's streak lit up
+  // and their Kairo Score jumped right after a session, then both reset
+  // (streak to 0, score back to its pre-session value) on refresh. Root
+  // cause: endSession() used to compute score/streak/badges and hand them
+  // back to the caller for an "instant" summary screen, while the actual
+  // IndexedDB save (and the Supabase push riding on top of it) ran in a
+  // detached, never-awaited tail — a refresh in the second or two right
+  // after the summary rendered (exactly when a student is most likely to
+  // look away) could win the race and leave nothing durably saved at all.
+  const sessionA = new KairoEngine({ studentId: 'refresh_race_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await sessionA.init();
+  const conceptId = sessionA.addConcept({ name: 'Refresh Race Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  sessionA.questionGraph.addQuestion(new Question({
+    id: 'refresh_race_q1', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+
+  sessionA.startSession({ mode: 'standard', plan: [conceptId] });
+  sessionA.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'refresh_race_q1', questionDifficulty: 1 });
+  const result = await sessionA.endSession();
+
+  // Simulate the refresh: a brand-new KairoEngine instance reading the
+  // same persisted student back from storage, the same pattern the
+  // "engine.settings is reconstructed on init() reload" test above uses.
+  const sessionB = new KairoEngine({ studentId: 'refresh_race_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  sessionB.store.useMemory = true;
+  sessionB.store.memoryFallback = sessionA.store.memoryFallback;
+  await sessionB.init();
+
+  assertEqual(sessionB.profile.streakData.currentMomentum, 1, 'The streak earned this session should survive an immediate reload, not reset to 0');
+  const reloadedScore = sessionB.eliteScore.history[sessionB.eliteScore.history.length - 1];
+  assert(reloadedScore, 'The elite score history entry from this session should exist after reload');
+  assertEqual(reloadedScore.total, result.eliteScore.total, 'The exact score computed during the session should survive an immediate reload, not revert to the pre-session total');
+});
+
 test('TopicPracticeEngine.buildSubtopicSession fills the session from a concept\'s real question pool, not just one slot per concept', () => {
   // Regression test for a real bug: a subtopic almost always maps to
   // exactly one concept in seeded content, but that one concept can have
@@ -2259,6 +2297,82 @@ await test('connectSupabase() rebuilds journeyStage/reEngagement/comms from the 
   connectEngine._snapshotSjeeState();
   assertEqual(connectEngine.profile.comms.consent.hardStopActive, true, '_snapshotSjeeState() after connect should preserve the hard-stop, not overwrite it with a fresh ConsentManager\'s default false');
   assertEqual(connectEngine.profile.reEngagement.winBackAttempts.length, 1, '_snapshotSjeeState() after connect should preserve win-back history, not overwrite it with an empty array');
+});
+
+await test('connectSupabase() never clobbers a fresher local score/streak/progress with a stale remote row', async () => {
+  // Regression, the other half of the "streak/Kairo Score resets on
+  // refresh" report: restoreSession() calls init() (loading the real,
+  // possibly more current local profile from IndexedDB) BEFORE
+  // connectSupabase() — but connectSupabase() used to unconditionally
+  // Object.assign the remote kairo.students row over whatever local had,
+  // with no check for which one was actually newer. If a session had
+  // finished and saved locally (now durable — see the endSession() fix
+  // above) but its own Supabase push hadn't landed yet — still offline,
+  // or simply hadn't had time to run — every single reload would silently
+  // revert the student's just-earned score/streak/progress back to
+  // whatever the stale server row still said, even though the awaited
+  // local save "fixed" the exact same symptom one layer down.
+  const sessionA = new KairoEngine({ studentId: 'clobber_race_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  await sessionA.init();
+  const conceptId = sessionA.addConcept({ name: 'Clobber Race Concept', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles' });
+  sessionA.questionGraph.addQuestion(new Question({
+    id: 'clobber_race_q1', subject: 'Biology', topic: 'Cells', subtopic: 'Organelles',
+    conceptsTested: [{ conceptId, weight: 1 }],
+    stem: 'S', options: [{ label: 'A', text: 'x', isCorrect: true }], correctOption: 'A',
+    lifecycleState: 'live'
+  }));
+  sessionA.startSession({ mode: 'standard', plan: [conceptId] });
+  sessionA.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'clobber_race_q1', questionDifficulty: 1 });
+  const result = await sessionA.endSession();
+
+  // A reload: a fresh engine instance sharing the same durable local
+  // store (per the "engine.settings is reconstructed on init() reload"
+  // pattern above) — init() loads the real, fresher local profile first,
+  // exactly like restoreSession() does.
+  const sessionB = new KairoEngine({ studentId: 'clobber_race_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Biology'] });
+  sessionB.store.useMemory = true;
+  sessionB.store.memoryFallback = sessionA.store.memoryFallback;
+  await sessionB.init();
+  assertEqual(sessionB.profile.streakData.currentMomentum, 1, 'sanity check: the fresher local streak really did load first, same as the reload test above');
+
+  // The stale remote row: as if this device's own Supabase push from
+  // endSession() above genuinely never landed — an older lastSessionAt,
+  // a blank streak, an empty score history. Same shape ensureStudentRow()
+  // returns for an existing row.
+  const staleRow = {
+    id: 'clobber_race_test', auth_user_id: 'auth_clobber_race_test', name: 'Test',
+    target_subjects: ['Biology'], total_questions_answered: 0, total_correct: 0,
+    elite_score_history: [], badges: [], completed_challenges: [],
+    macro_state: 'orienting', macro_state_history: [], response_time_baselines: {},
+    last_session_at: new Date(sessionB.profile.lastSessionAt - 60000).toISOString(),
+    streak_current_momentum: 0, streak_protected_gaps_used: 0, streak_last_session_date: null,
+    streak_window_sessions: [], streak_freezes_available: 0, streak_freezes_used: 0,
+    notification_history: [], learning_state_history: [], journey_stage_history: []
+  };
+  const mockClient = {
+    auth: { async getUser() { return { data: { user: { id: 'auth_clobber_race_test' } }, error: null }; } },
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; }, limit() { return builder; },
+            maybeSingle() {
+              if (table === 'students') return Promise.resolve({ data: staleRow, error: null });
+              return Promise.resolve({ data: null, error: null });
+            },
+            then(resolve) { return resolve({ data: [], error: null }); }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  await sessionB.connectSupabase(mockClient, {});
+
+  assertEqual(sessionB.profile.streakData.currentMomentum, 1, "connectSupabase() should preserve the fresher local streak, not reset it to the stale remote row's 0");
+  assertEqual(sessionB.profile.eliteScoreHistory.length, 1, "connectSupabase() should preserve the fresher local score history, not the stale remote row's empty array");
+  assertEqual(sessionB.profile.eliteScoreHistory[0].total, result.eliteScore.total, 'The preserved score should be the exact one earned this session');
 });
 
 await test('loadContentCatalog() populates engine.graph and engine.questionGraph from Supabase, and getQuestionForConcept() bridges the practice loop to real seeded content', async () => {

@@ -1072,12 +1072,23 @@ export async function finishCbtExam(): Promise<Engine> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const results = kairo.cbt.finish();
-  // Score/streak/badges/scoreDelta are already computed synchronously above
-  // (real weighted eliteScore.calculate() included) — the sync round trip
-  // is a real network call that shouldn't hold up the summary screen from
-  // rendering a number it already has, same reasoning as Practice's
-  // endSession(). Fire-and-forget; SyncManager's own durable queue covers
-  // retrying if this fails.
+  // Unlike Practice's endSession(), CBTExamMode.finish() never touched
+  // storage at all — the score/streak/progress it just computed only ever
+  // existed in memory until whatever *this* function did with it. The only
+  // thing that ran here before was a detached, unawaited kairo.sync.sync()
+  // (a network call), so a refresh in the second or two right after the
+  // summary screen renders — exactly when a student is most likely to look
+  // away — could lose the entire exam's score/streak/progress with no
+  // local fallback at all. finish() answered questions through
+  // engine.submitAnswer() (graph mutations) and profile.recordSession()
+  // (profile mutations), so both need saving, awaited, before this
+  // resolves — same durability guarantee endSession() now provides.
+  await kairo.store.saveGraph(kairo.graph);
+  kairo._snapshotSjeeState();
+  await kairo.store.saveProfile(kairo.profile);
+  // Only the network half stays detached — SyncManager's durable queue
+  // (already populated by CBTExamMode.finish()'s sync.queue() calls)
+  // covers retrying this if it fails or never gets the chance to run.
   kairo.sync.sync().catch(() => {});
   return results;
 }
@@ -1526,6 +1537,17 @@ export async function finishRapidFire(): Promise<RapidFireResults> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const results = kairo.finishRapidFire();
+  // Same gap as CBT: RapidFireEngine.finish() never touched storage —
+  // each answer already mutated the graph via engine.submitAnswer(), and
+  // finish() itself mutates profile via recordSession(), but neither was
+  // ever saved to IndexedDB. The awaited kairo.sync.sync() below looked
+  // like it covered this, but offline it just returns { status: 'offline' }
+  // without writing anything anywhere — so a Rapid Fire session run
+  // offline (this app is offline-first) lost its results the moment the
+  // tab closed, no refresh race even required.
+  await kairo.store.saveGraph(kairo.graph);
+  kairo._snapshotSjeeState();
+  await kairo.store.saveProfile(kairo.profile);
   await kairo.sync.sync();
   return results;
 }

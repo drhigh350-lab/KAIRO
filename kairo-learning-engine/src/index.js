@@ -273,7 +273,39 @@ export class KairoEngine {
     // actually saved server-side. That's what surfaced as "my progress is
     // gone" on sign-out/sign-in even though the row itself was intact.
     const { _isNewStudent, ...remoteProfileFields } = remoteProfile;
+
+    // The one caller that ISN'T starting from a blank profile: restoreSession()
+    // (a page reload of an already-signed-in student) calls init() before
+    // this, which loads the real local profile from IndexedDB first. If a
+    // session finished and saved locally (endSession()/finishCbtExam()/
+    // finishRapidFire() now await that save — see their own comments) but
+    // its Supabase push hasn't landed yet — still offline, or simply
+    // hasn't had time to run — this device's local copy of the
+    // gamification/progress cluster is the more current truth. Blindly
+    // Object.assign-ing remote over it here would silently revert a
+    // student's just-earned score/streak/progress back to the stale
+    // server row on every single reload — the exact "streak/Kairo Score
+    // resets on refresh" bug reported in production, and the reason those
+    // saves being awaited elsewhere wasn't enough on its own to fix it.
+    // Every other caller has local.lastSessionAt unset, so this guard
+    // never blocks them from adopting a real remote history.
+    const localIsFresher = (this.profile.lastSessionAt || 0) > (remoteProfileFields.lastSessionAt || 0);
+    const preserveIfLocalFresher = localIsFresher ? {
+      eliteScoreHistory: this.profile.eliteScoreHistory,
+      streakData: this.profile.streakData,
+      totalQuestionsAnswered: this.profile.totalQuestionsAnswered,
+      totalCorrect: this.profile.totalCorrect,
+      lastSessionAt: this.profile.lastSessionAt,
+      macroState: this.profile.macroState,
+      macroStateHistory: this.profile.macroStateHistory,
+      badges: this.profile.badges,
+      totalXP: this.profile.totalXP,
+      atRiskTriggeredAt: this.profile.atRiskTriggeredAt,
+      recoverySessionCount: this.profile.recoverySessionCount
+    } : null;
+
     Object.assign(this.profile, remoteProfileFields);
+    if (preserveIfLocalFresher) Object.assign(this.profile, preserveIfLocalFresher);
     this.profile.authUserId = user.id;
 
     // profile.sessions has no column of its own on kairo.students (it lives
@@ -912,23 +944,36 @@ export class KairoEngine {
       }
     });
 
-    // Persistence (IndexedDB writes + a real Supabase sync round trip) is
-    // the genuinely slow part of ending a session — everything above it
-    // is pure in-memory computation. Detached (not awaited) so the caller
-    // gets the real score/streak/badges/scoreDelta back immediately for an
-    // instant summary screen, instead of the summary waiting on a network
-    // round trip to show a number it already has. Nothing below this
-    // block reads from store/sync, so nothing here needs their result.
-    const persistTail = (async () => {
-      await this.store.saveGraph(this.graph);
-      this._snapshotSjeeState();
-      await this.store.saveProfile(this.profile);
-      await this.sync.sync();
-    })();
-    persistTail.catch(() => {
+    // The IndexedDB writes are awaited — the score/streak/badges/progress
+    // this method is about to return are about to be shown to the student
+    // as real and final (the summary screen, the Home flame, "Today's
+    // Progress"), so they must actually be durable before this resolves.
+    // Previously both the local save AND the Supabase push sat in one
+    // detached (never-awaited) tail: a refresh, tab close, or backgrounded
+    // browser in the second or two right after a session ended — exactly
+    // when a student is most likely to look away or reload — could win the
+    // race against that tail and leave *neither* copy updated. On the next
+    // load, init() reads the stale local profile and connectSupabase()
+    // then overwrites it with the equally stale Supabase row, so the
+    // student's just-earned score/streak/progress silently vanishes back
+    // to whatever was last durably saved — reproduced against a real
+    // report: a streak that lit up and showed "1 day" right after a
+    // session reset to 0 on reload, and a Kairo Score shown as "+40" on
+    // the summary screen never actually moved the total by anywhere near
+    // that much.
+    await this.store.saveGraph(this.graph);
+    this._snapshotSjeeState();
+    await this.store.saveProfile(this.profile);
+
+    // Only the network half stays detached — a real Supabase round trip
+    // that shouldn't hold up the summary screen from rendering a number
+    // it already has durably saved locally. SyncManager's own durable
+    // pending-sync queue (queued above via this.sync.queue(), rehydrated
+    // on next boot) covers retrying this specific half if it fails or
+    // never gets the chance to run at all.
+    this.sync.sync().catch(() => {
       // Best-effort — a failure here doesn't undo the session or its
-      // score; SyncManager's own queue/rehydrate already covers retrying
-      // the sync half specifically.
+      // score, which are already safely on disk via the awaited saves above.
     });
 
     const result = {
