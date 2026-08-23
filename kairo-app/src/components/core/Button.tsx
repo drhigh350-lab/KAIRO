@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 
 export interface ButtonProps {
   children: ReactNode;
@@ -43,16 +43,25 @@ function variantStyle(variant: string, disabled: boolean): CSSProperties {
 export function Button({ children, variant = 'primary', size = 'md', disabled = false, icon, fullWidth = false, onClick, type = 'button' }: ButtonProps) {
   const vs = variantStyle(variant, disabled);
   const sz = sizes[size] || sizes.md;
+  // Emil's-Skills tactile press (ui-polish-spec.md's "active:scale-[0.98]" rule) — every button
+  // in the app is a plain inline-styled element with no CSS classes to hang a real :active
+  // pseudo-class off, so this is the pointer-event equivalent: fires for mouse, touch, and pen alike.
+  const [pressed, setPressed] = useState(false);
   return (
     <button
       type={type}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
+      onPointerDown={() => { if (!disabled) setPressed(true); }}
+      onPointerUp={() => setPressed(false)}
+      onPointerLeave={() => setPressed(false)}
+      onPointerCancel={() => setPressed(false)}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         fontFamily: 'var(--font-body)', fontWeight: 600, borderRadius: 'var(--radius-pill)',
         cursor: disabled ? 'not-allowed' : 'pointer', minHeight: 'var(--touch-min)',
-        width: fullWidth ? '100%' : 'auto', transition: 'background var(--dur-fast) var(--ease-standard), opacity var(--dur-fast)',
+        width: fullWidth ? '100%' : 'auto', transform: pressed ? 'scale(0.98)' : 'scale(1)',
+        transition: 'background var(--dur-fast) var(--ease-standard), opacity var(--dur-fast), transform 150ms ease-out',
         ...sz, ...vs,
       }}
       onMouseOver={(e) => { if (!disabled && variant === 'primary') e.currentTarget.style.background = 'var(--kairo-navy-800)'; }}

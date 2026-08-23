@@ -232,7 +232,8 @@ export function topicKey(subjectSlug: string, stageOrder: number, topicTitle: st
   return `${subjectSlug}::${stageOrder}::${topicTitle}`;
 }
 
-function flattenSubjectTopics(subject: Subject, startingStageIndex: number): PlannedTopic[] {
+/** Every topic a subject is responsible for from its chosen starting stage onward, in the same prerequisite-aware order the scheduler itself walks — exported so the Full Roadmap view can group the complete Blueprint (not just what fit into the schedule) by real stage, using the exact same PlannedTopic.key format completedTopicKeys/pendingVerificationKeys are keyed by. */
+export function flattenSubjectTopics(subject: Subject, startingStageIndex: number): PlannedTopic[] {
   const stages = [...subject.stages].sort((a, b) => a.order - b.order).slice(startingStageIndex);
   const out: PlannedTopic[] = [];
   for (const stage of stages as SubjectStage[]) {

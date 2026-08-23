@@ -4,7 +4,7 @@
  * Simple, endearing, no decision fatigue. The system guides, the student follows.
  */
 
-import { StreakConstants } from "../utils/constants.js";
+import { StreakConstants, KairoPointsAwards } from "../utils/constants.js";
 
 export class OnboardingEngine {
   constructor(kairoEngine) {
@@ -178,12 +178,24 @@ export class OnboardingEngine {
     // student past FREEZE_CAPACITY.
     this.engine.streak.earnFreeze(StreakConstants.FREEZE_EARNED_ON_ONBOARDING);
 
+    // Flat, one-time Kairo Points welcome bonus — same shape as every other
+    // session-completion award (endSession()/CBTExamMode.finish()/
+    // RapidFireEngine.finish() all call levelSystem.update() exactly once).
+    // correctCount is 0 here: diagnostic answers already went through
+    // submitAnswer() live as the student answered each question, and
+    // submitAnswer() never itself calls levelSystem.update() — CORRECT_ANSWER
+    // points are only ever credited at session completion, and the
+    // diagnostic isn't a scored session, so this call can't double-pay them.
+    const levelUpdate = this.engine.levelSystem.update(0, KairoPointsAwards.ONBOARDING_BONUS);
+
     // Generate personalized first session
     const plan = this.engine.startSession();
 
     return {
       seededConcepts: conceptsLoaded,
       diagnosticSummary: this._summarizeDiagnostic(),
+      pointsEarned: levelUpdate.pointsEarned,
+      totalPoints: levelUpdate.totalPoints,
       firstSession: plan,
       profile: this.engine.profile.toJSON()
     };

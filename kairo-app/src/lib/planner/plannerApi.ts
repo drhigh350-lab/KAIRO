@@ -22,10 +22,18 @@ export interface PlannerState {
   topicProgress: TopicProgressMap;
   /** Batch 3's "persistent queue" rule applied to the Planner's own due-topic pick — held steady across other practice until the pinned topic itself is resolved (see isPinStillValid below), not just recomputed fresh every call. */
   pinnedDueTopic: (DueTopic & { pinnedOnIso: string }) | null;
+  /**
+   * The "Trust, but Verify" open loop: a topic lands here the moment it's checked done (whether the
+   * student then dismisses the Verification CTA with "Not now" or just navigates away without acting
+   * on it either way) and is cleared only once recordVerificationResult() actually runs for it — so a
+   * checked-but-unverified topic can never quietly read as "truly done." Local-only, like
+   * pinnedDueTopic above: never synced to Supabase, never clobbered by a remote pull.
+   */
+  pendingVerificationKeys: string[];
   updatedAt: number;
 }
 
-const EMPTY_STATE: PlannerState = { planInput: null, completedTopicKeys: [], topicProgress: {}, pinnedDueTopic: null, updatedAt: 0 };
+const EMPTY_STATE: PlannerState = { planInput: null, completedTopicKeys: [], topicProgress: {}, pinnedDueTopic: null, pendingVerificationKeys: [], updatedAt: 0 };
 
 function currentStudentId(): string | null {
   const kairo = getEngine();
@@ -38,6 +46,7 @@ interface StoredPlannerRow {
   completedTopicKeys?: string[];
   topicProgress?: TopicProgressMap;
   pinnedDueTopic?: (DueTopic & { pinnedOnIso: string }) | null;
+  pendingVerificationKeys?: string[];
   updatedAt?: number;
 }
 
@@ -59,6 +68,7 @@ export async function loadPlannerState(): Promise<PlannerState> {
     completedTopicKeys: local.completedTopicKeys ?? [],
     topicProgress: local.topicProgress ?? {},
     pinnedDueTopic: local.pinnedDueTopic ?? null,
+    pendingVerificationKeys: local.pendingVerificationKeys ?? [],
     updatedAt: local.updatedAt ?? 0,
   } : EMPTY_STATE;
 
@@ -75,6 +85,7 @@ export async function loadPlannerState(): Promise<PlannerState> {
       completedTopicKeys: data.completed_topic_keys ?? [],
       topicProgress: data.topic_progress ?? {},
       pinnedDueTopic: localState.pinnedDueTopic, // the pin is a local-only "in progress right now" marker, never synced across devices
+      pendingVerificationKeys: localState.pendingVerificationKeys, // same local-only treatment — see PlannerState's doc comment
       updatedAt: remoteUpdatedAt,
     };
     await kairo.store.savePlannerState(studentId, remoteState);
@@ -122,15 +133,33 @@ export async function loadCurrentPlan(): Promise<{ plan: PlannerPlan; state: Pla
   return { plan, state };
 }
 
-/** Checks/unchecks a topic — the Batch 2 checklist action. `key` is a PlannedTopic.key (see topicKey() in plannerEngine.ts), already computed by whatever rendered the topic row. Returns the updated key set so the caller (the checkbox itself) can render optimistically without re-awaiting a full loadPlannerState(). */
-export async function markTopicComplete(key: string, done: boolean): Promise<string[]> {
+/**
+ * Checks/unchecks a topic — the Batch 2 checklist action. `key` is a PlannedTopic.key (see
+ * topicKey() in plannerEngine.ts), already computed by whatever rendered the topic row. Returns the
+ * updated key sets so the caller can render optimistically without re-awaiting a full
+ * loadPlannerState().
+ *
+ * Checking a topic done also opens the "Trust, but Verify" pending-verification loop (added to
+ * pendingVerificationKeys right here, not only when the CTA's "Not now" is clicked) — a topic the
+ * student checks and then simply navigates away from, without tapping either CTA button, still needs
+ * to read as unverified rather than silently falling through the gap. Unchecking a topic retracts
+ * that claim too, same as it already retracts completedTopicKeys.
+ */
+export async function markTopicComplete(key: string, done: boolean): Promise<{ completedTopicKeys: string[]; pendingVerificationKeys: string[] }> {
   const state = await loadPlannerState();
-  const keys = new Set(state.completedTopicKeys);
-  if (done) keys.add(key);
-  else keys.delete(key);
-  const completedTopicKeys = [...keys];
-  await persist({ ...state, completedTopicKeys });
-  return completedTopicKeys;
+  const completed = new Set(state.completedTopicKeys);
+  const pending = new Set(state.pendingVerificationKeys);
+  if (done) {
+    completed.add(key);
+    pending.add(key);
+  } else {
+    completed.delete(key);
+    pending.delete(key);
+  }
+  const completedTopicKeys = [...completed];
+  const pendingVerificationKeys = [...pending];
+  await persist({ ...state, completedTopicKeys, pendingVerificationKeys });
+  return { completedTopicKeys, pendingVerificationKeys };
 }
 
 function isPinStillValid(pin: DueTopic, progress: TopicProgressMap, todayIso: string): boolean {
@@ -163,11 +192,12 @@ export async function getPinnedRecommendation(): Promise<DueTopic | null> {
   return next;
 }
 
-/** Applies a completed Verification Session's accuracy to that topic's SRS tier, and clears the pin if this was the pinned topic — the write side of Batch 3's decay timer. `key` is the same PlannedTopic.key the Verification CTA was launched with. */
+/** Applies a completed Verification Session's accuracy to that topic's SRS tier, clears the pin if this was the pinned topic, and closes the Batch 2 open loop (the topic is genuinely verified now, however it scored) — the write side of Batch 3's decay timer. `key` is the same PlannedTopic.key the Verification CTA was launched with. */
 export async function recordVerificationResult(key: string, accuracyPct: number): Promise<void> {
   const state = await loadPlannerState();
   const today = toLocalIso(new Date());
   const topicProgress = recordTopicAttempt(key, accuracyPct, today, state.topicProgress);
   const pinnedDueTopic = state.pinnedDueTopic?.topicKey === key ? null : state.pinnedDueTopic;
-  await persist({ ...state, topicProgress, pinnedDueTopic });
+  const pendingVerificationKeys = state.pendingVerificationKeys.filter((k) => k !== key);
+  await persist({ ...state, topicProgress, pinnedDueTopic, pendingVerificationKeys });
 }

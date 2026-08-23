@@ -5,6 +5,32 @@ import type { PlannedTopic, PlannerPlan } from '../../lib/planner/plannerEngine'
 import { getWeekForDate, toLocalIso } from '../../lib/planner/plannerEngine';
 import type { PlannerState } from '../../lib/planner/plannerApi';
 import type { DueTopic } from '../../lib/planner/plannerSrs';
+import { PlannerRoadmap } from './PlannerRoadmap';
+
+type PlannerView = 'week' | 'roadmap';
+
+/** Batch 3's two-way toggle — a plain local segment picker, not a route, since both views read off the same already-loaded plan/state. */
+function ViewToggle({ view, onChange }: { view: PlannerView; onChange: (v: PlannerView) => void }) {
+  const segments: { key: PlannerView; label: string }[] = [{ key: 'week', label: 'This Week' }, { key: 'roadmap', label: 'Full Roadmap' }];
+  return (
+    <div style={{ display: 'flex', padding: 3, borderRadius: 'var(--radius-pill)', background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)' }}>
+      {segments.map((s) => {
+        const active = view === s.key;
+        return (
+          <button key={s.key} type="button" onClick={() => onChange(s.key)} style={{
+            flex: 1, padding: '9px 14px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
+            fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 700,
+            background: active ? 'var(--kairo-gold-500)' : 'transparent',
+            color: active ? 'var(--kairo-navy-900)' : 'var(--dark-text-muted)',
+            transition: 'background var(--dur-fast) var(--ease-standard), color var(--dur-fast)',
+          }}>
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export interface PlannerHomeProps {
   onBack: () => void;
@@ -37,10 +63,20 @@ function DarkCheckboxLabel({ checked, onChange, label }: { checked: boolean; onC
   );
 }
 
+/** Batch 2's open-loop indicator: a topic that's checked done but hasn't been through the Verification Session yet — quiet enough not to nag, but present enough that "done" never quietly reads as "verified." */
+function PendingVerificationTag() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, color: 'var(--kairo-gold-500)', whiteSpace: 'nowrap' }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--kairo-gold-500)', flexShrink: 0 }} />
+      Pending Verification
+    </span>
+  );
+}
+
 function TopicRow({
-  topic, done, justCompleted, onToggle, onStartVerification, onDismissCta,
+  topic, done, pending, justCompleted, onToggle, onStartVerification, onDismissCta,
 }: {
-  topic: PlannedTopic; done: boolean; justCompleted: boolean;
+  topic: PlannedTopic; done: boolean; pending: boolean; justCompleted: boolean;
   onToggle: (done: boolean) => void;
   onStartVerification: () => void;
   onDismissCta: () => void;
@@ -49,15 +85,18 @@ function TopicRow({
     <div style={{ borderRadius: 'var(--radius-lg)', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', overflow: 'hidden' }}>
       <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <DarkCheckboxLabel checked={done} onChange={() => onToggle(!done)} label={topic.topicTitle} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-text-faint)', whiteSpace: 'nowrap', marginTop: 2 }}>{topic.subjectName}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginTop: 2 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-text-faint)', whiteSpace: 'nowrap' }}>{topic.subjectName}</span>
+          {done && pending && !justCompleted && <PendingVerificationTag />}
+        </div>
       </div>
       {justCompleted && (
-        <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff', lineHeight: 1.4 }}>
+        <div style={{ padding: '14px 16px', background: 'var(--dark-bg-elevated)', borderTop: '1px solid var(--dark-border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--dark-text-heading)', lineHeight: 1.4 }}>
             Topic Completed. Take a 5-minute quiz to lock it in.
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="primary" size="sm" onClick={onStartVerification}>Start Quiz</Button>
+            <Button variant="gold" size="sm" onClick={onStartVerification}>Start Quiz</Button>
             <Button variant="ghost" size="sm" onClick={onDismissCta}>Not now</Button>
           </div>
         </div>
@@ -75,9 +114,12 @@ const TIER_COPY: Record<DueTopic['tier'], { title: string; detail: string }> = {
 /** The Study Planner's main screen — this week's checklist plus the pinned recommendation from Batch 3's tiered SRS. Reachable topics are read straight off the current week; the recommendation banner is independent of "this week" since a due resurface can span weeks the student ignored the plan for. */
 export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommendation, onToggleTopic, onStartVerification }: PlannerHomeProps) {
   const [justCompletedKey, setJustCompletedKey] = useState<string | null>(null);
+  const [view, setView] = useState<PlannerView>('week');
   const todayIso = toLocalIso(new Date());
   const week = getWeekForDate(plan, todayIso);
   const completed = new Set(state.completedTopicKeys);
+  const pending = new Set(state.pendingVerificationKeys);
+  const weekDoneCount = week ? week.topics.filter((t) => completed.has(t.key)).length : 0;
 
   const allTopicsByKey = new Map<string, PlannedTopic>();
   for (const w of plan.weeks) {
@@ -103,6 +145,12 @@ export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommend
         )}
       />
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <ViewToggle view={view} onChange={setView} />
+
+        {view === 'roadmap' && <PlannerRoadmap plan={plan} completed={completed} pending={pending} />}
+
+        {view === 'week' && (
+          <>
         {pinnedRecommendation && recommendedTopic && (
           <div style={{
             borderRadius: 'var(--radius-lg)', padding: 18,
@@ -124,13 +172,16 @@ export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommend
 
         {week && week.topics.length > 0 && (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 10 }}>THIS WEEK</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 10 }}>
+              THIS WEEK <span style={{ color: 'var(--dark-text-faint)', fontWeight: 700 }}>({weekDoneCount}/{week.topics.length})</span>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {week.topics.map((t) => (
                 <TopicRow
                   key={t.key}
                   topic={t}
                   done={completed.has(t.key)}
+                  pending={pending.has(t.key)}
                   justCompleted={justCompletedKey === t.key}
                   onToggle={(done) => handleToggle(t, done)}
                   onStartVerification={() => { setJustCompletedKey(null); onStartVerification(t); }}
@@ -152,6 +203,7 @@ export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommend
                   key={`${t.key}-review`}
                   topic={t}
                   done={completed.has(t.key)}
+                  pending={pending.has(t.key)}
                   justCompleted={justCompletedKey === `${t.key}-review`}
                   onToggle={(done) => { onToggleTopic(t, done); setJustCompletedKey(done ? `${t.key}-review` : null); }}
                   onStartVerification={() => { setJustCompletedKey(null); onStartVerification(t); }}
@@ -166,6 +218,8 @@ export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommend
           <div style={{ fontSize: 13.5, color: 'var(--dark-text-muted)', textAlign: 'center', padding: '40px 20px' }}>
             Nothing scheduled for this week — check back once your plan's next week starts.
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

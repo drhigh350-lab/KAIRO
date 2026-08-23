@@ -1330,6 +1330,10 @@ export interface DiagnosticAnswer {
 export interface OnboardingCompleteResult {
   seededConcepts: number;
   diagnosticSummary: { total: number; correct: number; accuracy: number; message: string };
+  /** Flat, one-time Kairo Points welcome bonus (KairoPointsAwards.ONBOARDING_BONUS) awarded the moment onboarding completes. */
+  pointsEarned: number;
+  /** Lifetime Kairo Points total after the bonus above — feeds getPrestigeProgress()'s tier. */
+  totalPoints: number;
   profile: Engine;
 }
 
@@ -1391,9 +1395,9 @@ export async function completeOnboardingFlow(results: DiagnosticAnswer[]): Promi
   kairo.submitOnboardingStep(results); // -> 'results'
   kairo.submitOnboardingStep(null); // -> 'first_session'
   kairo.submitOnboardingStep(null); // -> complete
-  const { seededConcepts, diagnosticSummary, profile } = await kairo.completeOnboarding();
+  const { seededConcepts, diagnosticSummary, pointsEarned, totalPoints, profile } = await kairo.completeOnboarding();
   await kairo.sync.sync();
-  return { seededConcepts, diagnosticSummary, profile };
+  return { seededConcepts, diagnosticSummary, pointsEarned, totalPoints, profile };
 }
 
 // ─────────────────────────────────────────────

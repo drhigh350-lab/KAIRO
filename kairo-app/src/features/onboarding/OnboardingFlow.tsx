@@ -37,6 +37,7 @@ export function OnboardingFlow() {
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const [diagnosticQuestions, setDiagnosticQuestions] = useState<EngineFlatQuestion[] | null>(null);
   const [diagnosticSummary, setDiagnosticSummary] = useState<{ total: number; correct: number; accuracy: number; message: string } | null>(null);
+  const [diagnosticPointsEarned, setDiagnosticPointsEarned] = useState(0);
   const startedGoogleOnboarding = useRef(false);
   // Landing here with a googleName means GoogleAuthCallback already
   // decided this is a genuinely new student — nothing to restore/recheck.
@@ -215,13 +216,16 @@ export function OnboardingFlow() {
         onExit={() => navigate('/home')}
         onComplete={(answers: DiagnosticAnswer[]) => {
           completeOnboardingFlow(answers)
-            .then(({ diagnosticSummary: summary }) => {
+            .then(({ diagnosticSummary: summary, pointsEarned }) => {
               setDiagnosticSummary(summary);
+              setDiagnosticPointsEarned(pointsEarned);
               go('diagnosticResults');
             })
             .catch(() => {
               // completeOnboarding() failed to build the real plan (e.g. content catalog load error) — the
               // answers themselves are still real, so show the genuine tally rather than inventing a summary.
+              // The Kairo Points bonus never ran either (it's awarded inside the same buildInitialPlan() call
+              // that failed), so it stays 0 rather than claiming a reward that was never actually credited.
               const correct = answers.filter((a) => a.correct).length;
               setDiagnosticSummary({
                 total: answers.length,
@@ -229,13 +233,14 @@ export function OnboardingFlow() {
                 accuracy: answers.length ? Math.round((correct / answers.length) * 100) : 0,
                 message: "Kairo couldn't finish building your plan just now, but your answers are saved — we'll pick up from here.",
               });
+              setDiagnosticPointsEarned(0);
               go('diagnosticResults');
             });
         }}
       />
     );
   } else if (screen === 'diagnosticResults' && diagnosticSummary) {
-    body = <DiagnosticResults summary={diagnosticSummary} onContinue={() => go('notifications')} />;
+    body = <DiagnosticResults summary={diagnosticSummary} pointsEarned={diagnosticPointsEarned} onContinue={() => go('notifications')} />;
   } else if (screen === 'notifications') {
     body = (
       <EnableNotifications
