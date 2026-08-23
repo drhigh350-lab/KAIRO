@@ -110,7 +110,8 @@ export const KairoPointsAwards = Object.freeze({
   CORRECT_ANSWER: 2,           // per correct answer, every mode, no exceptions — incorrect/skipped/unsure earn 0
   RECOMMENDATION_SESSION: 10,  // flat bonus for completing the daily recommendation (mode 'standard')
   VERIFICATION_SESSION: 10,    // flat bonus for completing a Study Planner verification session
-  CBT_SESSION: 50              // flat bonus for completing a full CBT simulation
+  CBT_SESSION: 50,             // flat bonus for completing a full CBT simulation
+  ONBOARDING_BONUS: 50         // flat, one-time bonus for finishing the onboarding diagnostic — see OnboardingEngine.buildInitialPlan()
 });
 
 // ─── Decay & Scheduling ───
