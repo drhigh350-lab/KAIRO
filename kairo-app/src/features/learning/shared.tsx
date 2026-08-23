@@ -271,6 +271,26 @@ export function InlineToast({ children, tone = 'default' }: InlineToastProps) {
   );
 }
 
+/**
+ * Batch 3 tier-upgrade toast — sleek, non-intrusive, top-of-screen. Shared
+ * across every session-ending summary screen (Practice, CBT, Rapid Fire)
+ * so the cycling behavior (one real upgrade line at a time, ~3.2s apart,
+ * reset whenever a new session's upgrades come in) is defined exactly
+ * once rather than per screen. Pass detectTierUpgradeMessages()'s output.
+ */
+export function useTierUpgradeToast(tierUpgrades: string[]) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    setIndex(0);
+    if (tierUpgrades.length === 0) return;
+    const timer = setInterval(() => {
+      setIndex((i) => (i + 1 < tierUpgrades.length ? i + 1 : i));
+    }, 3200);
+    return () => clearInterval(timer);
+  }, [tierUpgrades]);
+  return tierUpgrades[index] ?? null;
+}
+
 export interface OverflowMenuItem {
   icon?: ReactNode;
   label: string;

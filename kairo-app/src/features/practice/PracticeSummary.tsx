@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
 import { Card, Button } from '../../components';
-import { StatTile, ChevronRight, StreakFlameBadge, InlineToast } from '../learning/shared';
+import { StatTile, ChevronRight, StreakFlameBadge, InlineToast, useTierUpgradeToast } from '../learning/shared';
 
 export interface PracticeResult {
   correct: boolean;
@@ -46,26 +45,6 @@ export interface PracticeSummaryProps {
   rewards?: SessionRewards | null;
   /** Batch 3 tier-upgrade toast lines (Prestige Level + Badge Vault), from detectTierUpgradeMessages() — real, specific copy per upgrade, cycled one at a time rather than shown all at once. */
   tierUpgrades?: string[];
-}
-
-/**
- * Sleek, non-intrusive, top-of-screen — reuses the same InlineToast/local-
- * timer pattern already used across the app (ChallengesHub's share
- * confirmation, PracticeQuestion's bookmark/report toasts) rather than a
- * parallel toast system. Cycles through every real upgrade this session
- * earned one at a time (usually just one) instead of stacking them.
- */
-function useTierUpgradeToast(tierUpgrades: string[]) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    setIndex(0);
-    if (tierUpgrades.length === 0) return;
-    const timer = setInterval(() => {
-      setIndex((i) => (i + 1 < tierUpgrades.length ? i + 1 : i));
-    }, 3200);
-    return () => clearInterval(timer);
-  }, [tierUpgrades]);
-  return tierUpgrades[index] ?? null;
 }
 
 type SummaryTier = 'low' | 'mid' | 'high';

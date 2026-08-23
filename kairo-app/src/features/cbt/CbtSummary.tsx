@@ -1,5 +1,5 @@
 import { Button, Card } from '../../components';
-import { StatTile, StreakFlameBadge } from '../learning/shared';
+import { StatTile, StreakFlameBadge, InlineToast, useTierUpgradeToast } from '../learning/shared';
 import type { CbtQuestionResult } from '../../lib/kairoEngine';
 import type { SessionRewards } from '../practice/PracticeSummary';
 
@@ -23,6 +23,8 @@ export interface CbtResults {
   questionResults: CbtQuestionResult[];
   /** Real rewards from CBTExamMode.finish() (Kairo Points earned + streak progress) — null only if it somehow finished without one. Kairo Score never appears here (KISS enforcement, the approved Kairo Score/Kairo Points directive). */
   rewards?: SessionRewards | null;
+  /** Batch 3 tier-upgrade toast lines (Prestige Level + Badge Vault), from detectTierUpgradeMessages() — empty when this exam earned no new tier. */
+  tierUpgrades?: string[];
 }
 
 export interface CbtSummaryProps {
@@ -35,9 +37,11 @@ export function CbtSummary({ results, onHome, onReview }: CbtSummaryProps) {
   const strongest = results.bySubject.slice().sort((a, b) => b.percentage - a.percentage)[0];
   const weakest = results.bySubject.slice().sort((a, b) => a.percentage - b.percentage)[0];
   const pointsEarned = results.rewards?.pointsEarned ?? 0;
+  const upgradeToast = useTierUpgradeToast(results.tierUpgrades ?? []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', position: 'relative' }}>
+      {upgradeToast && <InlineToast>{upgradeToast}</InlineToast>}
       <div style={{ padding: '36px 20px 20px', textAlign: 'center' }}>
         <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--dark-bg-elevated)', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z" /></svg>

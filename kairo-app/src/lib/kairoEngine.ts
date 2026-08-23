@@ -1154,6 +1154,12 @@ export async function finishCbtExam(): Promise<Engine> {
     streakLit: hasCompletedTodaysRecommendation(),
     freezesAvailable: streak?.freezesAvailable ?? 0,
   };
+  // Batch 3: CBTExamMode.finish() already checks the Badge Vault and
+  // returns newBadges/level same as endSession() — this was previously
+  // never surfaced as a toast on CbtSummary even though a full simulation
+  // is exactly the kind of session likely to cross a tier. Same function
+  // Practice uses, so the copy/behavior is identical everywhere.
+  results.tierUpgrades = detectTierUpgradeMessages(results);
   return results;
 }
 
@@ -1597,6 +1603,8 @@ export interface RapidFireResults {
   durationSec: number;
   /** Real rewards from RapidFireEngine.finish()'s levelUpdate (Kairo Points earned + streak progress) — null only if it somehow finished without one. Kairo Score never appears here (KISS enforcement, the approved Kairo Score/Kairo Points directive). */
   rewards?: SessionRewards | null;
+  /** Batch 3 tier-upgrade toast lines (Prestige Level + Badge Vault), from detectTierUpgradeMessages() — empty when this round earned no new tier. */
+  tierUpgrades?: string[];
 }
 
 export async function finishRapidFire(): Promise<RapidFireResults> {
@@ -1626,6 +1634,11 @@ export async function finishRapidFire(): Promise<RapidFireResults> {
     streakLit: hasCompletedTodaysRecommendation(),
     freezesAvailable: streak?.freezesAvailable ?? 0,
   };
+  // Batch 3: RapidFireEngine.finish() already checks the Badge Vault and
+  // returns newBadges/level (see its own fix earlier) — this was never
+  // surfaced as a toast on the Rapid Fire results screen. Same function
+  // Practice/CBT use, so the copy/behavior is identical everywhere.
+  results.tierUpgrades = detectTierUpgradeMessages(results);
   return results;
 }
 

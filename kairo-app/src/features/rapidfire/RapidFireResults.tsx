@@ -1,5 +1,5 @@
 import { Button, Card } from '../../components';
-import { StatTile, StreakFlameBadge } from '../learning/shared';
+import { StatTile, StreakFlameBadge, InlineToast, useTierUpgradeToast } from '../learning/shared';
 import type { RapidFireResults as RapidFireResultsData } from '../../lib/kairoEngine';
 
 export interface RapidFireResultsProps {
@@ -11,8 +11,10 @@ export interface RapidFireResultsProps {
 export function RapidFireResults({ results, onHome, onRetry }: RapidFireResultsProps) {
   const avgSec = Math.round(results.avgTimeMs / 100) / 10;
   const pointsEarned = results.rewards?.pointsEarned ?? 0;
+  const upgradeToast = useTierUpgradeToast(results.tierUpgrades ?? []);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', position: 'relative' }}>
+      {upgradeToast && <InlineToast>{upgradeToast}</InlineToast>}
       <div style={{ padding: '36px 20px 20px', textAlign: 'center' }}>
         <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--dark-bg-elevated)', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M13 2L3 14h7l-1 8 11-14h-7l1-6z" /></svg>
