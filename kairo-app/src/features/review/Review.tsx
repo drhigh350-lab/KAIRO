@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
 import {
-  getEngine, getReviewSummary, getWeaknessReview, getMonthlyWrapped,
+  getEngine, getReviewSummary, getWeaknessReview, getMonthlyWrapped, getWeakTopics,
   getBookmarkedQuestions, removeBookmark, getSessionHistory,
-  type BookmarkedQuestion, type SessionHistoryEntry,
+  type BookmarkedQuestion, type SessionHistoryEntry, type WeakTopicSummary,
 } from '../../lib/kairoEngine';
 import { getReviewSessionSnapshot, type ReviewSessionSnapshot } from '../../lib/sessionResume';
 
@@ -24,6 +24,7 @@ export function Review() {
   const recap = getReviewSummary();
   const weakness = getWeaknessReview();
   const monthly = getMonthlyWrapped();
+  const weakTopics: WeakTopicSummary[] = getWeakTopics(undefined, 5);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
@@ -67,16 +68,37 @@ export function Review() {
     categories.push({ key: 'stale', label: 'Slipping Away', desc: "Held steady for a while but haven't come up recently.", count: recap.recap.breakdown.stale, items: stale.map((q) => ({ id: q.id, name: q.name })) });
   }
   if (weakness?.dominantWeakness) {
+    // Error-pattern grouping (same tag recurring across concepts) — a
+    // Pattern Surfacing signal (Review Module §5.7), not the topic-level
+    // Weak Topics view below, so it gets its own distinct label.
     categories.push({
-      key: 'weak',
-      label: 'Weak Topics',
+      key: 'pattern',
+      label: 'Common Mistake Pattern',
       desc: weakness.kaiMessage,
       count: weakness.dominantWeakness.conceptCount,
       items: weakConcepts.map((w) => ({ id: w.concept.id, name: w.concept.name, sub: `${w.concept.subject} · ${w.concept.topic}` })),
     });
   }
+  if (weakTopics.length > 0) {
+    // Weak Topics (Review Module §4.3 item 5) — the topic-level mastery
+    // view, distinct from the concept-level categories above; reuses the
+    // same real failure-rate data Practice's "weak areas" mode already
+    // computes (KairoEngine.getWeakTopics()), framed for consolidation
+    // rather than fresh drilling.
+    categories.push({
+      key: 'weakTopics',
+      label: 'Weak Topics',
+      desc: 'Could use a confidence check.',
+      count: weakTopics.length,
+      items: weakTopics.map((t) => ({ id: `${t.subject}::${t.topic}`, name: t.topic, sub: `${t.subject} · ${Math.round(t.failureRate * 100)}% missed` })),
+    });
+  }
 
-  const totalWaiting = (recap?.fadingCount ?? 0) + categories.reduce((s, c) => s + c.count, 0);
+  // The engine's own queue total (fading + recently-missed + stale), not a
+  // re-sum of the category cards below — those include the dominant-error-tag
+  // and topic-level views, which are different lenses over overlapping
+  // concepts, not additional items waiting (Review Module §4.2, §10.4).
+  const totalWaiting = recap?.recap.totalConcepts ?? 0;
   const hasReinforcedStory = !!monthly && monthly.reinforcedCount > 0;
 
   return (
@@ -112,7 +134,7 @@ export function Review() {
             <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
               <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>SUGGESTED REVIEW</div>
               <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginTop: 8 }}>
-                Quick pass on {recap.fadingCount} fading concept{recap.fadingCount === 1 ? '' : 's'}
+                {recap.headline}
               </div>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 8 }}>About {recap.recap.estimatedTimeMin} minutes</div>
               <div style={{ marginTop: 16 }}>

@@ -1128,7 +1128,9 @@ export function getMonthlyWrapped(): Engine | null {
  * Real "what needs review" summary for the Review screen. Mirrors
  * ReviewModule.getPreSessionRecap()'s own contract: null both when nothing is
  * signed in AND when genuinely nothing is due — the caller shouldn't have to
- * tell those two "show nothing" cases apart.
+ * tell those two "show nothing" cases apart. `headline` names whichever
+ * category (fading/recently-missed/stale) is actually driving the urgency —
+ * never assume "fading" the way the raw `fadingCount` field alone invites.
  */
 export function getReviewSummary(): Engine | null {
   const kairo = getEngine();

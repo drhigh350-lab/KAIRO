@@ -2828,6 +2828,46 @@ await test('ProfileSettings.deleteAllData() rebuilds every profile-bound subsyst
   assertEqual(score.total, 0, 'a freshly reset student with no graph/sessions should score 0, confirming eliteScore is reading the new empty profile, not the deleted one\'s history');
 });
 
+await test('ReviewModule.getPreSessionRecap() names the actual driving category, not always "fading"', async () => {
+  const reviewEngine = new KairoEngine({ studentId: 'review_recap_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  await reviewEngine.init();
+  const cid = reviewEngine.addConcept({ name: 'Mole Ratio', subject: 'Chemistry', topic: 'Stoichiometry' });
+  reviewEngine.startSession();
+  // One correct (UNSEEN -> FORMING), then one wrong. A wrong answer on a
+  // FORMING concept stays FORMING (ConceptNode._updateState has no FORMING
+  // branch for `!correct`) — this is a real "recently missed" concept that
+  // is deliberately NOT in the Fading state, so fadingCount stays 0 while
+  // recentlyMissed is > 0.
+  reviewEngine.submitAnswer({ conceptId: cid, correct: true, responseTimeMs: 4000, selectedOption: 'A', correctOption: 'A', questionId: 'q1', questionDifficulty: 1 });
+  reviewEngine.submitAnswer({ conceptId: cid, correct: false, responseTimeMs: 4000, selectedOption: 'B', correctOption: 'A', questionId: 'q2', questionDifficulty: 1 });
+
+  const recap = reviewEngine.review.getPreSessionRecap();
+  assert(recap, 'recap should be non-null once a concept is waiting for review');
+  assertEqual(recap.fadingCount, 0, 'no concept reached Fading in this scenario');
+  assertEqual(recap.topCategory, 'recently_missed', 'with fadingCount 0 and a real recent miss, topCategory should be recently_missed, not fading');
+  assert(!recap.headline.includes('fading'), `headline should not claim a fading concept when fadingCount is 0 — got "${recap.headline}"`);
+  assert(recap.headline.includes('recent mistake'), `headline should name the actual driving category — got "${recap.headline}"`);
+  assert(recap.message.startsWith('You have'), 'message was previously always the generic fallback due to an operator-precedence bug (`str + n > 0 ? … : …` coerces the whole condition to false) — it should render the real sentence now');
+  assert(recap.message.includes('quick recap before new material'), 'with fadingCount 0, message should still fall back to the generic recap line, just reached via a real (not always-false) condition');
+});
+
+await test('ReviewModule.getPreSessionRecap() still leads with fading when a concept genuinely is fading', async () => {
+  const reviewEngine = new KairoEngine({ studentId: 'review_recap_fading_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  await reviewEngine.init();
+  const cid = reviewEngine.addConcept({ name: 'Redox', subject: 'Chemistry', topic: 'Electrochemistry' });
+  reviewEngine.startSession();
+  // Two corrects to reach Held, then one wrong to drop to Fading.
+  reviewEngine.submitAnswer({ conceptId: cid, correct: true, responseTimeMs: 4000, selectedOption: 'A', correctOption: 'A', questionId: 'q1', questionDifficulty: 1 });
+  reviewEngine.submitAnswer({ conceptId: cid, correct: true, responseTimeMs: 4000, selectedOption: 'A', correctOption: 'A', questionId: 'q2', questionDifficulty: 1 });
+  reviewEngine.submitAnswer({ conceptId: cid, correct: false, responseTimeMs: 4000, selectedOption: 'B', correctOption: 'A', questionId: 'q3', questionDifficulty: 1 });
+  assertEqual(reviewEngine.graph.getConcept(cid).retentionState, RetentionState.FADING, 'precondition: concept should be Fading');
+
+  const recap = reviewEngine.review.getPreSessionRecap();
+  assertEqual(recap.topCategory, 'fading', 'a genuinely fading concept should still be named as such');
+  assert(recap.headline.includes('fading concept'), `headline should name fading when it is real — got "${recap.headline}"`);
+  assert(recap.message.includes('fading — let\'s reinforce them first'), 'message should include the real fading-specific sentence, not silently fall through to the generic one');
+});
+
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) {
   console.log(`\n⚠️  ${failCount} test(s) need attention.`);

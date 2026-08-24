@@ -161,13 +161,35 @@ export class ReviewModule {
     const recap = this.buildDailyRecap();
     if (recap.totalConcepts === 0) return null;
 
+    const { fading, recentlyMissed, stale } = recap.breakdown;
+
+    // Suggested Review Session (Review Module §4.3 item 9, §10.1): name
+    // whichever category is actually driving urgency, in the same
+    // fading > recently-missed > stale priority buildDailyRecap() already
+    // ranks its own queue by — never claim "fading" when fadingCount is 0
+    // (e.g. a student whose only waiting items are recent mistakes).
+    const topCategory = fading > 0 ? 'fading' : recentlyMissed > 0 ? 'recently_missed' : 'stale';
+    const topCategoryCount = fading > 0 ? fading : recentlyMissed > 0 ? recentlyMissed : stale;
+    const headline = topCategory === 'fading'
+      ? `Quick pass on ${topCategoryCount} fading concept${topCategoryCount === 1 ? '' : 's'}`
+      : topCategory === 'recently_missed'
+        ? `Quick pass on ${topCategoryCount} recent mistake${topCategoryCount === 1 ? '' : 's'}`
+        : `Quick pass on ${topCategoryCount} thing${topCategoryCount === 1 ? '' : 's'} slipping away`;
+
     return {
       hasUrgentReview: true,
-      fadingCount: recap.breakdown.fading,
+      fadingCount: fading,
+      topCategory,
+      topCategoryCount,
+      headline,
+      // Previously `+ fading > 0 ? … : …` — operator precedence made this a
+      // string concatenated with a number then compared `> 0`, which always
+      // evaluated to false, so this sentence silently always fell through to
+      // the generic "before new material" branch regardless of fading count.
       message: `You have ${recap.totalConcepts} concept${recap.totalConcepts > 1 ? 's' : ''} waiting for review. ` +
-        recap.breakdown.fading > 0
-          ? `${recap.breakdown.fading} ${recap.breakdown.fading > 1 ? 'are' : 'is'} fading — let's reinforce them first.`
-          : `Let's do a quick recap before new material.`,
+        (fading > 0
+          ? `${fading} ${fading > 1 ? 'are' : 'is'} fading — let's reinforce them first.`
+          : `Let's do a quick recap before new material.`),
       recap
     };
   }
