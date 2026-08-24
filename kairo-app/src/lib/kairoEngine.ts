@@ -708,6 +708,45 @@ export function getWeeklyDrop(): WeeklyDrop | null {
   return kairo ? kairo.insights.getWeeklyDrop() : null;
 }
 
+export interface SubjectHealth {
+  subject: string;
+  masteryPct: number;
+  /** Concepts currently in the Fading retention state — the genuinely urgent "needs review now" signal a bare mastery % hides. */
+  fadingCount: number;
+  /** Real accuracy across every attempt in this subject, or null with zero attempts yet. */
+  accuracy: number | null;
+  totalConcepts: number;
+}
+
+/** Every enrolled subject's real mastery/fading/accuracy breakdown (see InsightsModule.getSubjectHealth()), sorted so the subject most needing attention leads. Empty array when nothing is signed in or no content has loaded yet. */
+export function getSubjectHealth(): SubjectHealth[] {
+  const kairo = getEngine();
+  return kairo ? kairo.insights.getSubjectHealth() : [];
+}
+
+export interface MonthlyCheckpointDay {
+  date: string;
+  active: boolean;
+}
+
+export interface MonthlyCheckpoint {
+  sessionsThisMonth: number;
+  questionsThisMonth: number;
+  /** % of the student's whole enrolled-subject concept graph genuinely mastered (a correct attempt landed this month, sitting at Held/Reinforced now) — not a Planner checklist percentage. */
+  syllabusVelocityPct: number;
+  /** The last 28 real calendar days, oldest first, each flagged active/inactive. */
+  consistencyGrid: MonthlyCheckpointDay[];
+  /** A real, composed sentence naming the month's most-neglected topic as next month's target, or null when every non-mastered concept has had some attention. */
+  macroDirective: string | null;
+  neglectedTopic: { name: string; subject: string } | null;
+}
+
+/** Real calendar-month snapshot for the Monthly Checkpoint (see InsightsModule.getMonthlyCheckpoint()). null when the student hasn't completed a session this calendar month yet. Always computed regardless of whether today is the month's last day; see monthlyCheckpoint.ts's isMonthlyCheckpointUnlocked() for the actual reveal gate. */
+export function getMonthlyCheckpoint(): MonthlyCheckpoint | null {
+  const kairo = getEngine();
+  return kairo ? kairo.insights.getMonthlyCheckpoint() : null;
+}
+
 export interface WeakTopicSummary {
   subject: string;
   topic: string;

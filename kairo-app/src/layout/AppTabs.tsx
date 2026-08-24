@@ -11,6 +11,11 @@ const TABS: { key: string; path: string; label: string; d: string }[] = [
   { key: 'practice', path: '/practice', label: 'Practice', d: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z' },
   { key: 'cbt', path: '/cbt', label: 'CBT', d: 'M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7z' },
   { key: 'review', path: '/review', label: 'Review', d: 'M12 8v4l3 3M12 22a10 10 0 100-20 10 10 0 000 20z' },
+  // Minimalist User glyph — Profile itself now carries the Insights Hub
+  // (Weekly Drop/Actionable Carousel/Subject Health/Monthly Checkpoint,
+  // see ProfileInsights.tsx), so this is that content's real tab home,
+  // not just an identity/settings shortcut anymore.
+  { key: 'profile', path: '/profile', label: 'Profile', d: 'M12 12a4.5 4.5 0 100-9 4.5 4.5 0 000 9zM4.5 20.5a7.5 7.5 0 0115 0' },
 ];
 
 // Practice and CBT each drive their own internal screen-stack (not real
@@ -31,11 +36,10 @@ export function useSetBottomNavHidden(hidden: boolean) {
 }
 
 /**
- * Persistent bottom navigation shell for the main app section (Home / Practice /
- * CBT / Review). Profile is reached via the avatar in each screen's own
- * header, not a tab — per the product's explicit navigation spec. Insights
- * lives inside Profile as its own sub-section (see ProfileInsights.tsx),
- * not a bottom-nav tab of its own.
+ * Persistent bottom navigation shell for the main app section (Home /
+ * Practice / CBT / Review / Profile). Profile carries the Insights Hub
+ * (see ProfileInsights.tsx) as its own embedded section rather than
+ * Insights ever getting a bottom-nav tab of its own.
  */
 export function AppTabs() {
   const navigate = useNavigate();
