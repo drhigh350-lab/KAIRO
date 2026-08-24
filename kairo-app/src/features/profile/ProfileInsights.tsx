@@ -1,20 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, ProgressBar, ScoreBadge, Button } from '../../components';
-import { ScreenHeader, KairoScoreInfo } from '../learning/shared';
+import { Card, ProgressBar, Button } from '../../components';
 import {
-  getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped, getProfileSummary,
-  getActionableInsightCards, getWeeklyDrop, type ActionableInsightCard, type ActionableInsightCta, type WeeklyDrop,
+  getActionableInsightCards, getWeeklyDrop, getSubjectHealth, getMonthlyCheckpoint, getProfileSummary,
+  type ActionableInsightCard, type ActionableInsightCta, type WeeklyDrop, type MonthlyCheckpoint,
 } from '../../lib/kairoEngine';
 import { isWeeklyDropUnlocked, daysUntilNextDrop } from '../../lib/weeklyDrop';
-import { generateKaiText } from '../../lib/kaiAi';
-
-const trendCopy: Record<string, string> = {
-  rising: "Your score moved up mostly because you're getting harder questions right more often, not just more questions overall.",
-  falling: "Your score dipped a little — that's normal after a tougher session. Keep showing up.",
-  stable: 'Your score is holding steady. Consistency like this is what compounds over time.',
-  insufficient_data: "I'll be able to show a trend once you've completed a few more sessions.",
-};
+import { isMonthlyCheckpointUnlocked, daysUntilMonthlyCheckpoint } from '../../lib/monthlyCheckpoint';
 
 /** Routes an Action Card's CTA to a real Practice session — kept here (not in kairoEngine.ts) since navigation is a UI-layer concern. */
 function launchCta(navigate: ReturnType<typeof useNavigate>, cta: ActionableInsightCta) {
@@ -122,9 +114,8 @@ function MagnifyingGlassIcon() {
   );
 }
 
-/** Batch 2's locked state: dimmed navy, lock icon, the exact copy specified. */
-function WeeklyDropLocked() {
-  const daysLeft = daysUntilNextDrop();
+/** Shared locked-state shell for both Weekly Drop and Monthly Checkpoint — dimmed navy, lock icon, a "how long left" line. */
+function LockedCard({ title, body }: { title: string; body: string }) {
   return (
     <div style={{ padding: '0 20px' }}>
       <div style={{
@@ -132,12 +123,8 @@ function WeeklyDropLocked() {
         background: 'rgba(1,39,72,0.55)', border: '1px solid var(--dark-border)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><LockIcon /></div>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--dark-text-muted)' }}>
-          Your Weekly Intel drops on Sunday.
-        </div>
-        <div style={{ fontSize: 12.5, color: 'var(--dark-text-faint)', marginTop: 6, lineHeight: 1.5 }}>
-          Keep practicing to give Kairo more data.{daysLeft > 0 && ` ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go.`}
-        </div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--dark-text-muted)' }}>{title}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--dark-text-faint)', marginTop: 6, lineHeight: 1.5 }}>{body}</div>
       </div>
     </div>
   );
@@ -182,7 +169,7 @@ function OneThingCallout({ copy }: { copy: string }) {
   );
 }
 
-/** Batch 2's unlocked state: streak hook, gold-bordered card, the Core 3 Deltas, the One Thing callout, and the Share My Week ghost CTA. */
+/** Batch 2's unlocked state: streak hook, gold-bordered card, the Core 3 Deltas (+ real weekly show-up count), the One Thing callout, and the Share My Week ghost CTA. */
 function WeeklyDropUnlocked({ drop, streak }: { drop: WeeklyDrop; streak: number }) {
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -190,7 +177,7 @@ function WeeklyDropUnlocked({ drop, streak }: { drop: WeeklyDrop; streak: number
     const parts = [`${drop.pointsThisWeek.toLocaleString()} Kairo Points this week`];
     if (drop.accuracyThisWeek != null) parts.push(`${drop.accuracyThisWeek}% avg accuracy`);
     if (drop.weakTopicsMastered > 0) parts.push(`${drop.weakTopicsMastered} weak topic${drop.weakTopicsMastered === 1 ? '' : 's'} mastered`);
-    const text = `My week on Kairo: ${parts.join(', ')}.${drop.biggestTurnaround ? ` Biggest turnaround: ${drop.biggestTurnaround.topic} (${drop.biggestTurnaround.beforeAccuracy}% → ${drop.biggestTurnaround.weekAccuracy}%).` : ''}`;
+    const text = `My week on Kairo: showed up ${drop.sessionCount} time${drop.sessionCount === 1 ? '' : 's'}, ${parts.join(', ')}.${drop.biggestTurnaround ? ` Biggest turnaround: ${drop.biggestTurnaround.topic} (${drop.biggestTurnaround.beforeAccuracy}% → ${drop.biggestTurnaround.weekAccuracy}%).` : ''}`;
     if (navigator.share) {
       navigator.share({ title: 'My Week on Kairo', text }).catch(() => {});
     } else {
@@ -214,6 +201,9 @@ function WeeklyDropUnlocked({ drop, streak }: { drop: WeeklyDrop; streak: number
           {streak > 0
             ? `${streak}-day streak! The algorithm is dialing in. Ready for next week?`
             : "Your first Weekly Intel drop — let's build a real picture of how you learn."}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>
+          You showed up {drop.sessionCount} time{drop.sessionCount === 1 ? '' : 's'} this week — that's the rhythm that moves your score.
         </div>
 
         <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
@@ -243,159 +233,135 @@ function WeeklyDropSection() {
   const drop = getWeeklyDrop();
   const streak = getProfileSummary()?.stats?.currentStreak ?? 0;
   if (!drop) return null;
-  return isWeeklyDropUnlocked() ? <WeeklyDropUnlocked drop={drop} streak={streak} /> : <WeeklyDropLocked />;
+  return isWeeklyDropUnlocked()
+    ? <WeeklyDropUnlocked drop={drop} streak={streak} />
+    : <LockedCard title="Your Weekly Intel drops on Sunday." body={`Keep practicing to give Kairo more data.${daysUntilNextDrop() > 0 ? ` ${daysUntilNextDrop()} day${daysUntilNextDrop() === 1 ? '' : 's'} to go.` : ''}`} />;
+}
+
+/** Batch 6's 28-day Consistency Grid: a real activity heatmap, 7 columns (a week) x 4 rows, oldest at the top. */
+function ConsistencyGrid({ days }: { days: MonthlyCheckpoint['consistencyGrid'] }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5, marginTop: 8 }}>
+      {days.map((d) => (
+        <div key={d.date} title={d.date} style={{
+          aspectRatio: '1', borderRadius: 4,
+          background: d.active ? 'var(--kairo-gold-500)' : 'var(--dark-bg-canvas)',
+          border: `1px solid ${d.active ? 'var(--kairo-gold-500)' : 'var(--dark-border)'}`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+/** Batch 6's unlocked Monthly Checkpoint: a premium gold-accented summary — Syllabus Velocity, the 4-week Consistency Grid, this month's real session/question totals, and the Macro Directive naming next month's target. */
+function MonthlyCheckpointUnlocked({ checkpoint }: { checkpoint: MonthlyCheckpoint }) {
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <div style={{
+        borderRadius: 'var(--radius-lg)', padding: 22,
+        background: 'linear-gradient(160deg, var(--dark-bg-elevated), var(--dark-bg-surface))',
+        border: '1.5px solid var(--kairo-gold-500)', boxShadow: '0 8px 30px rgba(201,162,39,0.18)',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--kairo-gold-500)', textTransform: 'uppercase' }}>
+          Monthly Checkpoint
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 12 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 34, color: 'var(--dark-text-heading)' }}>{checkpoint.syllabusVelocityPct}%</div>
+          <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)' }}>of your syllabus mastered this month</div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 20, marginTop: 16 }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Sessions</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 2 }}>{checkpoint.sessionsThisMonth}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Questions</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 2 }}>{checkpoint.questionsThisMonth}</div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Consistency — last 4 weeks</div>
+          <ConsistencyGrid days={checkpoint.consistencyGrid} />
+        </div>
+
+        {checkpoint.macroDirective && (
+          <div style={{
+            display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 18, padding: 14,
+            borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.18)', borderLeft: '3px solid var(--kairo-gold-500)',
+          }}>
+            <div style={{ fontSize: 13, color: 'var(--dark-text-body)', lineHeight: 1.55 }}>{checkpoint.macroDirective}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Batch 6's Time-Locked Monthly Checkpoint: locked every day but the month's last day. Renders nothing until the student has completed a session this calendar month. */
+function MonthlyCheckpointSection() {
+  const checkpoint = getMonthlyCheckpoint();
+  if (!checkpoint) return null;
+  return isMonthlyCheckpointUnlocked()
+    ? <MonthlyCheckpointUnlocked checkpoint={checkpoint} />
+    : <LockedCard title="Your Monthly Checkpoint drops on the last day of the month." body={`Keep showing up — it's building the full picture.${daysUntilMonthlyCheckpoint() > 0 ? ` ${daysUntilMonthlyCheckpoint()} day${daysUntilMonthlyCheckpoint() === 1 ? '' : 's'} to go.` : ''}`} />;
+}
+
+/** Subject Health: every enrolled subject with mastery %, a Fading-count badge when a subject genuinely needs urgent review, and real accuracy — not just a single top-3 mastery number. */
+function SubjectHealthSection() {
+  const subjects = getSubjectHealth();
+  if (subjects.length === 0) return null;
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Subject Health</div>
+        {subjects.map(({ subject, masteryPct, fadingCount, accuracy }) => (
+          <div key={subject} style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: 'var(--dark-text-body)', marginBottom: 6 }}>
+              <span>{subject}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {fadingCount > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-danger)', background: 'var(--dark-danger-bg)', padding: '2px 7px', borderRadius: 'var(--radius-pill)' }}>
+                    {fadingCount} fading
+                  </span>
+                )}
+                {accuracy != null && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--dark-text-muted)' }}>{accuracy}% acc</span>}
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{masteryPct}%</span>
+              </div>
+            </div>
+            <ProgressBar value={masteryPct} tone={masteryPct < 60 ? 'gold' : 'dark'} />
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
 }
 
 /**
- * Profile's Insights sub-section: Batch 2's Action Card carousel up top
- * (the three real behavioral insights, when there's enough data for them),
- * then the existing Weekly Review / Kairo Wrapped / Subject Health content
- * that used to live at the standalone /insights bottom-nav tab — moved
- * here (not deleted) when that tab was removed, so nothing already valued
- * by a returning student silently disappears.
+ * The Insights Hub — item 2 of Profile's vertical stack (Batch 6): Weekly
+ * Drop, the Actionable Insights carousel, Subject Health, then the
+ * Monthly Checkpoint. Embedded directly in Profile.tsx now (not a
+ * separate route a student has to tap through to) — This Week / This
+ * Month — Kairo Wrapped are permanently gone from here, superseded by the
+ * real Weekly Drop / Monthly Checkpoint above.
  */
-export function ProfileInsights() {
+export function InsightsHub() {
   const navigate = useNavigate();
-  const insights = getInsightsSummary();
-  const weekly = getWeeklyReviewSummary();
-  const monthly = getMonthlyWrapped();
   const actionCards = getActionableInsightCards();
-  const hasScore = !!insights?.eliteScore;
-  const subjectHealth = insights?.strengths ?? [];
-  const reinforcedNames: string[] = weekly?.reinforced?.map((c: { name: string }) => c.name) ?? [];
-  const hasMonthlyStory = !!monthly && (monthly.reinforcedCount > 0 || monthly.biggestTurnaround || monthly.totalSessions > 0);
-
-  const [weeklyKaiNote, setWeeklyKaiNote] = useState<string | null>(weekly?.kaiNote ?? null);
-  const [monthlyKaiNote, setMonthlyKaiNote] = useState<string | null>(null);
-
-  useEffect(() => {
-    setWeeklyKaiNote(weekly?.kaiNote ?? null);
-    if (!weekly || !weekly.sessionCount) return;
-    let cancelled = false;
-    generateKaiText('weekly_reflection', {
-      reinforced: (weekly.reinforced ?? []).map((c: { name: string; subject?: string }) => ({ name: c.name, subject: c.subject })),
-      fading: (weekly.fading ?? []).map((c: { name: string; subject?: string }) => ({ name: c.name, subject: c.subject })),
-      patternObservation: weekly.patternObservation ?? null,
-      sessionCount: weekly.sessionCount,
-    }).then((text) => {
-      if (!cancelled && text) setWeeklyKaiNote(text);
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekly?.timestamp]);
-
-  useEffect(() => {
-    setMonthlyKaiNote(null);
-    if (!hasMonthlyStory) return;
-    let cancelled = false;
-    generateKaiText('monthly_wrapped', {
-      totalSessions: monthly.totalSessions,
-      totalQuestions: monthly.totalQuestions,
-      reinforcedCount: monthly.reinforcedCount,
-      reinforcedNames: monthly.reinforcedNames ?? [],
-      biggestTurnaround: monthly.biggestTurnaround ?? null,
-      scoreTrend: monthly.scoreTrend ?? null,
-    }).then((text) => {
-      if (!cancelled && text) setMonthlyKaiNote(text);
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMonthlyStory, monthly?.timestamp]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', flex: 1 }}>
-      <ScreenHeader onBack={() => navigate(-1)} title="Insights" tone="dark" />
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ padding: '0 20px', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'var(--dark-text-heading)' }}>
+        Insights
+      </div>
       <WeeklyDropSection />
-
       {actionCards.length > 0 && (
         <ActionCardCarousel cards={actionCards} onAction={(card) => launchCta(navigate, card.cta)} />
       )}
-
-      <div className="desktop-grid" style={{ padding: '0 20px 24px' }}>
-        <div className="desktop-main">
-          <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>This Week</div>
-            <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>
-              {weekly && weekly.sessionCount > 0
-                ? `You showed up ${weekly.sessionCount} time${weekly.sessionCount === 1 ? '' : 's'} this week — that's the rhythm that moves your score.`
-                : 'No sessions yet this week — your first one will show up here.'}
-            </div>
-            <div style={{ display: 'flex', gap: 14, marginTop: 14 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Reinforced</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)' }}>{weekly?.reinforced?.length ?? 0}</div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Score trend</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--dark-success)', textTransform: 'capitalize' }}>{insights?.scoreTrend?.replace('_', ' ') ?? 'Not enough data'}</div>
-              </div>
-            </div>
-            {reinforcedNames.length > 0 && (
-              <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 12 }}>Including {reinforcedNames.slice(0, 3).join(', ')} — that's the hardest thing to fake.</div>
-            )}
-            {weeklyKaiNote && (
-              <div style={{ fontSize: 13, color: 'var(--dark-text-body)', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--dark-border)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{weeklyKaiNote}</div>
-            )}
-          </Card>
-
-          {hasMonthlyStory && (
-            <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 700, letterSpacing: '.04em' }}>THIS MONTH — KAIRO WRAPPED</div>
-              <div style={{ display: 'flex', gap: 18, marginTop: 12 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Sessions</div>
-                  <div style={{ fontWeight: 800, fontSize: 20, marginTop: 2 }}>{monthly.totalSessions}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Questions</div>
-                  <div style={{ fontWeight: 800, fontSize: 20, marginTop: 2 }}>{monthly.totalQuestions}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Reinforced</div>
-                  <div style={{ fontWeight: 800, fontSize: 20, marginTop: 2 }}>{monthly.reinforcedCount}</div>
-                </div>
-              </div>
-              {monthly.biggestTurnaround && (
-                <div style={{ fontSize: 13, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.25)', lineHeight: 1.5 }}>
-                  Biggest turnaround this month: <strong>{monthly.biggestTurnaround.name}</strong> ({monthly.biggestTurnaround.subject}).
-                </div>
-              )}
-              {monthlyKaiNote && (
-                <div style={{ fontSize: 13, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.25)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{monthlyKaiNote}</div>
-              )}
-            </Card>
-          )}
-        </div>
-
-        <div className="desktop-sidebar">
-          {hasScore ? (
-            <Card style={{ textAlign: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <ScoreBadge dark score={insights.eliteScore} />
-                <span style={{ marginLeft: 6, marginTop: 2 }}><KairoScoreInfo /></span>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 12 }}>{trendCopy[insights.scoreTrend] ?? trendCopy.insufficient_data}</div>
-            </Card>
-          ) : (
-            <Card style={{ textAlign: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-              <div style={{ fontSize: 13, color: 'var(--dark-text-faint)' }}>Your picture is just getting started — this fills in as you practise.</div>
-            </Card>
-          )}
-
-          {subjectHealth.length > 0 && (
-            <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Subject Health</div>
-              {subjectHealth.map(({ subject, masteryPct }: { subject: string; masteryPct: number }) => (
-                <div key={subject} style={{ marginTop: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--dark-text-body)', marginBottom: 6 }}><span>{subject}</span></div>
-                  <ProgressBar value={masteryPct} tone={masteryPct < 60 ? 'gold' : 'dark'} />
-                </div>
-              ))}
-            </Card>
-          )}
-        </div>
-      </div>
+      <SubjectHealthSection />
+      <MonthlyCheckpointSection />
     </div>
   );
 }

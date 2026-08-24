@@ -15,7 +15,7 @@ const ACTION_ROUTES: Record<string, string> = {
   view_plan: '/home',
   start_peak_session: '/practice',
   view_challenges: '/challenges',
-  view_weekly: '/profile/insights',
+  view_weekly: '/profile',
   start_recovery_session: '/practice',
 };
 

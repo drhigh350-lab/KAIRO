@@ -11,7 +11,6 @@ import { CbtFlow } from './features/cbt/CbtFlow';
 import { Review } from './features/review/Review';
 import { ReviewSession } from './features/review/ReviewSession';
 import { Profile } from './features/profile/Profile';
-import { ProfileInsights } from './features/profile/ProfileInsights';
 import { EditProfile } from './features/profile/EditProfile';
 import { NotificationSettings } from './features/profile/NotificationSettings';
 import { Leaderboard } from './features/profile/Leaderboard';
@@ -45,7 +44,7 @@ const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/profi
 // question screen rendering wide. /review/session (the focused review
 // flow) is a distinct path from /review (the hub) for exactly this
 // reason, so it's correctly excluded by an exact match here.
-const WIDE_ROUTES = ['/home', '/profile', '/profile/insights', '/review'];
+const WIDE_ROUTES = ['/home', '/profile', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore(): boolean {
@@ -131,11 +130,10 @@ export default function App() {
               <Route path="/practice/*" element={<PracticeFlow />} />
               <Route path="/cbt/*" element={<CbtFlow />} />
               <Route path="/review" element={<Review />} />
+              <Route path="/profile" element={<Profile />} />
             </Route>
 
             <Route path="/review/session" element={<ReviewSession />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/profile/insights" element={<ProfileInsights />} />
             <Route path="/profile/edit" element={<EditProfile />} />
             <Route path="/profile/notifications" element={<NotificationSettings />} />
             <Route path="/profile/leaderboard" element={<Leaderboard />} />

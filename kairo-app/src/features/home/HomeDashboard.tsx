@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MissionCard, Card, KairoWordmark, Avatar, Input, Button } from '../../components';
+import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
 import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
@@ -23,6 +23,19 @@ function greeting(): string {
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** Batch 5's Gamification HUD — replaces the old avatar/profile-nav button in the header (Profile is a bottom-nav tab now, so that link was redundant) with the one number that actually reflects standing: lifetime Kairo Points. Sits directly above FlameIndicator, same spot the avatar used to occupy. */
+function GamificationHud({ points }: { points: number }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', flexShrink: 0,
+      borderRadius: 'var(--radius-pill)', background: 'var(--dark-bg-elevated)', border: '1px solid rgba(201,162,39,0.35)',
+    }}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--kairo-gold-500)"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" /></svg>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)' }}>{points.toLocaleString()}</span>
+    </div>
+  );
 }
 
 /** Dimmed until today's daily recommendation is completed, then burns bright — a single at-a-glance "have I shown up today" signal. The numeric streak count sits directly underneath, and a small snowflake row shows any earned Streak Freezes still in reserve. */
@@ -127,15 +140,10 @@ export function HomeDashboard() {
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ width: 34 }} />
-        <KairoWordmark tone="white" width={100} />
-        <button type="button" onClick={() => navigate('/profile')} aria-label="Open profile" style={{
-          width: 34, height: 34, minWidth: 'var(--touch-min)', minHeight: 'var(--touch-min)', margin: '-7px',
-          borderRadius: '50%', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-        }}>
-          <Avatar name={data.name} size={34} ring />
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
+        <div />
+        <div style={{ justifySelf: 'center' }}><KairoWordmark tone="white" width={100} /></div>
+        <div style={{ justifySelf: 'end' }}><GamificationHud points={profile?.kairoPoints ?? 0} /></div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>

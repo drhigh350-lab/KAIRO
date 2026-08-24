@@ -12,7 +12,7 @@
  * with no caller anywhere in kairo-app or kairo-learning-engine.
  */
 
-import { isCalculationQuestion } from "../utils/helpers.js";
+import { isCalculationQuestion, toLocalDateString } from "../utils/helpers.js";
 import { KairoPointsAwards } from "../utils/constants.js";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -505,6 +505,109 @@ export class InsightsModule {
       peakAccuracy: Math.round(peak.accuracy),
       fatigueAccuracy: Math.round(fatiguePoint.accuracy),
       fatiguePosition: fatiguePoint.position
+    };
+  }
+
+  /**
+   * Subject Health: every enrolled subject (not just the top-3
+   * "strengths" getDashboardInsights() surfaces), each with a mastery %,
+   * a Fading-concept count (the genuinely urgent "needs review now"
+   * signal a bare mastery number hides — two subjects can share the same
+   * 60% mastery while one of them is quietly decaying and the other
+   * isn't), and real accuracy. A fuller picture than a single number per
+   * subject, sorted by mastery ascending so the subject that most needs
+   * attention leads.
+   */
+  getSubjectHealth() {
+    const enrolled = this.engine.profile.targetSubjects;
+    const bySubject = new Map();
+    for (const concept of this.engine.graph.nodes.values()) {
+      if (enrolled && enrolled.length > 0 && !enrolled.includes(concept.subject)) continue;
+      const bucket = bySubject.get(concept.subject) || { subject: concept.subject, total: 0, mastered: 0, fading: 0, correctAttempts: 0, totalAttempts: 0 };
+      bucket.total++;
+      if (concept.retentionState === 'held' || concept.retentionState === 'reinforced') bucket.mastered++;
+      if (concept.retentionState === 'fading') bucket.fading++;
+      bucket.totalAttempts += concept.attemptHistory.length;
+      bucket.correctAttempts += concept.attemptHistory.filter(a => a.correct).length;
+      bySubject.set(concept.subject, bucket);
+    }
+
+    return Array.from(bySubject.values())
+      .map(b => ({
+        subject: b.subject,
+        masteryPct: b.total > 0 ? Math.round((b.mastered / b.total) * 100) : 0,
+        fadingCount: b.fading,
+        accuracy: b.totalAttempts > 0 ? Math.round((b.correctAttempts / b.totalAttempts) * 100) : null,
+        totalConcepts: b.total
+      }))
+      .sort((a, b) => a.masteryPct - b.masteryPct);
+  }
+
+  /**
+   * The Monthly Checkpoint (Batch 6): a real calendar-month snapshot, not
+   * a rolling window (it's meant to line up with "the last day of the
+   * month" unlock, so a calendar boundary is the honest one to measure
+   * against). Returns null before the student has completed a single
+   * session this calendar month — nothing to check in on yet.
+   */
+  getMonthlyCheckpoint() {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+
+    const sessions = (this.engine.profile.sessions || []).filter(s => s.completedAt && s.completedAt >= monthStart);
+    if (sessions.length === 0) return null;
+
+    const sessionsThisMonth = sessions.length;
+    const questionsThisMonth = sessions.reduce((s, sess) => s + (sess.questionsAnswered || 0), 0);
+
+    const enrolled = this.engine.profile.targetSubjects;
+    const allConcepts = Array.from(this.engine.graph.nodes.values())
+      .filter(c => !enrolled || enrolled.length === 0 || enrolled.includes(c.subject));
+
+    // Syllabus Velocity: concepts genuinely mastered (a correct attempt
+    // landed this month, and they're sitting at Held/Reinforced right
+    // now) as a share of the student's whole enrolled-subject graph —
+    // "how much of the syllabus do you actually know," not "how much did
+    // you check off a planner list."
+    const masteredThisMonth = allConcepts.filter(c => {
+      const isMasteredNow = c.retentionState === 'held' || c.retentionState === 'reinforced';
+      return isMasteredNow && c.attemptHistory.some(a => a.correct && a.timestamp >= monthStart);
+    }).length;
+    const syllabusVelocityPct = allConcepts.length > 0 ? Math.round((masteredThisMonth / allConcepts.length) * 100) : 0;
+
+    // Consistency Grid: the last 28 real calendar days, active/inactive —
+    // deliberately a fixed trailing window (not "days so far this
+    // calendar month") so it always shows a full 4-week picture even on
+    // the 2nd of the month.
+    const consistencyGrid = [];
+    for (let i = 27; i >= 0; i--) {
+      const day = now.getTime() - i * ONE_DAY_MS;
+      const dayStr = toLocalDateString(day);
+      const active = (this.engine.profile.sessions || []).some(s => s.completedAt && toLocalDateString(s.completedAt) === dayStr);
+      consistencyGrid.push({ date: dayStr, active });
+    }
+
+    // Macro Directive: the most-neglected non-mastered concept this month
+    // — fewest attempts (zero, ideally) among everything still Unseen/
+    // Forming/Fading, framed as next month's primary target.
+    const neglected = allConcepts
+      .filter(c => c.retentionState !== 'held' && c.retentionState !== 'reinforced')
+      .map(c => ({ concept: c, attemptsThisMonth: c.attemptHistory.filter(a => a.timestamp >= monthStart).length }))
+      .sort((a, b) => a.attemptsThisMonth - b.attemptsThisMonth)[0] || null;
+
+    const macroDirective = neglected
+      ? neglected.attemptsThisMonth === 0
+        ? `You haven't touched ${neglected.concept.name} all month. Make it your primary target for next month.`
+        : `${neglected.concept.name} has gotten the least attention this month. Make it your primary target for next month.`
+      : null;
+
+    return {
+      sessionsThisMonth,
+      questionsThisMonth,
+      syllabusVelocityPct,
+      consistencyGrid,
+      macroDirective,
+      neglectedTopic: neglected ? { name: neglected.concept.name, subject: neglected.concept.subject } : null
     };
   }
 }
