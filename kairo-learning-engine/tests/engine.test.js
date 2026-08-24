@@ -2547,6 +2547,53 @@ await test('fetchSessions() returns real past sessions oldest-first, and connect
   assertEqual(connectEngine.profile.sessions[0].sessionId, 's_older', 'restored sessions should be chronologically ordered oldest-first, matching what _averageSessionGap() and other consumers assume');
 });
 
+await test('connectSupabase() merges fetchSessions() with local profile.sessions instead of overwriting — a session completed offline and durably saved locally, but not yet pushed (still in the pending-sync queue), must survive a reload that reconnects before that push lands', async () => {
+  const now = Date.now();
+  const remoteRows = [
+    { id: 's_remote_only', mode: 'standard', plan: [], questions_answered: 3, correct_count: 3, elite_score: null, started_at: new Date(now - 2 * 86400000).toISOString(), completed_at: new Date(now - 2 * 86400000 + 60000).toISOString() }
+  ];
+  const studentRow = {
+    id: 'stu_merge_test', auth_user_id: 'auth_merge_test', name: 'Ngozi', target_subjects: [],
+    total_questions_answered: 3, total_correct: 3, elite_score_history: [], badges: [], completed_challenges: [],
+    macro_state_history: [], response_time_baselines: {}, streak_window_sessions: [], notification_history: []
+  };
+  const mockClient = {
+    auth: { async getUser() { return { data: { user: { id: 'auth_merge_test' } }, error: null }; } },
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, order() { return builder; }, limit() { return builder; },
+            maybeSingle() {
+              if (table === 'students') return Promise.resolve({ data: studentRow, error: null });
+              return Promise.resolve({ data: null, error: null });
+            },
+            then(resolve) {
+              if (table === 'sessions') return resolve({ data: remoteRows, error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  const engine = new KairoEngine({ studentId: 'pending', name: '', examDate: null, targetSubjects: [] });
+  await engine.init();
+  // Simulate init() having already hydrated a locally-saved profile whose
+  // sessions array includes one the remote fetch above doesn't know about
+  // yet — the exact shape endSession() leaves behind right before a reload
+  // races its own not-yet-run sync.sync() push.
+  engine.profile.sessions = [{ sessionId: 's_local_pending', mode: 'standard', plan: [], questionsAnswered: 2, correctCount: 2, startedAt: now - 60000, completedAt: now }];
+
+  await engine.connectSupabase(mockClient, {});
+
+  assertEqual(engine.profile.sessions.length, 2, 'the local-only pending session must be merged in, not dropped when the remote fetch does not yet include it');
+  const keys = engine.profile.sessions.map((s) => s.sessionId).sort();
+  assertEqual(JSON.stringify(keys), JSON.stringify(['s_local_pending', 's_remote_only']), 'both the remote-confirmed session and the still-pending local one should be present after connectSupabase()');
+});
+
 await test('connectSupabase() rebuilds journeyStage/reEngagement/comms from the remote row instead of silently resetting them', async () => {
   // Regression: journeyStage/reEngagement/crossModuleMilestones/continuation/
   // comms/notificationOrchestrator are all constructed once, at engine-

@@ -318,10 +318,29 @@ export class KairoEngine {
     // EliteScore's consistency component, Macro State, and Level/XP. A
     // failure here (e.g. offline) shouldn't block sign-in — same session
     // just stays empty until the next successful connect, same as before.
+    //
+    // Merged with whatever was already loaded locally (init() ran before
+    // this and already hydrated this.profile.sessions from IndexedDB),
+    // never blindly replaced by it: a session completed and durably saved
+    // locally moments before this exact reload (endSession() awaits both
+    // saveGraph()/saveProfile() before ever resolving) can genuinely still
+    // be sitting in the pending-sync queue, not yet reflected in this
+    // fetch — connectSupabase() runs before sync.sync() on every restore
+    // path. Overwriting outright would make that just-completed session
+    // silently vanish from Today's Progress/streak/Insights for this whole
+    // page load, exactly the "cleared unexpectedly" failure mode the
+    // offline-first contract exists to prevent. Union + dedupe by
+    // sessionId, same pattern SyncManager._applyRemoteConceptStates()
+    // already uses for attempts.
     try {
-      this.profile.sessions = await adapter.fetchSessions(remoteProfile.studentId);
+      const localSessions = this.profile.sessions || [];
+      const remoteSessions = await adapter.fetchSessions(remoteProfile.studentId);
+      const merged = new Map();
+      for (const s of remoteSessions) merged.set(s.sessionId, s);
+      for (const s of localSessions) if (!merged.has(s.sessionId)) merged.set(s.sessionId, s);
+      this.profile.sessions = Array.from(merged.values()).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
     } catch {
-      // best-effort
+      // best-effort — offline or a failed fetch leaves the local copy untouched, not emptied
     }
 
     // Every module below was constructed once, at engine-construction time,
@@ -561,17 +580,20 @@ export class KairoEngine {
   /**
    * The Profile Insights "Launch Speed Drill" / "Launch Theory Drill" CTA:
    * a real, resolved session queue scoped to exactly one heuristic category
-   * (see isCalculationQuestion() in utils/helpers.js) across the student's
-   * own enrolled subjects — not a generic mixed/weak-areas session, since
-   * the whole point of the Theory vs. Calculation Insight is to let a
-   * student drill the specific skill they're weaker on. Returns
+   * (see isCalculationQuestion() in utils/helpers.js) — not a generic
+   * mixed/weak-areas session, since the whole point of the Theory vs.
+   * Calculation Insight (and the Velocity Matrix's subject-specific "speed
+   * drill") is to let a student drill the specific skill they're weaker
+   * on. `subjects` defaults to every enrolled subject; the Velocity Matrix
+   * CTA passes a single subject (e.g. ['Chemistry']) to scope the drill to
+   * exactly the subject its own insight named. Returns
    * { questions, conceptIds } — conceptIds is the deduplicated list of
    * concepts backing those questions, for a caller to set as the real
    * session plan (see startSession()'s `plan` override) the same way
    * startCustomSession()/startTopicPracticeSession() already do.
    */
-  buildHeuristicDrillQueue(category, limit = 10) {
-    const enrolled = this.profile.targetSubjects;
+  buildHeuristicDrillQueue(category, limit = 10, subjects = null) {
+    const enrolled = subjects && subjects.length > 0 ? subjects : this.profile.targetSubjects;
     const wantsCalculation = category === 'calculation';
 
     const candidates = Array.from(this.questionGraph.questions.values()).filter(q => {
@@ -866,7 +888,7 @@ export class KairoEngine {
    * call this directly with neither set, so both are optional here — only
    * the concept-state/attempt-recording work below is universal.
    */
-  submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single', answerChangeCount = 0 }) {
+  submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single', answerChangeCount = 0, firstSelectedOption = null }) {
     const concept = this.graph.getConcept(cid);
     if (!concept) {
       throw new Error(`Concept ${cid} not found.`);
@@ -908,18 +930,25 @@ export class KairoEngine {
     // Recording them here is also what lets Review's Reflection Moment
     // (CBT Exam Mode Spec's Review Module §5.5) show a student their own
     // original answer later — there is no other place that answer is kept.
-    // answerChangeCount (Hesitation Penalty Insight): how many times the
-    // student switched their selected option before hitting Submit — real
+    // answerChangeCount/firstSelectedOption (Hesitation Penalty Insight):
+    // how many times the student switched their selected option before
+    // hitting Submit, and what their very first pick was — real
     // instrumentation from PracticeQuestion.tsx, not derived from anything
-    // already recorded. Carried on `attempt` for local storage/Review's
+    // already recorded. wasFirstPickCorrect (derived here, not stored
+    // separately) is what lets the insight report the specific "you
+    // changed a right answer to a wrong one" count, not just an aggregate
+    // accuracy comparison. Carried on `attempt` for local storage/Review's
     // "reconstruct the original answer" use, and separately on the object
     // handed to processAnswer() below so it lands on
     // concept.attemptHistory too (RecommendationEngine.processAnswer()
     // passes that object straight into concept.recordAttempt()) — that's
     // the read path InsightsModule.getHesitationPenalty() actually uses.
     // Deliberately NOT added to SupabaseSyncAdapter._attemptToRow(): no
-    // answer_change_count column exists on kairo.attempts yet, so this
-    // stays a local-only (same-device) signal until that migration lands.
+    // matching columns exist on kairo.attempts yet, so this stays a
+    // local-only (same-device) signal until that migration lands.
+    const wasFirstPickCorrect = answerChangeCount > 0 && firstSelectedOption != null
+      ? firstSelectedOption === correctOption
+      : null;
     const attempt = {
       conceptId: cid,
       correct,
@@ -931,7 +960,8 @@ export class KairoEngine {
       correctOption,
       difficulty: questionDifficulty,
       genuineConfidence: genuine,
-      answerChangeCount
+      answerChangeCount,
+      wasFirstPickCorrect
     };
 
     this.store.logAttempt(attempt);
@@ -948,7 +978,8 @@ export class KairoEngine {
           selectedOption,
           correctOption,
           difficulty: questionDifficulty,
-          answerChangeCount
+          answerChangeCount,
+          wasFirstPickCorrect
         })
       : null;
 

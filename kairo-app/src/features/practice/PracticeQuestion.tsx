@@ -16,6 +16,8 @@ export interface PracticeQuestionResult {
   responseTimeMs: number;
   /** How many times the student switched their selected option before hitting Submit (0 = went with their first pick). Feeds the Hesitation Penalty Insight — see KairoEngine.submitAnswer()'s answerChangeCount. */
   answerChanges: number;
+  /** The very first option index picked, regardless of what was finally submitted — null if never answered (e.g. an auto-submit timeout with nothing selected). */
+  firstSelectedIndex: number | null;
 }
 
 /** Shape of ExplanationEngine.generate()'s output (kairo-learning-engine's
@@ -56,7 +58,7 @@ export interface PracticeQuestionProps {
   onNext: (result: PracticeQuestionResult) => void;
   onExit: () => void;
   /** Fires once, right when the answer is graded — before the student advances — so a caller can record the real attempt and offer a "Learn this" follow-up immediately. */
-  onAnswered?: (result: { correct: boolean; selectedIndex: number | null; responseTimeMs: number; answerChanges: number }) => void;
+  onAnswered?: (result: { correct: boolean; selectedIndex: number | null; responseTimeMs: number; answerChanges: number; firstSelectedIndex: number | null }) => void;
   /** Only rendered when the answer was wrong and a caller passes this — routes to the real Learn Module lesson for the concept just missed. */
   onLearnThis?: () => void;
   /** Kai's real, context-aware response to this specific attempt (from submitAnswer()'s kaiResponse, optionally upgraded by generateKaiText()) — falls back to question.kai if not provided. */
@@ -115,6 +117,12 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
   // re-subscribing its interval on every change.
   const [answerChanges, setAnswerChanges] = useState(0);
   const answerChangesRef = useRef(0);
+  // The very first option the student picked, captured once and never
+  // overwritten — lets the Hesitation Penalty Insight tell "changed a
+  // right answer to a wrong one" apart from "changed a wrong answer to
+  // the right one" (see wasFirstPickCorrect in KairoEngine.submitAnswer()),
+  // not just an aggregate accuracy comparison between the two groups.
+  const firstSelectedIndexRef = useRef<number | null>(null);
 
   // Re-syncs against the real bookmark set in case loadBookmarks() (called
   // once when Practice starts) hadn't resolved yet when this question's
@@ -139,7 +147,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
         if (t !== null && t <= 1) {
           submittedRef.current = true;
           setSubmitted(true);
-          onAnswered?.({ correct: selectedRef.current === question.correct, selectedIndex: selectedRef.current, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges: answerChangesRef.current });
+          onAnswered?.({ correct: selectedRef.current === question.correct, selectedIndex: selectedRef.current, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges: answerChangesRef.current, firstSelectedIndex: firstSelectedIndexRef.current });
           return 0;
         }
         return t !== null ? t - 1 : null;
@@ -151,7 +159,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
 
   function submit() {
     setSubmitted(true);
-    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges });
+    onAnswered?.({ correct: selected === question.correct, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges, firstSelectedIndex: firstSelectedIndexRef.current });
   }
   function flashToast(msg: string) { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2200); }
   async function handleBookmarkToggle() {
@@ -294,6 +302,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
             if (showWrongPick && !hideElim) { border = 'var(--dark-danger)'; bg = 'var(--dark-danger-bg)'; }
             return (
               <button key={i} disabled={submitted} onClick={() => {
+                if (firstSelectedIndexRef.current === null) firstSelectedIndexRef.current = i;
                 setSelected((prev) => {
                   if (prev !== null && prev !== i) setAnswerChanges((c) => c + 1);
                   return i;
@@ -381,7 +390,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
           <Button variant="darkAccent" size="lg" fullWidth disabled={hasAdvancedRef.current} onClick={() => {
             if (hasAdvancedRef.current) return;
             hasAdvancedRef.current = true;
-            onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges });
+            onNext({ correct: isCorrect, confidence, selectedIndex: selected, responseTimeMs: Date.now() - questionStartedAt.current, answerChanges, firstSelectedIndex: firstSelectedIndexRef.current });
           }}>{index + 1 === total ? 'Finish Session' : 'Next Question'}</Button>
         )}
       </div>

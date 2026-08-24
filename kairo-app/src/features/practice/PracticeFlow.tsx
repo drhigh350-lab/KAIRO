@@ -9,7 +9,7 @@ import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type SessionRewards } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startHeuristicDrillSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, detectTierUpgradeMessages, type WeakTopicSummary } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startHeuristicDrillSession, startEnduranceSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, detectTierUpgradeMessages, type WeakTopicSummary } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
@@ -34,7 +34,7 @@ const EXAM_PACE_SEC = 45;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
-type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'verify' | 'drill';
+type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'verify' | 'drill' | 'endurance';
 
 interface InitialState {
   screen: Screen;
@@ -71,6 +71,9 @@ function computeInitial(entry: string, verifyTarget: { subjectLabel: string; top
   }
   if (kind === 'drill') {
     return { ...base, subject: { key: 'drill', label: 'Drill' }, difficulty: 'adaptive', length: 10, screen: 'practiceQuestion' };
+  }
+  if (kind === 'endurance') {
+    return { ...base, subject: { key: 'endurance', label: 'Endurance' }, difficulty: 'adaptive', length: 60, screen: 'practiceQuestion' };
   }
   if (kind === 'verify' && verifyTarget) {
     return {
@@ -109,10 +112,13 @@ export function PracticeFlow() {
   const verifyTarget = verifyStateRef.current?.subjectLabel && verifyStateRef.current?.topic
     ? { subjectLabel: verifyStateRef.current.subjectLabel, topic: verifyStateRef.current.topic }
     : null;
-  // Theory vs. Calculation Insight's "Launch Speed/Theory Drill" CTA
-  // (Profile Action Cards) — the heuristic category to drill, carried
-  // through router state the same way anchorConceptId/verifyTarget are.
-  const drillCategoryRef = useRef((location.state as { drillCategory?: 'calculation' | 'theory' } | null)?.drillCategory ?? null);
+  // Theory vs. Calculation / Velocity Matrix Insights' "Launch Speed/
+  // Theory Drill" CTA (Profile Action Cards) — the heuristic category
+  // (and, for the Velocity Matrix's subject-scoped speed drill, the
+  // specific subject + a strict timer override) carried through router
+  // state the same way anchorConceptId/verifyTarget are.
+  const drillStateRef = useRef(location.state as { drillCategory?: 'calculation' | 'theory'; drillSubjects?: string[]; drillTimerSec?: number } | null);
+  const drillCategoryRef = useRef(drillStateRef.current?.drillCategory ?? null);
 
   const [init] = useState(() => computeInitial(entry, verifyTarget));
   // Loads the real bookmark set once per Practice mount — PracticeQuestion
@@ -221,11 +227,15 @@ export function PracticeFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Profile Action Cards' "Launch Speed/Theory Drill" CTA — same auto-start-on-mount pattern as 'verify' above. */
-  function startDrill(category: 'calculation' | 'theory') {
+  /** Profile Action Cards' "Launch Speed/Theory Drill" CTA — same auto-start-on-mount pattern as 'verify' above. A Velocity Matrix drill carries its own strict timer (drillTimerSec) — applied via the same Custom Timer pacing PracticeHub's own picker would set. */
+  function startDrill(category: 'calculation' | 'theory', subjects?: string[], timerSec?: number) {
     setEngineQuestions(null);
     setEngineLoadError(null);
-    startHeuristicDrillSession(category)
+    if (timerSec) {
+      setPacing('custom');
+      setCustomTimerSec(timerSec);
+    }
+    startHeuristicDrillSession(category, 10, subjects)
       .then(({ questions }) => {
         if (questions.length === 0) {
           setEngineLoadError("Kairo couldn't find any questions for this drill yet.");
@@ -244,7 +254,27 @@ export function PracticeFlow() {
       setEngineLoadError('Missing drill category — go back to Profile and try again.');
       return;
     }
-    startDrill(drillCategoryRef.current);
+    startDrill(drillCategoryRef.current, drillStateRef.current?.drillSubjects, drillStateRef.current?.drillTimerSec);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Endurance Curve Insight's "Start 60-Question Endurance CBT" CTA — same auto-start-on-mount pattern as 'drill' above. */
+  const startedEndurance = useRef(false);
+  useEffect(() => {
+    if (entryFlow !== 'endurance' || startedEndurance.current) return;
+    startedEndurance.current = true;
+    setEngineQuestions(null);
+    setEngineLoadError(null);
+    setShowPercent(true); // a 60-question queue reads better as completion % than "Question 37 of 60"
+    startEnduranceSession(60)
+      .then(({ questions }) => {
+        if (questions.length === 0) {
+          setEngineLoadError("Kairo couldn't find enough questions for an endurance session yet.");
+        } else {
+          setEngineQuestions(questions);
+        }
+      })
+      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -351,7 +381,7 @@ export function PracticeFlow() {
   useBackIntercept(history.length, back);
 
   /** Fires immediately when the answer is graded (before the student advances) — records the real attempt right away so "Understand this before moving on" has a real errorTag to hand Learn. */
-  function handleAnswered({ correct, selectedIndex, responseTimeMs, answerChanges }: { correct: boolean; selectedIndex: number | null; responseTimeMs: number; answerChanges: number }) {
+  function handleAnswered({ correct, selectedIndex, responseTimeMs, answerChanges, firstSelectedIndex }: { correct: boolean; selectedIndex: number | null; responseTimeMs: number; answerChanges: number; firstSelectedIndex: number | null }) {
     if (!engineQuestions) return;
     const kairo = getEngine();
     const eq = engineQuestions[qIndex];
@@ -371,6 +401,7 @@ export function PracticeFlow() {
       questionId: eq.id,
       questionDifficulty: eq.difficulty,
       answerChangeCount: answerChanges,
+      firstSelectedOption: selectedOptionLabel(eq, firstSelectedIndex),
     });
     setLastErrorTag(attempt?.errorTag ?? null);
     setLastResponseTimeMs(responseTimeMs);

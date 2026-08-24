@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Card, ProgressBar, ScoreBadge, Button } from '../../components';
 import { ScreenHeader, KairoScoreInfo } from '../learning/shared';
 import {
-  getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped,
-  getActionableInsightCards, type ActionableInsightCard, type ActionableInsightCta,
+  getInsightsSummary, getWeeklyReviewSummary, getMonthlyWrapped, getProfileSummary,
+  getActionableInsightCards, getWeeklyDrop, type ActionableInsightCard, type ActionableInsightCta, type WeeklyDrop,
 } from '../../lib/kairoEngine';
+import { isWeeklyDropUnlocked, daysUntilNextDrop } from '../../lib/weeklyDrop';
 import { generateKaiText } from '../../lib/kaiAi';
 
 const trendCopy: Record<string, string> = {
@@ -18,9 +19,13 @@ const trendCopy: Record<string, string> = {
 /** Routes an Action Card's CTA to a real Practice session — kept here (not in kairoEngine.ts) since navigation is a UI-layer concern. */
 function launchCta(navigate: ReturnType<typeof useNavigate>, cta: ActionableInsightCta) {
   if (cta.kind === 'drill') {
-    navigate('/practice', { state: { entry: 'drill', drillCategory: cta.category } });
+    navigate('/practice', { state: { entry: 'drill', drillCategory: cta.category, drillSubjects: cta.subjects, drillTimerSec: cta.timerSec } });
   } else if (cta.kind === 'suggested') {
     navigate('/practice', { state: { entry: 'suggested' } });
+  } else if (cta.kind === 'endurance') {
+    navigate('/practice', { state: { entry: 'endurance' } });
+  } else if (cta.kind === 'rapidFire') {
+    navigate('/rapid-fire', { state: { timePerQuestionSec: cta.timerSec } });
   } else {
     navigate('/practice', { state: { entry: 'weak' } });
   }
@@ -99,6 +104,148 @@ function ActionCardCarousel({ cards, onAction }: { cards: ActionableInsightCard[
   );
 }
 
+function LockIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </svg>
+  );
+}
+
+function MagnifyingGlassIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--dark-bg-canvas)" strokeWidth="3">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.35-4.35" />
+    </svg>
+  );
+}
+
+/** Batch 2's locked state: dimmed navy, lock icon, the exact copy specified. */
+function WeeklyDropLocked() {
+  const daysLeft = daysUntilNextDrop();
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <div style={{
+        borderRadius: 'var(--radius-lg)', padding: 26, textAlign: 'center',
+        background: 'rgba(1,39,72,0.55)', border: '1px solid var(--dark-border)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><LockIcon /></div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--dark-text-muted)' }}>
+          Your Weekly Intel drops on Sunday.
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--dark-text-faint)', marginTop: 6, lineHeight: 1.5 }}>
+          Keep practicing to give Kairo more data.{daysLeft > 0 && ` ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go.`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One Core-3 stat tile — monospace metric per the design tokens, a colored delta line when there's a real prior-week comparison to show. */
+function DeltaStat({ label, value, delta, deltaSuffix }: { label: string; value: string; delta: number | null; deltaSuffix: string }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 10, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em', lineHeight: 1.3 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 19, color: 'var(--dark-text-heading)', marginTop: 4 }}>{value}</div>
+      {delta != null && (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: delta >= 0 ? 'var(--dark-success)' : 'var(--dark-danger)', marginTop: 2 }}>
+          {delta >= 0 ? '↑' : '↓'}{Math.abs(delta)}{deltaSuffix}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Batch 3's "One Thing" Focus — Kai mascot + the composed highlight/threat/directive sentence from InsightsModule.getWeeklyDrop(). */
+function OneThingCallout({ copy }: { copy: string }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 12, alignItems: 'flex-start', marginTop: 18, padding: 14,
+      borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.18)', border: '1px solid var(--dark-border)',
+    }}>
+      <div style={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', background: 'var(--dark-bg-elevated)' }}>
+          <img src="/assets/illustration-kai-mascot.png" alt="Kai" style={{ width: '160%', height: '160%', objectFit: 'cover', objectPosition: '20% 30%' }} />
+        </div>
+        <div style={{
+          position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: '50%',
+          background: 'var(--kairo-gold-500)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '2px solid var(--dark-bg-elevated)',
+        }}>
+          <MagnifyingGlassIcon />
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--dark-text-body)', lineHeight: 1.55, paddingTop: 2 }}>{copy}</div>
+    </div>
+  );
+}
+
+/** Batch 2's unlocked state: streak hook, gold-bordered card, the Core 3 Deltas, the One Thing callout, and the Share My Week ghost CTA. */
+function WeeklyDropUnlocked({ drop, streak }: { drop: WeeklyDrop; streak: number }) {
+  const [shareCopied, setShareCopied] = useState(false);
+
+  function handleShare() {
+    const parts = [`${drop.pointsThisWeek.toLocaleString()} Kairo Points this week`];
+    if (drop.accuracyThisWeek != null) parts.push(`${drop.accuracyThisWeek}% avg accuracy`);
+    if (drop.weakTopicsMastered > 0) parts.push(`${drop.weakTopicsMastered} weak topic${drop.weakTopicsMastered === 1 ? '' : 's'} mastered`);
+    const text = `My week on Kairo: ${parts.join(', ')}.${drop.biggestTurnaround ? ` Biggest turnaround: ${drop.biggestTurnaround.topic} (${drop.biggestTurnaround.beforeAccuracy}% → ${drop.biggestTurnaround.weekAccuracy}%).` : ''}`;
+    if (navigator.share) {
+      navigator.share({ title: 'My Week on Kairo', text }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(text).catch(() => {});
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2200);
+    }
+  }
+
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <div style={{
+        borderRadius: 'var(--radius-lg)', padding: 22,
+        background: 'linear-gradient(160deg, var(--dark-bg-elevated), var(--dark-bg-surface))',
+        border: '1px solid rgba(201,162,39,0.3)', boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--kairo-gold-500)', textTransform: 'uppercase' }}>
+          Weekly Intel
+        </div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 8, lineHeight: 1.35 }}>
+          {streak > 0
+            ? `${streak}-day streak! The algorithm is dialing in. Ready for next week?`
+            : "Your first Weekly Intel drop — let's build a real picture of how you learn."}
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+          <DeltaStat label="Kairo Points" value={drop.pointsThisWeek.toLocaleString()} delta={drop.pointsDeltaPct} deltaSuffix="%" />
+          <DeltaStat label="Avg Accuracy" value={drop.accuracyThisWeek != null ? `${drop.accuracyThisWeek}%` : '—'} delta={drop.accuracyDeltaPts} deltaSuffix="pts" />
+          <DeltaStat label="Weak Topics Mastered" value={String(drop.weakTopicsMastered)} delta={null} deltaSuffix="" />
+        </div>
+
+        {drop.oneThingCopy && <OneThingCallout copy={drop.oneThingCopy} />}
+
+        <div style={{ marginTop: 18 }}>
+          <button type="button" onClick={handleShare} style={{
+            width: '100%', minHeight: 'var(--touch-min)', padding: '12px 16px', borderRadius: 'var(--radius-pill)',
+            background: 'transparent', border: '1.5px solid var(--kairo-gold-500)', color: 'var(--kairo-gold-500)',
+            fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            {shareCopied ? 'Copied — paste it anywhere' : 'Share My Week'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Batch 2's Time-Locked Weekly Drop: locked every day but Sunday, real week-over-week deltas once unlocked. Renders nothing (not even the locked state) until the student has at least one session ever — a brand-new account has no "week" to speak of yet. */
+function WeeklyDropSection() {
+  const drop = getWeeklyDrop();
+  const streak = getProfileSummary()?.stats?.currentStreak ?? 0;
+  if (!drop) return null;
+  return isWeeklyDropUnlocked() ? <WeeklyDropUnlocked drop={drop} streak={streak} /> : <WeeklyDropLocked />;
+}
+
 /**
  * Profile's Insights sub-section: Batch 2's Action Card carousel up top
  * (the three real behavioral insights, when there's enough data for them),
@@ -158,6 +305,8 @@ export function ProfileInsights() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)', flex: 1 }}>
       <ScreenHeader onBack={() => navigate(-1)} title="Insights" tone="dark" />
+
+      <WeeklyDropSection />
 
       {actionCards.length > 0 && (
         <ActionCardCarousel cards={actionCards} onAction={(card) => launchCta(navigate, card.cta)} />

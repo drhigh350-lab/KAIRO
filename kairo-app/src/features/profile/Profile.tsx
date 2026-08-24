@@ -101,6 +101,19 @@ export function Profile() {
                   <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.totalQuestions}</div>
                 </div>
               </div>
+              {/* The score card's own drill-down: Insights is the "why" behind
+                  every number above (theory vs. calculation, when you actually
+                  perform best, the Weekly Drop), so its entry point lives right
+                  here rather than as a separate, disconnected nav row. */}
+              <button type="button" onClick={() => navigate('/profile/insights')} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
+                marginTop: 16, minHeight: 'var(--touch-min)', padding: '11px 16px', borderRadius: 'var(--radius-pill)',
+                background: 'var(--kairo-gold-500)', border: 'none', color: 'var(--kairo-navy-900)',
+                fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                See Your Full Insights
+                <ChevronRight />
+              </button>
             </Card>
           )}
           <Card onClick={() => navigate('/profile/edit')} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
@@ -116,13 +129,6 @@ export function Profile() {
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>Badge Vault</div>
             <BadgeVaultRow badges={displayBadges} onboarded={onboarded} onSelect={setOpenTrackKey} />
-          </Card>
-          <Card onClick={() => navigate('/profile/insights')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--dark-text-heading)' }}>Insights</div>
-              <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 2 }}>Your real behavioral patterns, and what to do about them</div>
-            </div>
-            <span style={{ color: 'var(--dark-text-faint)' }}><ChevronRight /></span>
           </Card>
           <Card onClick={() => navigate('/profile/notifications')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
             <div>

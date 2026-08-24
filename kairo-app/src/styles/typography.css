@@ -3,6 +3,8 @@
 --font-display:'Poppins','Montserrat',sans-serif;
 --font-heading:'Montserrat','Poppins',sans-serif;
 --font-body:'Inter',sans-serif;
+/* Data metrics only (Insights carousel/Weekly Drop numbers) — a real system monospace stack, not a webfont, so a metric never waits on a font-load flash. */
+--font-mono:ui-monospace,'SF Mono','Cascadia Mono','Roboto Mono',Menlo,Consolas,monospace;
 
 --fs-display-lg:40px;
 --fs-display:32px;
