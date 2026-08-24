@@ -101,6 +101,19 @@ export function Profile() {
                   <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{profile.stats.totalQuestions}</div>
                 </div>
               </div>
+              {/* The score card's own drill-down: Insights is the "why" behind
+                  every number above (theory vs. calculation, when you actually
+                  perform best, the Weekly Drop), so its entry point lives right
+                  here rather than as a separate, disconnected nav row. */}
+              <button type="button" onClick={() => navigate('/profile/insights')} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
+                marginTop: 16, minHeight: 'var(--touch-min)', padding: '11px 16px', borderRadius: 'var(--radius-pill)',
+                background: 'var(--kairo-gold-500)', border: 'none', color: 'var(--kairo-navy-900)',
+                fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                See Your Full Insights
+                <ChevronRight />
+              </button>
             </Card>
           )}
           <Card onClick={() => navigate('/profile/edit')} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>

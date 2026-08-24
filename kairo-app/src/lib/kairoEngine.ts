@@ -301,6 +301,21 @@ export async function signOutAndDisconnect(): Promise<void> {
     // best-effort
   }
   try {
+    // Purge IndexedDB (LocalStore) before dropping the engine reference —
+    // CONCEPTS/ATTEMPTS/QUEUE/PREFETCHED_QUEUES aren't scoped per student,
+    // so leaving them behind means the next sign-in on this device (a
+    // different account, or the same one) boots with the previous
+    // account's cached retention states and pre-built recommendation
+    // queues still sitting in local storage. This is a best-effort final
+    // flush, not a guarantee: an item still pending sync at this point
+    // (e.g. genuinely offline) is discarded along with everything else —
+    // accepted here since leaving it behind to leak into a different
+    // account on this device is worse.
+    if (engine) await engine.store.clearAll();
+  } catch {
+    // best-effort — still drop the local session below even if this fails
+  }
+  try {
     const supabase = getSupabase();
     await supabase.auth.signOut();
   } catch {
@@ -405,7 +420,12 @@ export async function startSuggestedSession(limit = 5, anchorConceptId?: string 
         }
         if (questions.length === before) break; // no real questions left in this topic — stop rather than loop
       }
-      if (questions.length > 0) return { questions, kaiMessage };
+      if (questions.length > 0) {
+        // Batch 3's Synthesis Injector — a no-op below The Scholar rank or
+        // for anything shorter than a full 10-question queue, see
+        // KairoEngine.injectSynthesisQuestions().
+        return { questions: kairo.injectSynthesisQuestions(questions, ordered), kaiMessage };
+      }
       // Genuinely nothing real for this topic — fall through to the general queue below.
     }
   }
@@ -536,6 +556,156 @@ export async function startCustomSession({ subjects = [], includeFading = true, 
     }
   }
   return { questions };
+}
+
+/**
+ * The Theory vs. Calculation Insight's "Launch Speed/Theory Drill" CTA — a
+ * real session strictly scoped to one heuristic category (see
+ * KairoEngine.buildHeuristicDrillQueue()/isCalculationQuestion() in
+ * kairo-learning-engine), across the student's own enrolled subjects.
+ */
+export async function startHeuristicDrillSession(category: 'calculation' | 'theory', limit = 10, subjects?: string[]): Promise<SuggestedSessionResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(subjects?.length ? subjects : kairo.profile.targetSubjects || []);
+  const { kaiMessage } = kairo.startSession({ mode: 'custom_practice' });
+  const { questions, conceptIds } = kairo.buildHeuristicDrillQueue(category, limit, subjects);
+  kairo.currentSession.plan = conceptIds;
+  return { questions, kaiMessage };
+}
+
+/**
+ * The Endurance Curve Insight's "Start N-Question Endurance CBT" CTA — a
+ * real high-stamina session across every enrolled subject, built through
+ * the same Custom Practice engine Mixed Practice already uses (not the
+ * separate CBTExamMode subsystem, which is locked to JAMB's own fixed
+ * per-subject question counts and isn't built for an arbitrary length).
+ */
+export async function startEnduranceSession(questionCount = 60): Promise<SuggestedSessionResult> {
+  return startCustomSession({ subjects: [], includeFading: true, limit: questionCount });
+}
+
+/** What tapping a card's CTA should actually launch — kept as structured data (not re-derived from ctaLabel text) so the UI layer never has to parse copy to know what to do. */
+export type ActionableInsightCta =
+  | { kind: 'drill'; category: 'calculation' | 'theory'; subjects?: string[]; timerSec?: number }
+  | { kind: 'suggested' }
+  | { kind: 'weak' }
+  | { kind: 'endurance'; questionCount: number }
+  | { kind: 'rapidFire'; timerSec: number };
+
+export interface ActionableInsightCard {
+  id: 'velocity_matrix' | 'endurance_curve' | 'theory_vs_calculation' | 'cognitive_prime_time' | 'hesitation_penalty';
+  header: string;
+  mentorCopy: string;
+  ctaLabel: string;
+  cta: ActionableInsightCta;
+}
+
+/**
+ * The Profile "Action Cards" carousel's data — five real, behavior-derived
+ * insights (see InsightsModule.getVelocityMatrix() /
+ * getEnduranceCurve() / getTheoryVsCalculationSplit() /
+ * getCognitivePrimeTime() / getHesitationPenalty() in kairo-learning-
+ * engine's src/insights/InsightsModule.js). Each is included only once
+ * there's genuinely enough real attempt/session data behind it — an
+ * insight with nothing to say yet is simply omitted, never rendered with
+ * a fabricated or zeroed-out number.
+ */
+export function getActionableInsightCards(): ActionableInsightCard[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  const cards: ActionableInsightCard[] = [];
+
+  const velocity = kairo.insights.getVelocityMatrix();
+  if (velocity) {
+    cards.push({
+      id: 'velocity_matrix',
+      header: `${velocity.fastAvgSeconds}s ${velocity.fastSubject} · ${velocity.slowCalcAvgSeconds}s ${velocity.slowSubject} Calc`,
+      mentorCopy: `You are blazing fast in ${velocity.fastSubject} (${velocity.fastAvgSeconds}s/question), but ${velocity.slowSubject} calculations are eating your clock at ${velocity.slowCalcAvgSeconds}s per question.`,
+      ctaLabel: `Launch ${velocity.slowSubject} Speed Drill`,
+      cta: { kind: 'drill', category: 'calculation', subjects: [velocity.slowSubject], timerSec: 40 },
+    });
+  }
+
+  const endurance = kairo.insights.getEnduranceCurve();
+  if (endurance) {
+    cards.push({
+      id: 'endurance_curve',
+      header: `${endurance.peakAccuracy}% → ${endurance.fatigueAccuracy}% after Q${endurance.fatiguePosition}`,
+      mentorCopy: `Your accuracy drops from ${endurance.peakAccuracy}% to ${endurance.fatigueAccuracy}% after question ${endurance.fatiguePosition}. Your brain is fatiguing.`,
+      ctaLabel: 'Start 60-Question Endurance CBT',
+      cta: { kind: 'endurance', questionCount: 60 },
+    });
+  }
+
+  const split = kairo.insights.getTheoryVsCalculationSplit();
+  if (split) {
+    const weakIsCalc = split.weakerCategory === 'calculation';
+    cards.push({
+      id: 'theory_vs_calculation',
+      header: `${split.theoryAccuracy}% Theory | ${split.calculationAccuracy}% Math`,
+      mentorCopy: weakIsCalc
+        ? `Your theory knowledge is elite (${split.theoryAccuracy}%). But the moment a calculation is involved, your accuracy plummets to ${split.calculationAccuracy}%. You don't have a knowledge problem — you have a math problem. Let's fix your formula application.`
+        : `Your calculation accuracy is elite (${split.calculationAccuracy}%). But on pure theory questions, it drops to ${split.theoryAccuracy}%. You don't have a math problem — you have a knowledge problem. Let's fix your concept recall.`,
+      ctaLabel: weakIsCalc ? 'Open The Formula Bank Drill' : 'Open The Concept Bank Drill',
+      cta: { kind: 'drill', category: split.weakerCategory },
+    });
+  }
+
+  const prime = kairo.insights.getCognitivePrimeTime();
+  if (prime) {
+    cards.push({
+      id: 'cognitive_prime_time',
+      header: `${prime.bestAccuracy}% in the ${prime.bestWindowLabel}`,
+      mentorCopy: `Your accuracy is highest in the ${prime.bestWindowLabel.toLowerCase()} (${prime.bestAccuracy}%) and lowest in the ${prime.worstWindowLabel.toLowerCase()} (${prime.worstAccuracy}%). Same you, same syllabus — just a ${prime.gap}-point swing based on when you study. Protect your best window for your hardest topics.`,
+      ctaLabel: 'Launch Optimal Session',
+      cta: { kind: 'suggested' },
+    });
+  }
+
+  const hesitation = kairo.insights.getHesitationPenalty();
+  if (hesitation) {
+    const hasRecentFlips = hesitation.changesInLast30Days > 0;
+    cards.push({
+      id: 'hesitation_penalty',
+      header: `${hesitation.confidentAccuracy}% First Pick · ${hesitation.hesitatedAccuracy}% After Changing`,
+      mentorCopy: hasRecentFlips
+        ? `Trust your gut. In the last 30 days, you changed your answer ${hesitation.changesInLast30Days} time${hesitation.changesInLast30Days === 1 ? '' : 's'} before submitting. ${hesitation.flippedRightToWrongInLast30Days} of those times, you changed a right answer to a wrong one. Stop second-guessing.`
+        : `When you go with your first answer, you're right ${hesitation.confidentAccuracy}% of the time. When you switch options before submitting, that drops to ${hesitation.hesitatedAccuracy}%. Second-guessing is costing you more than the questions themselves.`,
+      ctaLabel: 'Launch Rapid-Fire Drill',
+      cta: { kind: 'rapidFire', timerSec: 20 },
+    });
+  }
+
+  return cards;
+}
+
+export interface WeeklyDropTurnaround {
+  subject: string;
+  topic: string;
+  beforeAccuracy: number;
+  weekAccuracy: number;
+  deltaPts: number;
+}
+
+export interface WeeklyDrop {
+  pointsThisWeek: number;
+  /** Percent change vs. last week, or null when last week had no sessions to compare against. */
+  pointsDeltaPct: number | null;
+  accuracyThisWeek: number | null;
+  /** Percentage-point change vs. last week, or null when either week has no sessions. */
+  accuracyDeltaPts: number | null;
+  weakTopicsMastered: number;
+  biggestTurnaround: WeeklyDropTurnaround | null;
+  /** Batch 3's "One Thing" Focus — a real, composed sentence (highlight + emerging threat + directive), or null when there's neither a turnaround nor a fading concept to report on. */
+  oneThingCopy: string | null;
+  sessionCount: number;
+}
+
+/** Real week-over-week deltas for the Weekly Drop (see InsightsModule.getWeeklyDrop()). null when the student hasn't completed a session this week — nothing to drop yet. Always computed regardless of whether today is Sunday; see weeklyDrop.ts's isWeeklyDropUnlocked() for the actual reveal gate. */
+export function getWeeklyDrop(): WeeklyDrop | null {
+  const kairo = getEngine();
+  return kairo ? kairo.insights.getWeeklyDrop() : null;
 }
 
 export interface WeakTopicSummary {

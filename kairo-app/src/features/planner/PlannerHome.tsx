@@ -126,6 +126,11 @@ export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommend
     for (const t of [...w.topics, ...w.reviewTopics]) allTopicsByKey.set(t.key, t);
   }
   const recommendedTopic = pinnedRecommendation ? allTopicsByKey.get(pinnedRecommendation.topicKey) : null;
+  // Prerequisite Fallback: pinnedRecommendation.topicKey is the earlier
+  // topic being routed to, not the one that actually failed Verification —
+  // rerouteFromKey names that original topic, for the "why am I seeing
+  // this" copy below.
+  const rerouteFromTopic = pinnedRecommendation?.rerouteFromKey ? allTopicsByKey.get(pinnedRecommendation.rerouteFromKey) : null;
 
   function handleToggle(topic: PlannedTopic, done: boolean) {
     onToggleTopic(topic, done);
@@ -158,10 +163,14 @@ export function PlannerHome({ onBack, onAdjustPlan, plan, state, pinnedRecommend
             border: `1.5px solid ${pinnedRecommendation.isCriticalGap ? 'var(--dark-danger, #e5484d)' : 'var(--dark-accent-blue)'}`,
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: pinnedRecommendation.isCriticalGap ? 'var(--dark-danger, #e5484d)' : 'var(--dark-accent-blue)', marginBottom: 6 }}>
-              {TIER_COPY[pinnedRecommendation.tier].title.toUpperCase()}
+              {rerouteFromTopic ? 'PREREQUISITE GAP' : TIER_COPY[pinnedRecommendation.tier].title.toUpperCase()}
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--dark-text-heading)' }}>{recommendedTopic.topicTitle}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 4, lineHeight: 1.4 }}>{TIER_COPY[pinnedRecommendation.tier].detail}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+              {rerouteFromTopic
+                ? `You scored below 50% on "${rerouteFromTopic.topicTitle}" — it depends on this topic, so let's shore it up first.`
+                : TIER_COPY[pinnedRecommendation.tier].detail}
+            </div>
             <div style={{ marginTop: 12 }}>
               <Button variant={pinnedRecommendation.isCriticalGap ? 'danger' : 'darkAccent'} size="sm" onClick={() => onStartVerification(recommendedTopic)}>
                 Start Verification

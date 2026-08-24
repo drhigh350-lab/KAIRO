@@ -10,8 +10,8 @@ import { PracticeFlow } from './features/practice/PracticeFlow';
 import { CbtFlow } from './features/cbt/CbtFlow';
 import { Review } from './features/review/Review';
 import { ReviewSession } from './features/review/ReviewSession';
-import { Insights } from './features/insights/Insights';
 import { Profile } from './features/profile/Profile';
+import { ProfileInsights } from './features/profile/ProfileInsights';
 import { EditProfile } from './features/profile/EditProfile';
 import { NotificationSettings } from './features/profile/NotificationSettings';
 import { Leaderboard } from './features/profile/Leaderboard';
@@ -34,7 +34,7 @@ import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecomme
 // out"-looking screen even though their Supabase auth session was still
 // sitting in localStorage the whole time — this is what read as "my
 // progress reset" / "I have to sign in again" on every refresh.
-const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/insights', '/profile', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior'];
+const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/profile', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior'];
 
 // Real multi-column desktop layouts exist only for these browsing/hub
 // screens (see AppShell's `wide` prop). Exact matches, not prefixes:
@@ -45,7 +45,7 @@ const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/insig
 // question screen rendering wide. /review/session (the focused review
 // flow) is a distinct path from /review (the hub) for exactly this
 // reason, so it's correctly excluded by an exact match here.
-const WIDE_ROUTES = ['/home', '/profile', '/insights', '/review'];
+const WIDE_ROUTES = ['/home', '/profile', '/profile/insights', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore(): boolean {
@@ -131,11 +131,11 @@ export default function App() {
               <Route path="/practice/*" element={<PracticeFlow />} />
               <Route path="/cbt/*" element={<CbtFlow />} />
               <Route path="/review" element={<Review />} />
-              <Route path="/insights" element={<Insights />} />
             </Route>
 
             <Route path="/review/session" element={<ReviewSession />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/insights" element={<ProfileInsights />} />
             <Route path="/profile/edit" element={<EditProfile />} />
             <Route path="/profile/notifications" element={<NotificationSettings />} />
             <Route path="/profile/leaderboard" element={<Leaderboard />} />

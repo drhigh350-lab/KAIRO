@@ -55,7 +55,19 @@ export class RecommendationEngine {
     const enrolled = this.profile.targetSubjects;
     const all = Array.from(this.graph.nodes.values())
       .filter(c => !enrolled || enrolled.length === 0 || enrolled.includes(c.subject));
-    const scored = all.map(c => ({
+
+    // Randomize order before scoring. Array.prototype.sort is stable, so
+    // without this, every concept that ties on score (the common case for
+    // a student with no differentiating signal yet — a perfect diagnostic,
+    // or one that failed nothing) fell back to Map/DB insertion order,
+    // which is identical for every account that loaded the same content
+    // catalog. That's what made the very first recommendation always land
+    // on the same concept (e.g. "Relative Density") for every new student
+    // regardless of account — shuffling first means a genuine tie now
+    // resolves to a random concept from the student's own enrolled
+    // subjects, not whichever one happened to be seeded first.
+    const shuffled = seededShuffle(all, Date.now());
+    const scored = shuffled.map(c => ({
       concept: c,
       score: this._sessionPriorityScore(c)
     }));

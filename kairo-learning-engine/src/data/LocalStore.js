@@ -187,6 +187,35 @@ export class LocalStore {
   async loadPlannerState(studentId) {
     return this.get(STORES.PLANNER, studentId);
   }
+
+  /**
+   * Wipe every object store — concepts, sessions, attempts, profile, queue,
+   * pending sync queue, prefetched queues, planner state. Only PROFILE and
+   * PLANNER were ever keyed by studentId; CONCEPTS/ATTEMPTS/QUEUE/
+   * PREFETCHED_QUEUES are not scoped to a student at all, so without a full
+   * wipe here, signing out of one account and into another on the same
+   * device/browser silently inherited the previous account's retention
+   * states, attempt history, and pre-built recommendation queues — the
+   * cross-account "same topic, same questions" bleed. Called by
+   * signOutAndDisconnect() (kairo-app/src/lib/kairoEngine.ts) after the
+   * final best-effort sync, so a genuine logout always boots the next
+   * sign-in from a blank local cache.
+   */
+  async clearAll() {
+    if (this.useMemory) {
+      this.memoryFallback.clear();
+      return;
+    }
+    const storeNames = Object.values(STORES);
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeNames, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      for (const name of storeNames) {
+        tx.objectStore(name).clear();
+      }
+    });
+  }
 }
 
 export { STORES };

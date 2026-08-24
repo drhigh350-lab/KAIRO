@@ -7,7 +7,7 @@
 // Challenges/Bookmarks, not part of the vendored engine's concept graph.
 import { getEngine } from '../kairoEngine';
 import { getSupabase } from '../supabaseClient';
-import { buildPlan, toLocalIso, type PlannerInput, type PlannerPlan } from './plannerEngine';
+import { buildPlan, findPrerequisiteTopicKey, toLocalIso, type PlannerInput, type PlannerPlan } from './plannerEngine';
 import { getSubjects } from './syllabus';
 import {
   getNextDueTopic, recordTopicAttempt,
@@ -164,17 +164,53 @@ export async function markTopicComplete(key: string, done: boolean): Promise<{ c
 
 function isPinStillValid(pin: DueTopic, progress: TopicProgressMap, todayIso: string): boolean {
   const entry = progress[pin.topicKey];
-  if (!entry) return false;
+  // A Prerequisite Fallback reroute (see below) can point at a topic with
+  // no attempt history at all yet — that's not invalid, it's the honest
+  // "hasn't been done yet" state a never-attempted prerequisite starts in,
+  // and the pin should hold until the student actually acts on it.
+  if (!entry) return pin.isCriticalGap;
   return pin.isCriticalGap ? entry.criticalGap : entry.resurfaceDates.some((d) => d <= todayIso);
 }
 
 /**
+ * Prerequisite Fallback: a <50% Verification Session result shouldn't just
+ * re-queue the exact topic that was just tested — if the Blueprint says it
+ * depends on an earlier topic, that dependency is the real gap to close
+ * first. Resolves against the student's own chosen starting stage for that
+ * subject (buildPlan() uses the same value), so the reroute always lands on
+ * a topic actually reachable in the current plan. Returns the original
+ * critical-gap DueTopic unchanged when there's no prerequisite to route to,
+ * or when that prerequisite has already been verified since (tier no
+ * longer critical) — re-recommending it forever after it's been shored up
+ * would just stall the student in front of a topic they've already passed.
+ */
+function applyPrerequisiteFallback(next: DueTopic, state: PlannerState): DueTopic {
+  if (!next.isCriticalGap || !state.planInput) return next;
+
+  const [subjectSlug] = next.topicKey.split('::');
+  const subject = getSubjects().find((s) => s.slug === subjectSlug);
+  const subjectInput = state.planInput.subjects.find((s) => s.slug === subjectSlug);
+  if (!subject) return next;
+
+  const prereqKey = findPrerequisiteTopicKey(next.topicKey, subject, subjectInput?.startingStageIndex ?? 0);
+  if (!prereqKey || prereqKey === next.topicKey) return next;
+
+  const prereqProgress = state.topicProgress[prereqKey];
+  const prereqAlreadyVerified = !!prereqProgress && !prereqProgress.criticalGap;
+  if (prereqAlreadyVerified) return next;
+
+  return { topicKey: prereqKey, tier: 'critical', isCriticalGap: true, rerouteFromKey: next.topicKey };
+}
+
+/**
  * The Planner's single top-priority recommendation right now — a critical
- * prerequisite gap, or the longest-overdue mastery/forming resurface.
- * Pinned (Batch 3's persistent-queue rule): once returned, the same topic
- * keeps coming back on every call — even if a new, unrelated critical gap
- * opens up elsewhere in the meantime — until the pinned topic itself is
- * re-attempted (recordVerificationResult clears it) or resolved.
+ * prerequisite gap (rerouted to its own real prerequisite topic when the
+ * Blueprint has one, see applyPrerequisiteFallback above), or the
+ * longest-overdue mastery/forming resurface. Pinned (Batch 3's
+ * persistent-queue rule): once returned, the same topic keeps coming back
+ * on every call — even if a new, unrelated critical gap opens up elsewhere
+ * in the meantime — until the pinned topic itself is re-attempted
+ * (recordVerificationResult clears it) or resolved.
  */
 export async function getPinnedRecommendation(): Promise<DueTopic | null> {
   const state = await loadPlannerState();
@@ -184,7 +220,8 @@ export async function getPinnedRecommendation(): Promise<DueTopic | null> {
     return state.pinnedDueTopic;
   }
 
-  const next = getNextDueTopic(state.topicProgress, today);
+  const due = getNextDueTopic(state.topicProgress, today);
+  const next = due ? applyPrerequisiteFallback(due, state) : null;
   const pinnedDueTopic = next ? { ...next, pinnedOnIso: today } : null;
   if (pinnedDueTopic?.topicKey !== state.pinnedDueTopic?.topicKey) {
     await persist({ ...state, pinnedDueTopic });
@@ -192,11 +229,20 @@ export async function getPinnedRecommendation(): Promise<DueTopic | null> {
   return next;
 }
 
-/** Applies a completed Verification Session's accuracy to that topic's SRS tier, clears the pin if this was the pinned topic, and closes the Batch 2 open loop (the topic is genuinely verified now, however it scored) — the write side of Batch 3's decay timer. `key` is the same PlannedTopic.key the Verification CTA was launched with. */
-export async function recordVerificationResult(key: string, accuracyPct: number): Promise<void> {
+/**
+ * Applies a completed Verification Session's accuracy (and, per the
+ * Velocity Tracking upgrade, how many of the correct answers were
+ * High-Friction Passes -- correct but over HIGH_FRICTION_SECONDS, see
+ * plannerSrs.ts) to that topic's SRS tier, clears the pin if this was the
+ * pinned topic, and closes the Batch 2 open loop (the topic is genuinely
+ * verified now, however it scored) — the write side of Batch 3's decay
+ * timer. `key` is the same PlannedTopic.key the Verification CTA was
+ * launched with.
+ */
+export async function recordVerificationResult(key: string, accuracyPct: number, highFrictionPassCount = 0): Promise<void> {
   const state = await loadPlannerState();
   const today = toLocalIso(new Date());
-  const topicProgress = recordTopicAttempt(key, accuracyPct, today, state.topicProgress);
+  const topicProgress = recordTopicAttempt(key, accuracyPct, today, state.topicProgress, highFrictionPassCount);
   const pinnedDueTopic = state.pinnedDueTopic?.topicKey === key ? null : state.pinnedDueTopic;
   const pendingVerificationKeys = state.pendingVerificationKeys.filter((k) => k !== key);
   await persist({ ...state, topicProgress, pinnedDueTopic, pendingVerificationKeys });

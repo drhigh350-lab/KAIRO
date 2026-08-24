@@ -31,7 +31,7 @@ import { CommsService } from "./comms/CommsService.js";
 import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.js";
 import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
-import { conceptId } from "./utils/helpers.js";
+import { conceptId, shuffleArray, isCalculationQuestion } from "./utils/helpers.js";
 import { KairoPointsAwards } from "./utils/constants.js";
 
 // Practice Modes
@@ -318,10 +318,29 @@ export class KairoEngine {
     // EliteScore's consistency component, Macro State, and Level/XP. A
     // failure here (e.g. offline) shouldn't block sign-in — same session
     // just stays empty until the next successful connect, same as before.
+    //
+    // Merged with whatever was already loaded locally (init() ran before
+    // this and already hydrated this.profile.sessions from IndexedDB),
+    // never blindly replaced by it: a session completed and durably saved
+    // locally moments before this exact reload (endSession() awaits both
+    // saveGraph()/saveProfile() before ever resolving) can genuinely still
+    // be sitting in the pending-sync queue, not yet reflected in this
+    // fetch — connectSupabase() runs before sync.sync() on every restore
+    // path. Overwriting outright would make that just-completed session
+    // silently vanish from Today's Progress/streak/Insights for this whole
+    // page load, exactly the "cleared unexpectedly" failure mode the
+    // offline-first contract exists to prevent. Union + dedupe by
+    // sessionId, same pattern SyncManager._applyRemoteConceptStates()
+    // already uses for attempts.
     try {
-      this.profile.sessions = await adapter.fetchSessions(remoteProfile.studentId);
+      const localSessions = this.profile.sessions || [];
+      const remoteSessions = await adapter.fetchSessions(remoteProfile.studentId);
+      const merged = new Map();
+      for (const s of remoteSessions) merged.set(s.sessionId, s);
+      for (const s of localSessions) if (!merged.has(s.sessionId)) merged.set(s.sessionId, s);
+      this.profile.sessions = Array.from(merged.values()).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
     } catch {
-      // best-effort
+      // best-effort — offline or a failed fetch leaves the local copy untouched, not emptied
     }
 
     // Every module below was constructed once, at engine-construction time,
@@ -481,8 +500,112 @@ export class KairoEngine {
       if (harder.length > 0) candidates = harder;
     }
     if (candidates.length === 0) return null;
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+    // The real "unseen questions" pool: this student's own attemptHistory
+    // for this concept, not just excludeIds (which only ever tracked
+    // questions already picked within the *current* queue build). Without
+    // this, a topic bank bigger than one session's worth of questions
+    // still kept resurfacing the same handful every session, since nothing
+    // remembered what had already been asked in a previous one. Falls back
+    // to the full (now-difficulty-filtered) candidate pool only once every
+    // question for this concept has genuinely been attempted before.
+    const concept = this.graph.getConcept(cid);
+    const attemptedIds = new Set((concept?.attemptHistory || []).map(a => a.questionId));
+    const unseen = candidates.filter(q => !attemptedIds.has(q.id));
+    const pool = unseen.length > 0 ? unseen : candidates;
+
+    // Shuffle rather than a single Math.random() index pick — this pool
+    // backs every 10-slot recommendation/practice queue, so it must be
+    // randomized before selection, not just individually sampled from the
+    // same static ordering (Map insertion order == DB fetch order) every
+    // single call.
+    const chosen = shuffleArray(pool)[0];
     return this._flattenQuestion(chosen);
+  }
+
+  /**
+   * The Synthesis Injector: for a student ranked The Scholar or higher
+   * (lifetime kairoPoints >= 2,500 — PrestigeTiers' own threshold, the same
+   * rank Profile's badge reads), a strictly single-topic 10-question queue
+   * gets exactly 2 slots (4 and 8, 1-indexed — index 3/7 here) replaced
+   * with a real question from a DIFFERENT topic the student has already
+   * mastered (Held/Reinforced). Deliberate context-switching friction: a
+   * single-topic drill never demands the topic-to-topic jumps a real JAMB/
+   * UTME paper does, so this is the one place that skill gets exercised.
+   *
+   * No-op below The Scholar, for anything other than a full 10-question
+   * queue (slots 4/8 aren't meaningful at any other length), or when
+   * there's no real mastered question outside this queue's own topic(s) to
+   * draw from — `questions` is returned unchanged in every one of those
+   * cases, never padded or shortened to force the shape.
+   */
+  injectSynthesisQuestions(questions, primaryConceptIds = []) {
+    const SYNTHESIS_SLOTS = [3, 7]; // 0-indexed -> "slot 4 and slot 8"
+    const SCHOLAR_TIER_INDEX = 2;
+    if (questions.length !== 10) return questions;
+    if (getPrestigeTier(this.profile.kairoPoints).tierIndex < SCHOLAR_TIER_INDEX) return questions;
+
+    const primaryTopics = new Set(
+      primaryConceptIds
+        .map(id => this.graph.getConcept(id))
+        .filter(Boolean)
+        .map(c => `${c.subject}::${c.topic}`)
+    );
+
+    const masteredElsewhere = Array.from(this.graph.nodes.values()).filter(c =>
+      (c.retentionState === 'held' || c.retentionState === 'reinforced') &&
+      !primaryTopics.has(`${c.subject}::${c.topic}`)
+    );
+    if (masteredElsewhere.length === 0) return questions;
+
+    const pool = shuffleArray(masteredElsewhere);
+    const injected = questions.slice();
+    const usedIds = new Set(questions.map(q => q.id));
+    let poolIndex = 0;
+
+    for (const slot of SYNTHESIS_SLOTS) {
+      while (poolIndex < pool.length) {
+        const concept = pool[poolIndex++];
+        const q = this.getQuestionForConcept(concept.id, { excludeIds: Array.from(usedIds) });
+        if (q) {
+          injected[slot] = q;
+          usedIds.add(q.id);
+          break;
+        }
+      }
+    }
+    return injected;
+  }
+
+  /**
+   * The Profile Insights "Launch Speed Drill" / "Launch Theory Drill" CTA:
+   * a real, resolved session queue scoped to exactly one heuristic category
+   * (see isCalculationQuestion() in utils/helpers.js) — not a generic
+   * mixed/weak-areas session, since the whole point of the Theory vs.
+   * Calculation Insight (and the Velocity Matrix's subject-specific "speed
+   * drill") is to let a student drill the specific skill they're weaker
+   * on. `subjects` defaults to every enrolled subject; the Velocity Matrix
+   * CTA passes a single subject (e.g. ['Chemistry']) to scope the drill to
+   * exactly the subject its own insight named. Returns
+   * { questions, conceptIds } — conceptIds is the deduplicated list of
+   * concepts backing those questions, for a caller to set as the real
+   * session plan (see startSession()'s `plan` override) the same way
+   * startCustomSession()/startTopicPracticeSession() already do.
+   */
+  buildHeuristicDrillQueue(category, limit = 10, subjects = null) {
+    const enrolled = subjects && subjects.length > 0 ? subjects : this.profile.targetSubjects;
+    const wantsCalculation = category === 'calculation';
+
+    const candidates = Array.from(this.questionGraph.questions.values()).filter(q => {
+      if (q.lifecycleState !== 'live') return false;
+      if (enrolled && enrolled.length > 0 && !enrolled.includes(q.subject)) return false;
+      return isCalculationQuestion(q.stem) === wantsCalculation;
+    });
+
+    const shuffled = shuffleArray(candidates).slice(0, limit);
+    const questions = shuffled.map(q => this._flattenQuestion(q));
+    const conceptIds = Array.from(new Set(questions.map(q => q.conceptId).filter(Boolean)));
+    return { questions, conceptIds };
   }
 
   /**
@@ -765,7 +888,7 @@ export class KairoEngine {
    * call this directly with neither set, so both are optional here — only
    * the concept-state/attempt-recording work below is universal.
    */
-  submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single' }) {
+  submitAnswer({ conceptId: cid, correct, responseTimeMs, selectedOption, correctOption, questionId, questionDifficulty, questionDistractorTags = [], questionType = 'single', answerChangeCount = 0, firstSelectedOption = null }) {
     const concept = this.graph.getConcept(cid);
     if (!concept) {
       throw new Error(`Concept ${cid} not found.`);
@@ -807,6 +930,25 @@ export class KairoEngine {
     // Recording them here is also what lets Review's Reflection Moment
     // (CBT Exam Mode Spec's Review Module §5.5) show a student their own
     // original answer later — there is no other place that answer is kept.
+    // answerChangeCount/firstSelectedOption (Hesitation Penalty Insight):
+    // how many times the student switched their selected option before
+    // hitting Submit, and what their very first pick was — real
+    // instrumentation from PracticeQuestion.tsx, not derived from anything
+    // already recorded. wasFirstPickCorrect (derived here, not stored
+    // separately) is what lets the insight report the specific "you
+    // changed a right answer to a wrong one" count, not just an aggregate
+    // accuracy comparison. Carried on `attempt` for local storage/Review's
+    // "reconstruct the original answer" use, and separately on the object
+    // handed to processAnswer() below so it lands on
+    // concept.attemptHistory too (RecommendationEngine.processAnswer()
+    // passes that object straight into concept.recordAttempt()) — that's
+    // the read path InsightsModule.getHesitationPenalty() actually uses.
+    // Deliberately NOT added to SupabaseSyncAdapter._attemptToRow(): no
+    // matching columns exist on kairo.attempts yet, so this stays a
+    // local-only (same-device) signal until that migration lands.
+    const wasFirstPickCorrect = answerChangeCount > 0 && firstSelectedOption != null
+      ? firstSelectedOption === correctOption
+      : null;
     const attempt = {
       conceptId: cid,
       correct,
@@ -817,7 +959,9 @@ export class KairoEngine {
       selectedOption,
       correctOption,
       difficulty: questionDifficulty,
-      genuineConfidence: genuine
+      genuineConfidence: genuine,
+      answerChangeCount,
+      wasFirstPickCorrect
     };
 
     this.store.logAttempt(attempt);
@@ -833,7 +977,9 @@ export class KairoEngine {
           questionId,
           selectedOption,
           correctOption,
-          difficulty: questionDifficulty
+          difficulty: questionDifficulty,
+          answerChangeCount,
+          wasFirstPickCorrect
         })
       : null;
 
