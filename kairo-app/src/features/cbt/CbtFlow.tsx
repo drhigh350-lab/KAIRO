@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ExamSetup } from './ExamSetup';
 import { ExamInstructions } from './ExamInstructions';
@@ -6,7 +6,8 @@ import { CbtExam } from './CbtExam';
 import { CbtSummary, type CbtResults } from './CbtSummary';
 import { CbtReview } from './CbtReview';
 import { CbtHistory } from './CbtHistory';
-import { startCbtExam, finishCbtExam, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
+import { startCbtExam, finishCbtExam, resumeCbtExam, getEngine, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
+import { getCbtSessionSnapshot, clearSessionSnapshot } from '../../lib/sessionResume';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
@@ -32,7 +33,12 @@ const SCREEN_DEPTH: Record<Screen, number> = {
 /** Controller for CBT Exam Mode: setup -> instructions -> exam -> summary -> review, driven by the real kairo.cbt (CBTExamMode) instance. */
 export function CbtFlow() {
   const navigate = useNavigate();
-  const [screen, setScreen] = useState<Screen>('setup');
+  const studentId = getEngine()?.profile?.studentId;
+  // Anti-Refresh Wipeout (Batch 1): a snapshot from an interrupted exam
+  // means this mount should skip straight to resuming it — read
+  // synchronously (localStorage) so the very first render already lands on
+  // 'starting' instead of flashing the setup screen first.
+  const [screen, setScreen] = useState<Screen>(() => (getCbtSessionSnapshot(studentId) ? 'starting' : 'setup'));
   // Persistent bottom nav (AppTabs) hides for the live exam itself and the
   // brief 'starting' transition into it — both already treat a casual exit
   // as unavailable (see useBackIntercept below); every other CBT screen
@@ -40,6 +46,8 @@ export function CbtFlow() {
   useSetBottomNavHidden(screen === 'exam' || screen === 'starting');
   const [paper, setPaper] = useState<CbtPaperQuestion[]>([]);
   const [totalTimeMin, setTotalTimeMin] = useState(120);
+  const [startTime, setStartTime] = useState(0);
+  const [resumeState, setResumeState] = useState<{ answers: Record<number, string>; flagged: Record<number, boolean>; current: number } | null>(null);
   const [results, setResults] = useState<CbtResults | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -47,6 +55,41 @@ export function CbtFlow() {
   const [subject, setSubject] = useState(CBT_DEFAULT_SUBJECTS[1]);
   const [customSubjects, setCustomSubjects] = useState<string[]>(CBT_DEFAULT_SUBJECTS);
   const [customTotalPreset, setCustomTotalPreset] = useState(80);
+
+  // Anti-Refresh Wipeout (Batch 1): rebuild the live exam from the
+  // snapshot rather than silently discarding it and sending the student
+  // back to setup — same questions, same order, same answers/flags/timer.
+  useEffect(() => {
+    const snapshot = getCbtSessionSnapshot(studentId);
+    if (!snapshot) return;
+    resumeCbtExam({
+      subjects: snapshot.subjects,
+      totalTimeMin: snapshot.totalTimeMin,
+      startTime: snapshot.startTime,
+      questionIds: snapshot.paper.map((p) => p.questionId),
+      answers: snapshot.answers,
+      flaggedIndices: snapshot.flaggedIndices,
+      subjectTimes: snapshot.subjectTimes,
+      current: snapshot.current,
+    })
+      .then((resumed) => {
+        if (!resumed) {
+          clearSessionSnapshot(studentId, 'cbt');
+          setScreen('setup');
+          return;
+        }
+        setPaper(resumed.paper);
+        setTotalTimeMin(resumed.totalTimeMin);
+        setStartTime(resumed.startTime);
+        setResumeState({ answers: snapshot.answers, flagged: Object.fromEntries(snapshot.flaggedIndices.map((i) => [i, true])), current: snapshot.current });
+        setScreen('exam');
+      })
+      .catch(() => {
+        clearSessionSnapshot(studentId, 'cbt');
+        setScreen('setup');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleCustomSubject(s: string) {
     setCustomSubjects((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
@@ -90,6 +133,8 @@ export function CbtFlow() {
       }
       setPaper(started.paper);
       setTotalTimeMin(started.totalTimeMin);
+      setStartTime(started.startTime);
+      setResumeState(null);
       setScreen('exam');
     } catch (err) {
       setStartError(err instanceof Error ? err.message : 'Could not start the exam.');
@@ -99,6 +144,7 @@ export function CbtFlow() {
 
   async function handleSubmit() {
     const finished = await finishCbtExam();
+    clearSessionSnapshot(studentId, 'cbt');
     setResults(finished);
     setScreen('summary');
   }
@@ -142,7 +188,19 @@ export function CbtFlow() {
     );
   }
   if (screen === 'exam') {
-    return <CbtExam paper={paper} totalTimeMin={totalTimeMin} onSubmit={handleSubmit} onExit={toHome} />;
+    return (
+      <CbtExam
+        paper={paper}
+        totalTimeMin={totalTimeMin}
+        startTime={startTime}
+        studentId={studentId}
+        initialAnswers={resumeState?.answers}
+        initialFlagged={resumeState?.flagged}
+        initialCurrent={resumeState?.current}
+        onSubmit={handleSubmit}
+        onExit={toHome}
+      />
+    );
   }
   if (screen === 'summary' && results) {
     return <CbtSummary results={results} onHome={fromSummaryToHome} onReview={() => setScreen('review')} />;

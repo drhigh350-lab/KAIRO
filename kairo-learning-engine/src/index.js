@@ -470,6 +470,7 @@ export class KairoEngine {
       explanation: q.explanation,
       conceptId: q.conceptsTested?.[0]?.conceptId || null,
       difficulty: q.difficultyRating,
+      imageUrl: q.imageUrl || null,
       storedAt: Date.now()
     };
   }

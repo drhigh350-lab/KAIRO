@@ -1,28 +1,56 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton } from '../../components';
-import { CalcIcon, CloseIcon, FlagIcon, InlineToast, MiniCalculator, Modal } from '../learning/shared';
-import { submitCbtAnswer, toggleCbtFlag, type CbtPaperQuestion } from '../../lib/kairoEngine';
+import { CalcIcon, CloseIcon, FlagIcon, InlineToast, MiniCalculator, Modal, QuestionDiagram } from '../learning/shared';
+import { submitCbtAnswer, toggleCbtFlag, getCbtSubjectTimes, type CbtPaperQuestion } from '../../lib/kairoEngine';
+import { saveSessionSnapshot } from '../../lib/sessionResume';
 
 export interface CbtExamProps {
   paper: CbtPaperQuestion[];
   totalTimeMin: number;
+  /** Absolute ms the attempt actually started — real start for a fresh exam, the original attempt's start when resumed (Batch 1). Drives secondsLeft directly so a resumed exam's countdown reflects real elapsed wall-clock time, not a re-armed full timer. */
+  startTime: number;
+  studentId: string | null | undefined;
+  initialAnswers?: Record<number, string>;
+  initialFlagged?: Record<number, boolean>;
+  initialCurrent?: number;
   onSubmit: () => void;
   onExit?: () => void;
 }
 
-export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps) {
-  const [current, setCurrent] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [flagged, setFlagged] = useState<Record<number, boolean>>({});
+export function CbtExam({ paper, totalTimeMin, startTime, studentId, initialAnswers, initialFlagged, initialCurrent, onSubmit, onExit }: CbtExamProps) {
+  const [current, setCurrent] = useState(initialCurrent ?? 0);
+  const [answers, setAnswers] = useState<Record<number, string>>(initialAnswers ?? {});
+  const [flagged, setFlagged] = useState<Record<number, boolean>>(initialFlagged ?? {});
   const [showPalette, setShowPalette] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(totalTimeMin * 60);
+  const [secondsLeft, setSecondsLeft] = useState(() => Math.max(0, Math.round((startTime + totalTimeMin * 60_000 - Date.now()) / 1000)));
   const [warned, setWarned] = useState(false);
   const questionStartedAt = useRef(Date.now());
 
   const subjects = Array.from(new Set(paper.map((q) => q.subject)));
+
+  // Anti-Refresh Wipeout (Batch 1): persist the exam's answers/flags/
+  // position on every change (including the very first render, before any
+  // answer — a refresh mid-exam must never lose the attempt). Cleared only
+  // on successful submission, by the caller (CbtFlow's handleSubmit).
+  useEffect(() => {
+    if (!studentId) return;
+    saveSessionSnapshot(studentId, {
+      kind: 'cbt',
+      subjects,
+      totalTimeMin,
+      startTime,
+      paper,
+      answers,
+      flaggedIndices: Object.keys(flagged).filter((k) => flagged[Number(k)]).map(Number),
+      subjectTimes: getCbtSubjectTimes(),
+      current,
+      savedAt: Date.now(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, flagged, current]);
 
   useEffect(() => {
     const t = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
@@ -101,6 +129,7 @@ export function CbtExam({ paper, totalTimeMin, onSubmit, onExit }: CbtExamProps)
       <div style={{ padding: '4px 18px 18px', flex: 1 }}>
         <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', fontWeight: 600 }}>Question {current + 1} of {paper.length}</div>
         <div style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 12, fontWeight: 500 }}>{q.text}</div>
+        <QuestionDiagram imageUrl={q.imageUrl} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
           {q.options.map((opt) => {
             const isSelected = answers[current] === opt.label;

@@ -259,6 +259,31 @@ export async function signInWithGoogle(redirectPath = '/onboarding/google'): Pro
   if (error) throw error;
 }
 
+/**
+ * Batch 4 (pre-launch bug fix) — sends a real Supabase Auth password-reset
+ * email. The "Forgot password?" link on Sign In previously pointed nowhere
+ * (href="#", no handler); this is also the recovery path for a legacy
+ * TechMed/RoboMed account hitting `user_already_exists` on Kairo sign-up —
+ * that account is real, it just needs a password reset to "migrate" into
+ * Kairo. `redirectTo` lands the reset link on the confirm screen below,
+ * which is where Supabase's own recovery session (parsed from the email
+ * link's URL) actually gets used to set a new password.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/onboarding/reset-password`,
+  });
+  if (error) throw error;
+}
+
+/** Completes a password reset — called from the confirm screen the reset email's link lands on, after Supabase's own recovery session (parsed from that link's URL) is already active. */
+export async function confirmPasswordReset(newPassword: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
 export interface GoogleSignInResult {
   /** True when kairo.students had no row for this auth user yet — a first-time Google student who still needs the real onboarding steps (course/exam date/subjects), same as an email sign-up would get. */
   isNewStudent: boolean;
@@ -1244,6 +1269,7 @@ export interface CbtPaperQuestion {
   questionId: string;
   text: string;
   options: { label: string; text: string }[];
+  imageUrl?: string | null;
 }
 
 /** The one real, fully-seeded JAMB combination available today (Science/Medicine track). */
@@ -1284,7 +1310,7 @@ export interface StartCbtExamOptions {
   customTotalTimeMin?: number;
 }
 
-export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[] }> {
+export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[]; subjects: string[]; startTime: number }> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const subjects = options.subjects?.length ? options.subjects : CBT_DEFAULT_SUBJECTS;
@@ -1302,11 +1328,47 @@ export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{
   // Exam Mode spec §2.3/§5.2/§5.4 forbid any correctness signal reaching
   // the student mid-attempt, so strip it here defensively before this
   // ever reaches the browser's own state.
-  const paper: CbtPaperQuestion[] = built.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[] }) => ({
+  const paper: CbtPaperQuestion[] = built.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }) => ({
     ...q,
     options: q.options.map((o) => ({ label: o.label, text: o.text })),
   }));
-  return { totalQuestions: built.totalQuestions, totalTimeMin: setup.totalTimeMin, paper };
+  return { totalQuestions: built.totalQuestions, totalTimeMin: setup.totalTimeMin, paper, subjects, startTime: kairo.cbt.examData.startTime };
+}
+
+/**
+ * Anti-Refresh Wipeout (Batch 1) — rebuilds the live kairo.cbt exam state
+ * from a client-persisted snapshot (see sessionResume.ts's CbtSessionSnapshot),
+ * reusing the exact same questions in the exact same order rather than
+ * pulling a fresh random paper. Returns null when the snapshot's questions
+ * can no longer be resolved (e.g. its subjects' content never reloaded) —
+ * the caller should then fall back to a normal fresh setup.
+ */
+export async function resumeCbtExam(snapshot: { subjects: string[]; totalTimeMin: number; startTime: number; questionIds: string[]; answers: Record<number, string>; flaggedIndices: number[]; subjectTimes: Record<string, number>; current: number }): Promise<{ totalTimeMin: number; paper: CbtPaperQuestion[]; startTime: number } | null> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(snapshot.subjects);
+  const resumed = kairo.cbt.resumeFromSnapshot({
+    subjects: snapshot.subjects,
+    totalTimeMin: snapshot.totalTimeMin,
+    startTime: snapshot.startTime,
+    questionIds: snapshot.questionIds,
+    answers: snapshot.answers,
+    flaggedIndices: snapshot.flaggedIndices,
+    subjectTimes: snapshot.subjectTimes,
+    currentIndex: snapshot.current,
+  });
+  if (!resumed) return null;
+  const paper: CbtPaperQuestion[] = resumed.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }) => ({
+    ...q,
+    options: q.options.map((o) => ({ label: o.label, text: o.text })),
+  }));
+  return { totalTimeMin: snapshot.totalTimeMin, paper, startTime: snapshot.startTime };
+}
+
+/** Peeks at the live exam's per-subject time totals (CBTExamMode.examData.subjectTimes) — the one piece of live exam state the snapshot needs that isn't already mirrored in CbtExam.tsx's own React state. Empty object when no exam is running. */
+export function getCbtSubjectTimes(): Record<string, number> {
+  const kairo = getEngine();
+  return kairo?.cbt?.examData?.subjectTimes ? { ...kairo.cbt.examData.subjectTimes } : {};
 }
 
 export interface CbtQuestionResult {

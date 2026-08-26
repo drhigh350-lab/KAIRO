@@ -139,7 +139,68 @@ export class CBTExamMode {
         subject: q.subject,
         questionId: q.questionId || q.id,
         text: q.text,
-        options: q.options
+        options: q.options,
+        imageUrl: q.imageUrl || null
+      }))
+    };
+  }
+
+  /**
+   * Rebuild examData directly from a previously-persisted client snapshot
+   * instead of buildPaper()'s random pull — Anti-Refresh Wipeout fix
+   * (Batch 1). A page reload wipes this whole engine instance, so a
+   * resumed attempt must land on the *exact same* questions in the exact
+   * same order the interrupted attempt was already using (buildPaper()
+   * would otherwise silently hand back a different random paper), with
+   * whatever answers/flags/timing it had already recorded replayed on top.
+   * `questionIds` must be looked up in original paper order — if any one
+   * of them no longer resolves (its subject's content never got reloaded,
+   * say), this aborts and returns null rather than resuming into a paper
+   * with a gap that would desync every index-keyed answer/flag from here on.
+   */
+  resumeFromSnapshot({ subjects, totalTimeMin, startTime, questionIds, answers = {}, flaggedIndices = [], subjectTimes = {}, currentIndex = 0 }) {
+    const paper = [];
+    const subjectCounters = {};
+    for (let i = 0; i < questionIds.length; i++) {
+      const q = this.engine.getQuestionById(questionIds[i]);
+      if (!q) return null;
+      const subjectIndex = subjectCounters[q.subject] ?? 0;
+      subjectCounters[q.subject] = subjectIndex + 1;
+      paper.push({
+        globalIndex: i,
+        subjectIndex,
+        subject: q.subject,
+        ...q,
+        studentAnswer: answers[i] ?? null,
+        timeSpentMs: 0,
+        flagged: flaggedIndices.includes(i),
+        visited: false
+      });
+    }
+    if (paper.length === 0) return null;
+
+    this.config = { ...this.config, subjects, totalTimeMin };
+    this.examData = {
+      paper,
+      startTime,
+      endTime: null,
+      currentIndex: Math.min(currentIndex, paper.length - 1),
+      answers: { ...answers },
+      subjectTimes: { ...subjectTimes },
+      flagged: new Set(flaggedIndices)
+    };
+    this.state = 'running';
+
+    return {
+      totalQuestions: paper.length,
+      subjects,
+      paper: paper.map(q => ({
+        globalIndex: q.globalIndex,
+        subject: q.subject,
+        questionId: q.questionId || q.id,
+        text: q.text,
+        options: q.options,
+        imageUrl: q.imageUrl || null
       }))
     };
   }
@@ -439,6 +500,7 @@ export class CBTExamMode {
         isCorrect,
         timeSpentMs: q.timeSpentMs,
         difficulty: q.difficulty || 2,
+        imageUrl: q.imageUrl || null,
         flagged: this.examData.flagged.has(q.globalIndex)
       });
     }

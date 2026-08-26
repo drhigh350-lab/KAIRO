@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { FlowHeader, OrDivider, GoogleButton } from './shared';
+import { InlineToast } from '../learning/shared';
 import { signUpAndConnect, signInWithGoogle, describeError } from '../../lib/kairoEngine';
 
 export interface SignUpProps {
@@ -29,6 +30,11 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  // Batch 4 (pre-launch bug fix): a highly-visible toast, not just the
+  // inline field error below, so a legacy TechMed/RoboMed account hitting
+  // this on their first Kairo sign-up understands *why* — this is the
+  // "migrate to Kairo" moment, not a generic "account exists" dead end.
+  const [showMigrateToast, setShowMigrateToast] = useState(false);
   const passwordValid = password.length >= 8 && /\d/.test(password);
   const canSubmit = name.trim() && email.trim() && passwordValid && !submitting;
 
@@ -46,6 +52,8 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
         // account" reports turned out to be: a real TechMed/RoboMed login, not a bug).
         setAlreadyRegistered(true);
         setError('An account already exists for this email — sign in with your existing TechMed/RoboMed password instead.');
+        setShowMigrateToast(true);
+        setTimeout(() => setShowMigrateToast(false), 4000);
       } else {
         setError(describeError(err));
       }
@@ -68,7 +76,8 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
   }
 
   return (
-    <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, flex: 1, background: 'var(--dark-bg-canvas)' }}>
+    <div style={{ padding: '20px 24px 28px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, flex: 1, background: 'var(--dark-bg-canvas)', position: 'relative' }}>
+      {showMigrateToast && <InlineToast tone="caution">Account exists. Please reset your password to migrate to Kairo.</InlineToast>}
       <FlowHeader onBack={onBack} step={step} total={total} tone="dark" />
       <div>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 24, color: 'var(--dark-text-heading)' }}>Create your account</div>

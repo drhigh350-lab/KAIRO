@@ -16,6 +16,16 @@ function trackKind(trackKey: string): 'consistency' | 'resilience' | 'execution'
   return trackKey as 'consistency' | 'resilience' | 'execution';
 }
 
+/** Overlay glyph for a locked badge — small, bottom-right of the circle, matching every other icon's line style. */
+function LockIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </svg>
+  );
+}
+
 /** One SVG per track — kept simple/line-style, matching every other icon already in shared.tsx. */
 function TrackIcon({ kind }: { kind: ReturnType<typeof trackKind> }) {
   if (kind === 'consistency') {
@@ -49,16 +59,22 @@ export interface BadgeVaultRowProps {
   onSelect: (trackKey: string) => void;
 }
 
-/** Up to 4 icons — locked ones render grayscale, the top tier (tier 3) of any track gets the amber glow treatment matching Batch 1's Outlier tier. */
+/**
+ * The full "Completionist" grid — every badge a student could ever earn,
+ * locked ones included (grayscale + opacity-50 + a lock icon overlay), not
+ * just the ones already unlocked. Before this, a student with zero earned
+ * badges saw a text placeholder instead of the grid at all, and locked
+ * subject tracks beyond the single strongest one were dropped entirely —
+ * both silently hid real, always-real track data (getBadgeVault() always
+ * returns the 3 universal tracks, locked or not). Only a genuinely
+ * pre-diagnostic student (no real profile/graph data to compute tiers
+ * from at all) gets the "not enough data yet" copy instead of the grid.
+ */
 export function BadgeVaultRow({ badges, onboarded, onSelect }: BadgeVaultRowProps) {
-  const anyEarned = badges.some((b) => !b.locked);
-
-  if (!anyEarned) {
+  if (!onboarded) {
     return (
       <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', lineHeight: 1.55 }}>
-        {onboarded
-          ? "Nothing in the Vault yet — it fills in as you keep practising."
-          : "We don't have enough data yet. Complete a quick diagnostic test so Kairo can build your roadmap."}
+        We don't have enough data yet. Complete a quick diagnostic test so Kairo can build your roadmap.
       </div>
     );
   }
@@ -79,15 +95,26 @@ export function BadgeVaultRow({ badges, onboarded, onSelect }: BadgeVaultRowProp
               background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0,
             }}
           >
-            <div style={{
-              width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: b.locked ? 'var(--dark-bg-elevated)' : 'rgba(224,160,57,0.15)',
-              color: b.locked ? 'var(--dark-text-faint)' : 'var(--kairo-prestige-amber)',
-              filter: b.locked ? 'grayscale(1)' : 'none',
-              opacity: b.locked ? 0.55 : 1,
-              boxShadow: glow ? '0 0 0 3px var(--kairo-prestige-amber-glow), 0 2px 12px var(--kairo-prestige-amber-glow)' : 'none',
-            }}>
-              <TrackIcon kind={kind} />
+            <div style={{ position: 'relative', width: 52, height: 52 }}>
+              <div style={{
+                width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: b.locked ? 'var(--dark-bg-elevated)' : 'rgba(224,160,57,0.15)',
+                color: b.locked ? 'var(--dark-text-faint)' : 'var(--kairo-prestige-amber)',
+                filter: b.locked ? 'grayscale(1)' : 'none',
+                opacity: b.locked ? 0.5 : 1,
+                boxShadow: glow ? '0 0 0 3px var(--kairo-prestige-amber-glow), 0 2px 12px var(--kairo-prestige-amber-glow)' : 'none',
+              }}>
+                <TrackIcon kind={kind} />
+              </div>
+              {b.locked && (
+                <div style={{
+                  position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%',
+                  background: 'var(--dark-text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '2px solid var(--dark-bg-surface)',
+                }}>
+                  <LockIcon />
+                </div>
+              )}
             </div>
             <div style={{ fontSize: 10.5, fontWeight: 600, textAlign: 'center', color: b.locked ? 'var(--dark-text-faint)' : 'var(--dark-text-heading)', lineHeight: 1.25 }}>
               {b.locked ? b.label : b.currentTierName}
@@ -117,14 +144,26 @@ export function BadgeVaultSheet({ trackKey, vault }: BadgeVaultSheetProps) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          background: entry.locked ? 'var(--dark-bg-elevated)' : 'rgba(224,160,57,0.15)',
-          color: entry.locked ? 'var(--dark-text-faint)' : 'var(--kairo-prestige-amber)',
-          filter: entry.locked ? 'grayscale(1)' : 'none',
-          boxShadow: entry.isMaxTier ? '0 0 0 3px var(--kairo-prestige-amber-glow)' : 'none',
-        }}>
-          <TrackIcon kind={kind} />
+        <div style={{ position: 'relative', width: 48, height: 48, flexShrink: 0 }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: entry.locked ? 'var(--dark-bg-elevated)' : 'rgba(224,160,57,0.15)',
+            color: entry.locked ? 'var(--dark-text-faint)' : 'var(--kairo-prestige-amber)',
+            filter: entry.locked ? 'grayscale(1)' : 'none',
+            opacity: entry.locked ? 0.5 : 1,
+            boxShadow: entry.isMaxTier ? '0 0 0 3px var(--kairo-prestige-amber-glow)' : 'none',
+          }}>
+            <TrackIcon kind={kind} />
+          </div>
+          {entry.locked && (
+            <div style={{
+              position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: '50%',
+              background: 'var(--dark-text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '2px solid var(--dark-bg-canvas)',
+            }}>
+              <LockIcon />
+            </div>
+          )}
         </div>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: 'var(--dark-text-muted)' }}>{entry.label.toUpperCase()}</div>

@@ -1,5 +1,5 @@
 import { Card } from '../../components';
-import { ScreenHeader } from '../learning/shared';
+import { ScreenHeader, QuestionDiagram } from '../learning/shared';
 import type { CbtPaperQuestion, CbtQuestionResult } from '../../lib/kairoEngine';
 
 export interface CbtReviewProps {
@@ -23,6 +23,7 @@ export function CbtReview({ paper, questionResults, onBack }: CbtReviewProps) {
             <Card key={r.globalIndex} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', textTransform: 'uppercase', letterSpacing: '.03em' }}>{r.subject} · Q{r.globalIndex + 1}</div>
               <div style={{ fontSize: 14, color: 'var(--dark-text-body)', marginTop: 8, lineHeight: 1.5 }}>{q?.text}</div>
+              <QuestionDiagram imageUrl={q?.imageUrl} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
                 {q?.options.map((opt) => {
                   const isCorrect = opt.label === r.correctOption;

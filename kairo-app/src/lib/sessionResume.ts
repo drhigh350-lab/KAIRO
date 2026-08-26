@@ -40,7 +40,30 @@ export interface ReviewSessionSnapshot {
   savedAt: number;
 }
 
-type SessionSnapshot = PracticeSessionSnapshot | ReviewSessionSnapshot;
+/**
+ * CBT Exam Mode's snapshot (Batch 1's Anti-Refresh Wipeout fix) — unlike
+ * Practice, CBTExamMode's whole `examData` lives only in memory on the
+ * `kairo` engine singleton, which a real page reload wipes entirely, so
+ * this carries everything needed to rebuild it exactly: the same
+ * questions in the same order (`paper`, which already has each
+ * question's id), every answer/flag/subject-time recorded so far, and the
+ * real absolute start time so a resumed countdown reflects genuine
+ * elapsed wall-clock time rather than a re-armed full timer.
+ */
+export interface CbtSessionSnapshot {
+  kind: 'cbt';
+  subjects: string[];
+  totalTimeMin: number;
+  startTime: number;
+  paper: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }[];
+  answers: Record<number, string>;
+  flaggedIndices: number[];
+  subjectTimes: Record<string, number>;
+  current: number;
+  savedAt: number;
+}
+
+type SessionSnapshot = PracticeSessionSnapshot | ReviewSessionSnapshot | CbtSessionSnapshot;
 
 function storageKey(studentId: string | null | undefined): string | null {
   if (!studentId || studentId === 'pending') return null;
@@ -83,12 +106,26 @@ export function getReviewSessionSnapshot(studentId: string | null | undefined): 
   }
 }
 
+export function getCbtSessionSnapshot(studentId: string | null | undefined): CbtSessionSnapshot | null {
+  const key = storageKey(studentId);
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SessionSnapshot;
+    return parsed.kind === 'cbt' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Clears the snapshot — scoped to `kind` so completing a Review session
- * can't wipe out an unrelated, still-resumable Practice snapshot (there's
- * only one active slot per student across both modes) and vice versa.
+ * Clears the snapshot — scoped to `kind` so completing a session in one
+ * mode can't wipe out an unrelated, still-resumable snapshot from another
+ * (there's only one active slot per student across practice/review/cbt)
+ * and vice versa.
  */
-export function clearSessionSnapshot(studentId: string | null | undefined, kind: 'practice' | 'review'): void {
+export function clearSessionSnapshot(studentId: string | null | undefined, kind: 'practice' | 'review' | 'cbt'): void {
   const key = storageKey(studentId);
   if (!key) return;
   try {

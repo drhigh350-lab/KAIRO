@@ -13,6 +13,7 @@ export interface EngineFlatQuestion {
   explanation?: string | null;
   conceptId?: string | null;
   difficulty?: number;
+  imageUrl?: string | null;
 }
 
 /** Converts an engine question into the shape kairo-app's Practice screens already render. */
@@ -28,6 +29,7 @@ export function toUiQuestion(q: EngineFlatQuestion): PracticeQuestion {
     correct: correct === -1 ? 0 : correct,
     why: q.explanation || 'Review the option above marked correct.',
     kai: q.explanation || "Let's look at this one together.",
+    imageUrl: q.imageUrl ?? null,
   };
 }
 

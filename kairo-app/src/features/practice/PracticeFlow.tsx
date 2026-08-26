@@ -199,6 +199,7 @@ export function PracticeFlow() {
           setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
         } else {
           setEngineQuestions(questions);
+          persistFreshSnapshot('suggested', subjects[0], null, null, 'adaptive', questions);
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
@@ -207,6 +208,14 @@ export function PracticeFlow() {
   useEffect(() => {
     if (entryFlow !== 'suggested' || startedSuggested.current) return;
     startedSuggested.current = true;
+    // Anti-Refresh Wipeout (Batch 1): a mid-session refresh remounts this
+    // effect with the same 'suggested' entry — resume the real snapshot
+    // instead of silently discarding it and fetching a brand-new batch.
+    const existing = getPracticeSessionSnapshot(getEngine()?.profile?.studentId);
+    if (existing && existing.entryFlow === 'suggested') {
+      resumeSession(existing);
+      return;
+    }
     startSuggested(anchorConceptIdRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -221,6 +230,14 @@ export function PracticeFlow() {
     startedVerify.current = true;
     if (!verifyTarget) {
       setEngineLoadError('Missing verification target — go back to the Planner and try again.');
+      return;
+    }
+    // Anti-Refresh Wipeout (Batch 1) — only resume a snapshot that's
+    // actually this same verification target; a stale one from a
+    // different Planner topic must not hijack a fresh verify request.
+    const existing = getPracticeSessionSnapshot(getEngine()?.profile?.studentId);
+    if (existing && existing.entryFlow === 'verify' && existing.subjectLabel === verifyTarget.subjectLabel && existing.topic === verifyTarget.topic) {
+      resumeSession(existing);
       return;
     }
     startTopicSession(verifyTarget.subjectLabel, verifyTarget.topic, undefined, VERIFICATION_SESSION_LENGTH, undefined, true);
@@ -241,6 +258,7 @@ export function PracticeFlow() {
           setEngineLoadError("Kairo couldn't find any questions for this drill yet.");
         } else {
           setEngineQuestions(questions);
+          persistFreshSnapshot('drill', { key: 'drill', label: 'Drill' }, null, null, 'adaptive', questions);
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
@@ -254,6 +272,12 @@ export function PracticeFlow() {
       setEngineLoadError('Missing drill category — go back to Profile and try again.');
       return;
     }
+    // Anti-Refresh Wipeout (Batch 1) — resume a still-active drill instead of silently starting a second one.
+    const existing = getPracticeSessionSnapshot(getEngine()?.profile?.studentId);
+    if (existing && existing.entryFlow === 'drill') {
+      resumeSession(existing);
+      return;
+    }
     startDrill(drillCategoryRef.current, drillStateRef.current?.drillSubjects, drillStateRef.current?.drillTimerSec);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -263,6 +287,15 @@ export function PracticeFlow() {
   useEffect(() => {
     if (entryFlow !== 'endurance' || startedEndurance.current) return;
     startedEndurance.current = true;
+    // Anti-Refresh Wipeout (Batch 1) — a 60-question endurance run is the
+    // single most expensive session to lose to a refresh; resume it rather
+    // than silently starting a fresh 60-question batch.
+    const existing = getPracticeSessionSnapshot(getEngine()?.profile?.studentId);
+    if (existing && existing.entryFlow === 'endurance') {
+      setShowPercent(true);
+      resumeSession(existing);
+      return;
+    }
     setEngineQuestions(null);
     setEngineLoadError(null);
     setShowPercent(true); // a 60-question queue reads better as completion % than "Question 37 of 60"
@@ -272,6 +305,7 @@ export function PracticeFlow() {
           setEngineLoadError("Kairo couldn't find enough questions for an endurance session yet.");
         } else {
           setEngineQuestions(questions);
+          persistFreshSnapshot('endurance', { key: 'endurance', label: 'Endurance' }, null, null, 'adaptive', questions);
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
@@ -295,6 +329,7 @@ export function PracticeFlow() {
           setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
         } else {
           setEngineQuestions(questions);
+          persistFreshSnapshot(entryFlow, activeSubject, null, null, difficultyChoice ?? null, questions);
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
@@ -318,12 +353,13 @@ export function PracticeFlow() {
           setEngineLoadError("Kairo couldn't find any questions for this topic yet.");
         } else {
           setEngineQuestions(questions);
+          persistFreshSnapshot(entryFlow, { key: subjectLabel, label: subjectLabel }, topicName, subtopicName ?? null, difficultyOverride ?? difficulty ?? null, questions);
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
   }
 
-  /** Quick Resume (Practice Module §2.5/§3.2) — reconstructs the exact question set and position from a snapshot saved after a prior answer, rather than starting a fresh recommendation. */
+  /** Quick Resume (Practice Module §2.5/§3.2) — reconstructs the exact question set and position from a snapshot saved after a prior answer, rather than starting a fresh recommendation. Sets the screen directly rather than going through go() since a mount-time auto-resume (Batch 1, see the 'suggested'/'verify'/'drill'/'endurance' effects below) has no real "previous screen" to push onto history yet. */
   function resumeSession(snapshot: PracticeSessionSnapshot) {
     setEngineQuestions(null);
     setEngineLoadError(null);
@@ -337,7 +373,7 @@ export function PracticeFlow() {
     try { restoredResults = JSON.parse(snapshot.resultsJson); } catch { /* fall back to empty */ }
     setResults(restoredResults);
     setQIndex(snapshot.qIndex);
-    go('practiceQuestion');
+    setScreen('practiceQuestion');
     resumePracticeQuestions(snapshot.loadSubjectLabel, snapshot.questionIds)
       .then((questions) => {
         if (questions.length === 0 || snapshot.qIndex >= questions.length) {
@@ -349,6 +385,31 @@ export function PracticeFlow() {
         setEngineQuestions(questions);
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not resume your session.'));
+  }
+
+  /**
+   * Anti-Refresh Wipeout (Batch 1): a freshly-generated session previously
+   * wasn't written to localStorage until the *first answer* — so a refresh
+   * before then (or mid-fetch) lost the entry point entirely and silently
+   * started over. Saves the same shape handleNextQuestion() already
+   * maintains, at qIndex 0 with no results yet, right when the questions
+   * a session will actually run are first known.
+   */
+  function persistFreshSnapshot(flow: string, subj: SubjectLike, topicValue: string | null, subtopicValue: string | null, difficultyValue: string | null, questions: EngineFlatQuestion[]) {
+    saveSessionSnapshot(getEngine()?.profile?.studentId, {
+      kind: 'practice',
+      entryFlow: flow,
+      subjectKey: subj.key,
+      subjectLabel: subj.label,
+      loadSubjectLabel: (subj.key === 'mixed' || subj.key === 'weak') ? null : subj.label,
+      topic: topicValue,
+      subtopic: subtopicValue,
+      difficulty: difficultyValue,
+      questionIds: questions.map((q) => q.id),
+      qIndex: 0,
+      resultsJson: '[]',
+      savedAt: Date.now(),
+    });
   }
 
   useEffect(() => {

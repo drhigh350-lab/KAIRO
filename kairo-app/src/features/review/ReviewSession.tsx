@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button, Card, ProgressBar, AnswerFeedback } from '../../components';
-import { ScreenHeader } from '../learning/shared';
+import { ScreenHeader, QuestionDiagram } from '../learning/shared';
 import {
   getEngine,
   getReviewSessionPlan,
@@ -264,6 +264,7 @@ export function ReviewSession() {
 
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{question.subject} · {question.topic}</div>
           <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }}>{question.text}</div>
+          <QuestionDiagram imageUrl={question.imageUrl} />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
             {question.options.map((opt, i) => {

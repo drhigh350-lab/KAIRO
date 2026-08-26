@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Button, Card, ProgressBar } from '../../components';
 import { ScreenHeader, ChevronRight, KairoScoreInfo, KairoPointsInfo, Modal } from '../learning/shared';
-import { getProfileSummary, getPrestigeProgress, getDisplayBadges, getBadgeVault, isOnboarded, signOutAndDisconnect } from '../../lib/kairoEngine';
+import { getProfileSummary, getPrestigeProgress, getBadgeVault, isOnboarded, signOutAndDisconnect } from '../../lib/kairoEngine';
 import { BadgeVaultRow, BadgeVaultSheet } from './BadgeVault';
 import { InsightsHub } from './ProfileInsights';
 
@@ -12,8 +12,14 @@ export function Profile() {
   const [openTrackKey, setOpenTrackKey] = useState<string | null>(null);
   const profile = getProfileSummary();
   const prestige = getPrestigeProgress();
-  const displayBadges = getDisplayBadges();
   const vault = getBadgeVault();
+  // Batch 3 (pre-launch bug fix): the Vault's whole point is a "Completionist"
+  // grid — every badge a student could ever earn, including every locked
+  // one — so this shows all 3 universal tracks plus every qualifying
+  // subject track (vault.subjects), not just getDisplayBadges()'s 4-icon
+  // cap (3 universal + only the single strongest subject), which was
+  // silently dropping a 2nd/3rd/etc. subject track from the grid entirely.
+  const allBadges = vault ? [vault.tracks.consistency, vault.tracks.resilience, vault.tracks.execution, ...vault.subjects] : [];
   const onboarded = isOnboarded();
 
   const firstName = profile?.name || 'there';
@@ -122,7 +128,7 @@ export function Profile() {
         <div className="desktop-sidebar">
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)', marginBottom: 10 }}>Badge Vault</div>
-            <BadgeVaultRow badges={displayBadges} onboarded={onboarded} onSelect={setOpenTrackKey} />
+            <BadgeVaultRow badges={allBadges} onboarded={onboarded} onSelect={setOpenTrackKey} />
           </Card>
           <Card onClick={() => navigate('/profile/notifications')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer' }}>
             <div>

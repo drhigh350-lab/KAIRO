@@ -5,6 +5,7 @@ import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
 import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
 import { GoogleAuthCallback } from './features/onboarding/GoogleAuthCallback';
+import { ResetPasswordCallback } from './features/onboarding/ResetPassword';
 import { HomeDashboard } from './features/home/HomeDashboard';
 import { PracticeFlow } from './features/practice/PracticeFlow';
 import { CbtFlow } from './features/cbt/CbtFlow';
@@ -122,6 +123,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Splash />} />
           <Route path="/onboarding/google" element={<GoogleAuthCallback />} />
+          <Route path="/onboarding/reset-password" element={<ResetPasswordCallback />} />
           <Route path="/onboarding/*" element={<OnboardingFlow />} />
 
           <Route element={<RequireOnboarded />}>
