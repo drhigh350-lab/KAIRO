@@ -137,6 +137,15 @@ export const SessionConstants = Object.freeze({
   CONSISTENCY_ROLLING_WINDOW_DAYS: 21
 });
 
+// ─── Spaced Sandbox (Review Module — mistake retest cooldown) ───
+export const ReviewConstants = Object.freeze({
+  // A missed question is never re-tested immediately — the default cooldown
+  // (from the wrong attempt's own timestamp) and an explicit "I Understand"
+  // acknowledgment (from the moment it's tapped) both use this same minimum,
+  // so short-term rote memorization can't pass as real retention.
+  MISTAKE_COOLDOWN_MS: 72 * 60 * 60 * 1000
+});
+
 // ─── Momentum Streak ───
 export const StreakConstants = Object.freeze({
   ROLLING_WINDOW_DAYS: 14,

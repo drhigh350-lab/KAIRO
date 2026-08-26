@@ -19,6 +19,8 @@ export interface PracticeQuestion {
   correct: number;
   why: string;
   kai: string;
+  /** Public Supabase Storage URL for a diagram this question's stem references — undefined/null for the vast majority of questions that have none. */
+  imageUrl?: string | null;
 }
 
 export const subjects: Subject[] = [

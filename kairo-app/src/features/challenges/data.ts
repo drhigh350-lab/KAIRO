@@ -7,6 +7,7 @@ export interface ChallengeQuestion {
   options: string[];
   correct: number;
   why: string;
+  imageUrl?: string | null;
 }
 
 /** UI-facing shape, mapped from a real kairo.challenges row — see lib/challengesApi.ts. */

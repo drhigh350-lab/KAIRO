@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton, Badge } from '../../components';
 import {
   BookmarkIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
-  InlineToast, Modal, OverflowMenu, MiniCalculator, type ConfidenceLevel,
+  InlineToast, Modal, OverflowMenu, MiniCalculator, QuestionDiagram, type ConfidenceLevel,
 } from '../learning/shared';
 import type { PracticeQuestion as PracticeQuestionData } from './data';
 import { generateKaiTextWithDiagnostics } from '../../lib/kaiAi';
@@ -290,6 +290,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
       <div style={{ padding: '22px 20px', flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{question.subject} · {question.topic}</div>
         <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
+        <QuestionDiagram imageUrl={question.imageUrl} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
           {question.options.map((opt, i) => {

@@ -1,15 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
+import { InlineToast } from '../learning/shared';
 import {
-  getEngine, getReviewSummary, getWeaknessReview, getMonthlyWrapped,
+  loadReviewData, getPendingRepairsCount, getRecentMistakes, markMistakeUnderstood, getWeakTopicsForReview,
   getBookmarkedQuestions, removeBookmark, getSessionHistory,
-  type BookmarkedQuestion, type SessionHistoryEntry,
+  type MistakeTicket, type WeakTopicForReview, type BookmarkedQuestion, type SessionHistoryEntry,
 } from '../../lib/kairoEngine';
-import { getReviewSessionSnapshot, type ReviewSessionSnapshot } from '../../lib/sessionResume';
-
-interface QueueItem { id: string; name: string; reason: string; priority: string }
-interface WeaknessItem { concept: { id: string; name: string; subject: string; topic: string }; count: number }
 
 function relativeDay(ts: number): string {
   const days = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
@@ -19,231 +16,281 @@ function relativeDay(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)', flexShrink: 0 }}><path d="M6 9l6 6 6-6" /></svg>;
+}
+
+function CheckIcon() {
+  return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--kairo-gold-500)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>;
+}
+
+/**
+ * Batch 1's Hero Metric + Smart Patch. "Loaded" gates both the number and
+ * the CTA — Exposed Gaps reads live graph/attempt state that only exists
+ * once loadReviewData() has resolved at least once this session (Review
+ * can be the very first screen a student lands on), so a flash of
+ * "0 Exposed Gaps" before that would misreport, not just look empty.
+ */
+function HeroCard({ loaded, pendingCount, onStartSmartPatch }: { loaded: boolean; pendingCount: number; onStartSmartPatch: () => void }) {
+  const zero = loaded && pendingCount === 0;
+  return (
+    <Card style={{
+      background: 'var(--dark-bg-surface)',
+      border: zero ? '1.5px solid var(--kairo-gold-500)' : '1px solid var(--dark-border)',
+      boxShadow: 'none', textAlign: 'center', padding: 28,
+    }}>
+      {zero ? (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(201,162,39,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckIcon />
+            </div>
+          </div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 46, color: 'var(--dark-text-heading)', lineHeight: 1 }}>0</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--dark-text-muted)', textTransform: 'uppercase', marginTop: 8 }}>Exposed Gaps</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 8 }}>Your recall is locked in. Zero fading concepts in the queue. Go attack new topics.</div>
+          <div style={{ marginTop: 20 }}>
+            <Button variant="ghost" size="lg" fullWidth disabled>0 Exposed Gaps. Go Attack New Topics.</Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 46, color: 'var(--dark-text-heading)', lineHeight: 1 }}>
+            {loaded ? pendingCount : '—'}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--dark-text-muted)', textTransform: 'uppercase', marginTop: 8 }}>Exposed Gaps</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 8 }}>Your retention is dropping on these concepts. Patch the leaks before the examiner finds them.</div>
+          <div style={{ marginTop: 20 }}>
+            <Button variant="gold" size="lg" fullWidth disabled={!loaded} onClick={onStartSmartPatch}>Execute Smart Patch</Button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** Batch 2's "Ticket" card — bg-white/5, expands to the explanation + the two-button action row. */
+function MistakeTicket({ ticket, expanded, busy, onToggle, onReTestLater, onUnderstand }: {
+  ticket: MistakeTicket; expanded: boolean; busy: boolean;
+  onToggle: () => void; onReTestLater: () => void; onUnderstand: () => void;
+}) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+      <button type="button" onClick={onToggle} style={{
+        width: '100%', textAlign: 'left', padding: 14, background: 'none', border: 'none', cursor: 'pointer',
+        fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, minHeight: 'var(--touch-min)',
+      }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', textTransform: 'uppercase', letterSpacing: '.03em' }}>
+            {ticket.subject}{ticket.topic ? ` · ${ticket.topic}` : ''}
+          </div>
+          <div style={{ fontSize: 14, color: 'var(--dark-text-body)', marginTop: 6, lineHeight: 1.4 }}>{ticket.stem}</div>
+        </div>
+        <ChevronIcon open={expanded} />
+      </button>
+      {expanded && (
+        <div style={{ padding: '0 14px 14px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55, paddingTop: 12 }}>
+            {ticket.explanation || 'No explanation available for this question yet.'}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <div style={{ flex: 1 }}><Button variant="secondary" size="sm" fullWidth onClick={onReTestLater}>Re-test Me Later</Button></div>
+            <div style={{ flex: 1 }}><Button variant="gold" size="sm" fullWidth disabled={busy} onClick={onUnderstand}>{busy ? 'Saving…' : 'I Understand'}</Button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Accuracy-coded left border — gold for a strong session, red for a rough one, quiet neutral in between or when nothing was answered. */
+function sessionAccentColor(entry: SessionHistoryEntry): string {
+  if (entry.questionsAnswered === 0) return 'var(--dark-border)';
+  const accuracy = entry.correctCount / entry.questionsAnswered;
+  if (accuracy > 0.8) return 'var(--kairo-gold-500)';
+  if (accuracy < 0.5) return 'var(--dark-danger)';
+  return 'var(--dark-border)';
+}
+
+/** One expandable "passive reference" accordion — shared shell for Weak Topics and both Vault sections, matching the app's existing accordion language. */
+function AccordionCard({ label, desc, count, open, onToggle, children }: {
+  label: string; desc: string; count: number; open: boolean; onToggle: () => void; children: ReactNode;
+}) {
+  return (
+    <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
+      <button type="button" onClick={onToggle} style={{
+        width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
+        background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
+      }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>{label}</div>
+          <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 260 }}>{desc}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Badge tone="darkNeutral">{count}</Badge>
+          <ChevronIcon open={open} />
+        </div>
+      </button>
+      {open && <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--dark-border)' }}>{children}</div>}
+    </Card>
+  );
+}
+
 export function Review() {
   const navigate = useNavigate();
-  const recap = getReviewSummary();
-  const weakness = getWeaknessReview();
-  const monthly = getMonthlyWrapped();
-  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [weakTopics, setWeakTopics] = useState<WeakTopicForReview[]>([]);
+
+  const [mistakes, setMistakes] = useState<MistakeTicket[] | null>(null);
+  const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
+  const [savingTicket, setSavingTicket] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
   const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
-  const [resumeSnapshot, setResumeSnapshot] = useState<ReviewSessionSnapshot | null>(null);
-  const [resumeItemsLeft, setResumeItemsLeft] = useState(0);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
   useEffect(() => {
+    loadReviewData().then(() => {
+      setPendingCount(getPendingRepairsCount());
+      setWeakTopics(getWeakTopicsForReview());
+      setDataLoaded(true);
+    });
+    getRecentMistakes(20).then(setMistakes).catch(() => setMistakes([]));
     getBookmarkedQuestions(20).then(setBookmarks).catch(() => setBookmarks([]));
     getSessionHistory(20).then(setHistory).catch(() => setHistory([]));
-    const snapshot = getReviewSessionSnapshot(getEngine()?.profile?.studentId);
-    setResumeSnapshot(snapshot);
-    if (snapshot) {
-      try {
-        const parsedPlan = JSON.parse(snapshot.planJson) as { items: unknown[] };
-        setResumeItemsLeft(Math.max(0, parsedPlan.items.length - snapshot.itemIndex));
-      } catch {
-        setResumeItemsLeft(0);
-      }
-    }
   }, []);
+
+  function handleUnderstand(ticket: MistakeTicket) {
+    setSavingTicket(ticket.questionId);
+    markMistakeUnderstood(ticket.questionId, ticket.conceptId)
+      .then(() => {
+        setMistakes((prev) => prev?.filter((m) => m.questionId !== ticket.questionId) ?? prev);
+        setExpandedTicket((cur) => (cur === ticket.questionId ? null : cur));
+        setToast('Ticket closed. Kai will re-test this in 3 days to verify mastery, not just memory.');
+        setTimeout(() => setToast(null), 3200);
+      })
+      .catch(() => {
+        // Best-effort — leave the ticket in place so the student can retry.
+      })
+      .finally(() => setSavingTicket(null));
+  }
 
   async function handleRemoveBookmark(questionId: string) {
     setBookmarks((prev) => prev?.filter((b) => b.id !== questionId) ?? prev);
     try {
       await removeBookmark(questionId);
     } catch {
-      // Re-fetch on failure rather than leaving the list silently wrong.
       getBookmarkedQuestions(20).then(setBookmarks).catch(() => {});
     }
   }
 
-  const recentlyMissed: QueueItem[] = (recap?.recap.queue || []).filter((q: QueueItem) => q.reason === 'recently_missed');
-  const stale: QueueItem[] = (recap?.recap.queue || []).filter((q: QueueItem) => q.reason === 'stale');
-  const weakConcepts: WeaknessItem[] = weakness?.dominantWeakness ? (weakness.byErrorTag[weakness.dominantWeakness.tag] || []) : [];
-
-  const categories: { key: string; label: string; desc: string; count: number; items: { id: string; name: string; sub?: string }[] }[] = [];
-  if (recap?.recap.breakdown.recentlyMissed) {
-    categories.push({ key: 'recent', label: 'Recent Mistakes', desc: 'From your last few sessions.', count: recap.recap.breakdown.recentlyMissed, items: recentlyMissed.map((q) => ({ id: q.id, name: q.name })) });
-  }
-  if (recap?.recap.breakdown.stale) {
-    categories.push({ key: 'stale', label: 'Slipping Away', desc: "Held steady for a while but haven't come up recently.", count: recap.recap.breakdown.stale, items: stale.map((q) => ({ id: q.id, name: q.name })) });
-  }
-  if (weakness?.dominantWeakness) {
-    categories.push({
-      key: 'weak',
-      label: 'Weak Topics',
-      desc: weakness.kaiMessage,
-      count: weakness.dominantWeakness.conceptCount,
-      items: weakConcepts.map((w) => ({ id: w.concept.id, name: w.concept.name, sub: `${w.concept.subject} · ${w.concept.topic}` })),
-    });
-  }
-
-  const totalWaiting = (recap?.fadingCount ?? 0) + categories.reduce((s, c) => s + c.count, 0);
-  const hasReinforcedStory = !!monthly && monthly.reinforcedCount > 0;
-
   return (
-    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
+    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1, position: 'relative' }}>
+      {toast && <InlineToast tone="caution">{toast}</InlineToast>}
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>Review</div>
-      <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>
-        {totalWaiting > 0
-          ? `${totalWaiting} thing${totalWaiting === 1 ? ' is' : 's are'} ready to come back to you.`
-          : "Nothing's waiting for review right now — that changes as you practise."}
-      </div>
 
-      {/* Tablet/desktop (>=768px): the active review queue (resume/suggested CTA +
-          the engine-detected categories) as the main column; the quieter,
-          self-directed items (bookmarks, reinforced-this-month, session
-          history — already documented above as "kept visually quiet") as
-          a sidebar, rather than one long stacked column. */}
       <div className="desktop-grid">
-        <div className="desktop-main">
-          {/* Continue Reviewing (Review Module §4.3 item 2) — always outranks starting a fresh category. */}
-          {resumeSnapshot && resumeItemsLeft > 0 && (
-            <Card style={{ background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-accent-blue)', boxShadow: 'none' }}>
-              <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'var(--dark-accent-blue)', fontWeight: 700 }}>CONTINUE REVIEWING</div>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--dark-text-heading)', marginTop: 8 }}>
-                {resumeItemsLeft} thing{resumeItemsLeft === 1 ? '' : 's'} left in your last session
-              </div>
-              <div style={{ marginTop: 14 }}>
-                <Button variant="darkAccent" size="md" fullWidth onClick={() => navigate('/review/session', { state: { resume: true } })}>Resume</Button>
-              </div>
-            </Card>
-          )}
+        <div className="desktop-main" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <HeroCard loaded={dataLoaded} pendingCount={pendingCount} onStartSmartPatch={() => navigate('/cbt', { state: { entry: 'smartPatch' } })} />
 
-          {recap?.hasUrgentReview && (
-            <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
-              <div style={{ fontSize: 11, letterSpacing: '.06em', color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>SUGGESTED REVIEW</div>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginTop: 8 }}>
-                Quick pass on {recap.fadingCount} fading concept{recap.fadingCount === 1 ? '' : 's'}
-              </div>
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 8 }}>About {recap.recap.estimatedTimeMin} minutes</div>
-              <div style={{ marginTop: 16 }}>
-                <Button variant="gold" size="md" fullWidth onClick={() => navigate('/review/session')}>Start Review</Button>
-              </div>
-            </Card>
-          )}
+          <AccordionCard
+            label="Active Traps"
+            desc="Mistakes from your last 72 hours. Don't just memorize the correct option—diagnose why you fell for it."
+            count={mistakes?.length ?? 0}
+            open={expandedSection === 'mistakes'}
+            onToggle={() => setExpandedSection((s) => (s === 'mistakes' ? null : 'mistakes'))}
+          >
+            {mistakes == null && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>Loading…</div>}
+            {mistakes?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No active traps right now.</div>}
+            {mistakes?.map((m) => (
+              <MistakeTicket
+                key={m.questionId}
+                ticket={m}
+                expanded={expandedTicket === m.questionId}
+                busy={savingTicket === m.questionId}
+                onToggle={() => setExpandedTicket((cur) => (cur === m.questionId ? null : m.questionId))}
+                onReTestLater={() => setExpandedTicket(null)}
+                onUnderstand={() => handleUnderstand(m)}
+              />
+            ))}
+          </AccordionCard>
 
-          {categories.map((c) => {
-            const isOpen = expanded === c.key;
-            return (
-              <Card key={c.key} style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
-                <button type="button" onClick={() => setExpanded(isOpen ? null : c.key)} style={{
-                  width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
-                  background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>{c.label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>{c.desc}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Badge tone="darkNeutral">{c.count}</Badge>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
-                  </div>
-                </button>
-                {isOpen && (
-                  <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--dark-border)' }}>
-                    {c.items.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No specific concepts to list yet.</div>}
-                    {c.items.map((it) => (
-                      <div key={it.id} style={{ paddingTop: 10, fontSize: 13, color: 'var(--dark-text-body)' }}>
-                        {it.name}
-                        {it.sub && <span style={{ color: 'var(--dark-text-muted)', marginLeft: 8, fontSize: 12 }}>{it.sub}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+          <AccordionCard
+            label="Weak Topics"
+            desc="Kai caught a failing pattern. These areas will heavily drag your score down if we don't rebuild them now."
+            count={weakTopics.length}
+            open={expandedSection === 'weak'}
+            onToggle={() => setExpandedSection((s) => (s === 'weak' ? null : 'weak'))}
+          >
+            {weakTopics.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>Nothing under 50% yet.</div>}
+            {weakTopics.map((t) => (
+              <div key={`${t.subject}::${t.topic}`} style={{ paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-body)' }}>{t.topic}</div>
+                  <div style={{ fontSize: 11, color: 'var(--dark-text-muted)', marginTop: 2 }}>{t.subject} · {Math.round((1 - t.failureRate) * 100)}% accuracy</div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => navigate('/practice', { state: { entry: 'drill', drillCategory: t.drillCategory, drillSubjects: [t.subject] } })}
+                >
+                  {t.drillCategory === 'calculation' ? 'Launch Calculation Drill' : 'Launch Theory Drill'}
+                </Button>
+              </div>
+            ))}
+          </AccordionCard>
         </div>
 
-        <div className="desktop-sidebar">
-          {/* Bookmarks — the student's own self-flagged questions (Review Module §4.3 item 6), distinct from the engine-detected categories above. */}
-          {bookmarks && bookmarks.length > 0 && (
-            <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
-              <button type="button" onClick={() => setExpanded(expanded === 'bookmarks' ? null : 'bookmarks')} style={{
-                width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
-                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
-              }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Bookmarks</div>
-                  <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>Questions you marked as worth revisiting.</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Badge tone="darkNeutral">{bookmarks.length}</Badge>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: expanded === 'bookmarks' ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
-                </div>
-              </button>
-              {expanded === 'bookmarks' && (
-                <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--dark-border)' }}>
-                  {bookmarks.map((b) => (
-                    <div key={b.id} style={{ paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 13, color: 'var(--dark-text-body)', lineHeight: 1.4 }}>{b.stem}</div>
-                        <div style={{ fontSize: 11, color: 'var(--dark-text-muted)', marginTop: 2 }}>{b.subject} · {b.topic}</div>
-                      </div>
-                      <button type="button" onClick={() => handleRemoveBookmark(b.id)} style={{
-                        background: 'none', border: 'none', color: 'var(--dark-text-faint)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, minHeight: 'var(--touch-min)',
-                      }}>Remove</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
+        <div className="desktop-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--dark-text-faint)', textTransform: 'uppercase', padding: '0 2px' }}>The Vault</div>
 
-          {/* Reinforced This Month — quiet, collapsed by default (Review Module §4.3 item 8). */}
-          {hasReinforcedStory && (
-            <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
-              <button type="button" onClick={() => setExpanded(expanded === 'reinforced' ? null : 'reinforced')} style={{
-                width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
-                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
-              }}>
+          <AccordionCard
+            label="Your Bookmarks"
+            desc="Your saved high-yield questions. Guard these for your final revision."
+            count={bookmarks?.length ?? 0}
+            open={expandedSection === 'bookmarks'}
+            onToggle={() => setExpandedSection((s) => (s === 'bookmarks' ? null : 'bookmarks'))}
+          >
+            {bookmarks?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No bookmarks yet.</div>}
+            {bookmarks?.map((b) => (
+              <div key={b.id} style={{ paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Reinforced This Month</div>
-                  <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>Concepts that held up after a Fading scare.</div>
+                  <div style={{ fontSize: 13, color: 'var(--dark-text-body)', lineHeight: 1.4 }}>{b.stem}</div>
+                  <div style={{ fontSize: 11, color: 'var(--dark-text-muted)', marginTop: 2 }}>{b.subject} · {b.topic}</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Badge tone="darkNeutral">{monthly.reinforcedCount}</Badge>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: expanded === 'reinforced' ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
-                </div>
-              </button>
-              {expanded === 'reinforced' && (
-                <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--dark-border)' }}>
-                  {(monthly.reinforcedNames || []).length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No specific concepts to list yet.</div>}
-                  {(monthly.reinforcedNames || []).map((name: string) => (
-                    <div key={name} style={{ paddingTop: 10, fontSize: 13, color: 'var(--dark-text-body)' }}>{name}</div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
+                <button type="button" onClick={() => handleRemoveBookmark(b.id)} style={{
+                  background: 'none', border: 'none', color: 'var(--dark-text-faint)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, minHeight: 'var(--touch-min)',
+                }}>Remove</button>
+              </div>
+            ))}
+          </AccordionCard>
 
-          {/* Session History — reverse-chronological, kept visually quiet (Review Module §4.3 item 7). */}
-          {history && history.length > 0 && (
-            <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 0 }}>
-              <button type="button" onClick={() => setExpanded(expanded === 'history' ? null : 'history')} style={{
-                width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16,
-                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 'var(--touch-min)',
+          <AccordionCard
+            label="Your Session History"
+            desc="The raw data of your daily grind. Every session, every score, zero excuses."
+            count={history?.length ?? 0}
+            open={expandedSection === 'history'}
+            onToggle={() => setExpandedSection((s) => (s === 'history' ? null : 'history'))}
+          >
+            {history?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No sessions yet.</div>}
+            {history?.map((s) => (
+              <div key={s.id} style={{
+                marginTop: 10, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)',
+                borderLeft: `3px solid ${sessionAccentColor(s)}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 13,
               }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Session History</div>
-                  <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 4, maxWidth: 240 }}>A look back at your past sessions.</div>
+                  <span style={{ color: 'var(--dark-text-body)', fontWeight: 600 }}>{s.modeLabel}</span>
+                  <span style={{ color: 'var(--dark-text-muted)', marginLeft: 8 }}>
+                    {s.questionsAnswered} question{s.questionsAnswered === 1 ? '' : 's'}{s.questionsAnswered > 0 ? `, ${s.correctCount} correct` : ''}
+                  </span>
                 </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2" style={{ transform: expanded === 'history' ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}><path d="M6 9l6 6 6-6" /></svg>
-              </button>
-              {expanded === 'history' && (
-                <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--dark-border)' }}>
-                  {history.map((s) => (
-                    <div key={s.id} style={{ paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                      <div>
-                        <span style={{ color: 'var(--dark-text-body)', fontWeight: 600 }}>{s.modeLabel}</span>
-                        <span style={{ color: 'var(--dark-text-muted)', marginLeft: 8 }}>{s.questionsAnswered} question{s.questionsAnswered === 1 ? '' : 's'}{s.questionsAnswered > 0 ? `, ${s.correctCount} correct` : ''}</span>
-                      </div>
-                      <span style={{ color: 'var(--dark-text-faint)', flexShrink: 0 }}>{relativeDay(s.startedAt)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
+                <span style={{ color: 'var(--dark-text-faint)', flexShrink: 0 }}>{relativeDay(s.startedAt)}</span>
+              </div>
+            ))}
+          </AccordionCard>
         </div>
       </div>
     </div>

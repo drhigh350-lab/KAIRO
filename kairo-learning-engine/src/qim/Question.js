@@ -50,6 +50,7 @@ export class Question {
     correctOption,
     explanation,
     distractorRationale = null, // free-text "why other options are wrong", distinct from per-distractor.explanation above
+    imageUrl = null,            // public Supabase Storage URL for a diagram this question's stem references, if any
 
     // QIM Runtime
     lifecycleState = 'imported', // imported | reviewed | tagged | linked | assigned | ready | live | deprecated
@@ -83,6 +84,7 @@ export class Question {
     this.correctOption = correctOption;
     this.explanation = explanation;
     this.distractorRationale = distractorRationale;
+    this.imageUrl = imageUrl;
     this.lifecycleState = lifecycleState;
     this.empiricalStats = empiricalStats;
   }
@@ -203,6 +205,7 @@ export class Question {
       correctOption: this.correctOption,
       explanation: this.explanation,
       distractorRationale: this.distractorRationale,
+      imageUrl: this.imageUrl,
       lifecycleState: this.lifecycleState,
       empiricalStats: this.empiricalStats
     };

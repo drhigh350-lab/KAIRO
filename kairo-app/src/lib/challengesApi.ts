@@ -123,7 +123,7 @@ export async function getChallengeQuestions(questionIds: string[]): Promise<Chal
   if (!questionIds.length) return [];
   const supabase = getSupabase();
   const { data, error } = await supabase.schema('kairo').from('questions')
-    .select('id, subject, topic, stem, options, correct_option, explanation')
+    .select('id, subject, topic, stem, options, correct_option, explanation, image_url')
     .in('id', questionIds);
   if (error) throw error;
   const byId = new Map((data || []).map((row: Record<string, unknown>) => [row.id, row]));
@@ -139,9 +139,10 @@ export async function getChallengeQuestions(questionIds: string[]): Promise<Chal
         options: row.options as EngineFlatQuestion['options'],
         correctOption: row.correct_option as string,
         explanation: row.explanation as string | null,
+        imageUrl: row.image_url as string | null,
       };
       const ui = toUiQuestion(flat);
-      return { id: ui.id, stem: ui.stem, options: ui.options, correct: ui.correct, why: ui.why };
+      return { id: ui.id, stem: ui.stem, options: ui.options, correct: ui.correct, why: ui.why, imageUrl: ui.imageUrl };
     });
 }
 

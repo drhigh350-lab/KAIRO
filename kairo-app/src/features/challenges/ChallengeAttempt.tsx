@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnswerFeedback, Button, IconButton, ProgressBar } from '../../components';
-import { CloseIcon, Modal } from '../learning/shared';
+import { CloseIcon, Modal, QuestionDiagram } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
 
 export interface ChallengeAttemptProps {
@@ -78,6 +78,7 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: Cha
       <div style={{ padding: '22px 20px', flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{challenge.theme}</div>
         <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
+        <QuestionDiagram imageUrl={question.imageUrl} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
           {question.options.map((opt, i) => {

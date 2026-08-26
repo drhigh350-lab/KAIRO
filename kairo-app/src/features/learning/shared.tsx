@@ -257,6 +257,35 @@ export function StreakFlameBadge({ lit, days, freezesAvailable = 0 }: { lit: boo
   );
 }
 
+/**
+ * Batch 2 (pre-launch bug fix): renders a question's diagram from a public
+ * Supabase Storage URL (kairo.questions.image_url) — never a signed/
+ * authenticated one, since the question-diagrams bucket is public and the
+ * stored URL is already the final public one, safe to drop straight into
+ * `src`. A failed load (bad URL, deleted object, offline) falls back to a
+ * visible placeholder instead of a silently broken image icon or blank
+ * space. Renders nothing at all for the vast majority of questions that
+ * have no diagram.
+ */
+export function QuestionDiagram({ imageUrl }: { imageUrl?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [imageUrl]);
+  if (!imageUrl) return null;
+  if (failed) {
+    return (
+      <div style={{
+        marginTop: 16, padding: '28px 16px', borderRadius: 'var(--radius-md)', border: '1px dashed var(--dark-border)',
+        background: 'var(--dark-bg-surface)', color: 'var(--dark-text-faint)', fontSize: 13, fontWeight: 600, textAlign: 'center',
+      }}>[Diagram failing to load]</div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 16, borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--dark-bg-surface)' }}>
+      <img src={imageUrl} alt="Question diagram" onError={() => setFailed(true)} style={{ display: 'block', width: '100%', height: 'auto' }} />
+    </div>
+  );
+}
+
 export interface InlineToastProps {
   children: ReactNode;
   tone?: 'default' | 'danger' | 'caution';

@@ -259,6 +259,31 @@ export async function signInWithGoogle(redirectPath = '/onboarding/google'): Pro
   if (error) throw error;
 }
 
+/**
+ * Batch 4 (pre-launch bug fix) — sends a real Supabase Auth password-reset
+ * email. The "Forgot password?" link on Sign In previously pointed nowhere
+ * (href="#", no handler); this is also the recovery path for a legacy
+ * TechMed/RoboMed account hitting `user_already_exists` on Kairo sign-up —
+ * that account is real, it just needs a password reset to "migrate" into
+ * Kairo. `redirectTo` lands the reset link on the confirm screen below,
+ * which is where Supabase's own recovery session (parsed from the email
+ * link's URL) actually gets used to set a new password.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/onboarding/reset-password`,
+  });
+  if (error) throw error;
+}
+
+/** Completes a password reset — called from the confirm screen the reset email's link lands on, after Supabase's own recovery session (parsed from that link's URL) is already active. */
+export async function confirmPasswordReset(newPassword: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
 export interface GoogleSignInResult {
   /** True when kairo.students had no row for this auth user yet — a first-time Google student who still needs the real onboarding steps (course/exam date/subjects), same as an email sign-up would get. */
   isNewStudent: boolean;
@@ -323,6 +348,7 @@ export async function signOutAndDisconnect(): Promise<void> {
   }
   engine = null;
   contentLoadedFor = [];
+  mistakePatchesLoaded = false;
 }
 
 // Only these five subjects have a seeded live question bank today (verified
@@ -341,6 +367,13 @@ let contentLoadedFor: string[] = [];
 async function ensureContentLoaded(subjects: string[]): Promise<void> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
+  // Spaced Sandbox protocol (Batch 2) — every question-selecting caller of
+  // ensureContentLoaded() (Practice, CBT, recommendations) needs real
+  // mistake-cooldown data in place *before* getQuestionForConcept() runs,
+  // not just Review's own screens. Its own idempotency guard (not the
+  // `missing.length === 0` early return below) is what makes this safe to
+  // call unconditionally here.
+  await ensureMistakePatchesLoaded();
   const wanted = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
   const target = wanted.length ? wanted : SEEDED_SUBJECTS;
   const missing = target.filter((s) => !contentLoadedFor.includes(s));
@@ -1118,80 +1151,171 @@ export function getWeeklyReviewSummary(): Engine | null {
   return { ...data, kaiNote: kaiNote?.text || null };
 }
 
-/** Real month-in-review ("Kairo Wrapped") — reinforced concepts, biggest turnaround, score trend, session/question totals. All computed by MonthlyWrapped; Insights only renders it. */
-export function getMonthlyWrapped(): Engine | null {
+// ─────────────────────────────────────────────
+// Spaced Sandbox (Batch 1/2) — Pending Repairs, the Triage Inbox, and Smart
+// Patch. A missed question is never re-tested immediately: KairoEngine.
+// mistakePatches (loaded here, read inside getQuestionForConcept() itself)
+// and ReviewModule's ledger both enforce the same 72h-minimum cooldown
+// everywhere a question gets picked — ordinary Practice/recommendation
+// selection too, not just this screen's own Smart Patch session.
+// ─────────────────────────────────────────────
+
+let mistakePatchesLoaded = false;
+
+/** Loaded once per engine connection (ensureContentLoaded() calls this unconditionally, so Practice/CBT/recommendations see real cooldown data even if the student never opens Review first) — same idempotent-cache shape as ensureBookmarksLoaded(). */
+async function ensureMistakePatchesLoaded(): Promise<void> {
+  if (mistakePatchesLoaded) return;
   const kairo = getEngine();
-  return kairo ? kairo.getMonthlyWrapped() : null;
+  if (!kairo) return;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('mistake_patches')
+    .select('question_id, verify_after')
+    .eq('student_id', kairo.profile.studentId);
+  if (error) throw error;
+  for (const row of (data || []) as { question_id: string; verify_after: string }[]) {
+    kairo.setMistakePatch(row.question_id, new Date(row.verify_after).getTime());
+  }
+  mistakePatchesLoaded = true;
 }
 
 /**
- * Real "what needs review" summary for the Review screen. Mirrors
- * ReviewModule.getPreSessionRecap()'s own contract: null both when nothing is
- * signed in AND when genuinely nothing is due — the caller shouldn't have to
- * tell those two "show nothing" cases apart.
+ * getPendingRepairsCount()/getWeakTopicsForReview() below both read live
+ * `graph.nodes` state (attemptHistory, retentionState) that only exists
+ * once the relevant subjects' content has actually been loaded this
+ * session — true of every Review computation already, not new here, but
+ * Review is the one screen a student can land on *first* (no prior
+ * Practice/CBT visit to have triggered ensureContentLoaded() already).
+ * Call once on mount before reading anything below.
  */
-export function getReviewSummary(): Engine | null {
-  const kairo = getEngine();
-  return kairo ? kairo.review.getPreSessionRecap() : null;
+export async function loadReviewData(): Promise<void> {
+  await ensureContentLoaded([]);
 }
 
-/** Weakness Review's error-pattern breakdown, for Review's "Weak Topics" card. */
-export function getWeaknessReview(): Engine | null {
+/** Batch 1's Hero Metric — Fading concepts + mistakes past their 72h cooling period. 0 until loadReviewData() (or any other ensureContentLoaded() call this session) has resolved. */
+export function getPendingRepairsCount(): number {
   const kairo = getEngine();
-  return kairo ? kairo.review.buildWeaknessReview() : null;
+  return kairo ? kairo.getPendingRepairsCount() : 0;
 }
 
-// ─────────────────────────────────────────────
-// Review Session — a real Session Framing -> Reflection Moment -> Resolution
-// -> Pattern Surfacing -> Reinforcement Attempt -> Consolidation Summary
-// flow (Review Module Spec §5.3), built from ReviewModule.buildReviewSession()
-// and each concept's own real attemptHistory/questionGraph state — not a
-// second intelligence layer of its own (Review Module §7.8).
-// ─────────────────────────────────────────────
-
-export interface ReviewSessionItem {
-  conceptId: string;
-  conceptName: string;
+export interface MistakeTicket {
+  questionId: string;
+  conceptId: string | null;
   subject: string | null;
   topic: string | null;
-  reason: 'fading' | 'recently_missed' | 'stale';
-  priority: string;
-  hasPriorMiss: boolean;
-  priorQuestionId: string | null;
-  priorSelectedOption: string | null;
-  priorCorrectOption: string | null;
-  priorErrorTag: string | null;
+  stem: string;
+  options: { label: string; text: string }[];
+  correctOption: string;
+  explanation: string | null;
+  missedAt: number;
 }
 
-export interface ReviewSessionPlan {
-  items: ReviewSessionItem[];
-  framing: string;
-  estimatedTimeMin: number;
-  pattern: { tag: string; count: number } | null;
-}
-
-export function getReviewSessionPlan(limit = 8): ReviewSessionPlan | null {
+/** Batch 2's Triage Inbox — real question data (for the expand-to-explain ticket) for every mistake missed in the last 72h that's still cooling down and hasn't been acknowledged yet. */
+export async function getRecentMistakes(limit = 20): Promise<MistakeTicket[]> {
   const kairo = getEngine();
-  return kairo ? kairo.review.buildReviewSession({ limit }) : null;
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureMistakePatchesLoaded();
+  const ledger: { questionId: string; conceptId: string | null; subject: string | null; topic: string | null; missedAt: number }[] = kairo.getRecentMistakes(limit);
+  if (ledger.length === 0) return [];
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('questions')
+    .select('id, stem, options, correct_option, explanation')
+    .in('id', ledger.map((m) => m.questionId));
+  if (error) throw error;
+  const byId = new Map((data || []).map((row: Record<string, unknown>) => [row.id, row]));
+  // The Supabase `.in()` fetch above doesn't preserve order — ledger is
+  // already most-recently-missed first, so that's what drives the result order.
+  return ledger
+    .map((m) => {
+      const row = byId.get(m.questionId);
+      if (!row) return null;
+      return {
+        questionId: m.questionId,
+        conceptId: m.conceptId,
+        subject: m.subject,
+        topic: m.topic,
+        stem: row.stem as string,
+        options: row.options as { label: string; text: string }[],
+        correctOption: row.correct_option as string,
+        explanation: row.explanation as string | null,
+        missedAt: m.missedAt,
+      };
+    })
+    .filter((t): t is MistakeTicket => !!t);
 }
 
-/** Loads real content for whatever subjects a Review session's items span, so getReviewOriginalQuestion/getReviewReinforcementQuestion can resolve real questions instead of ones from a subject that was never loaded this session. */
-export async function ensureReviewContentLoaded(items: ReviewSessionItem[]): Promise<void> {
-  const subjects = [...new Set(items.map((i) => i.subject).filter((s): s is string => !!s))];
-  await ensureContentLoaded(subjects.length ? subjects : []);
-}
-
-/** The exact original question a student answered (Reflection Moment, Review Module §5.5) — distinct from a fresh question, since reconsidering one's own past reasoning is the point. */
-export function getReviewOriginalQuestion(questionId: string): EngineFlatQuestion | null {
+/**
+ * Batch 2's "I Understand" — resets this question's Spaced Sandbox clock to
+ * a full fresh 72h from right now (overriding the natural answered_at-
+ * derived cooldown), and removes it from the Triage Inbox immediately.
+ * Written directly to Supabase (not the offline sync queue) — a single
+ * small, low-frequency row, same precedent as bookmarks/reportQuestion.
+ */
+export async function markMistakeUnderstood(questionId: string, conceptId: string | null): Promise<void> {
   const kairo = getEngine();
-  return kairo ? kairo.getQuestionById(questionId) : null;
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const verifyAfter = Date.now() + 72 * 60 * 60 * 1000;
+  const supabase = getSupabase();
+  const { error } = await supabase.schema('kairo').from('mistake_patches').upsert({
+    student_id: kairo.profile.studentId,
+    question_id: questionId,
+    concept_id: conceptId,
+    verify_after: new Date(verifyAfter).toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+  kairo.setMistakePatch(questionId, verifyAfter);
 }
 
-/** A fresh Reinforcement/Alternative Representation question for the same concept (Review Module §5.8) — never the identical original, per the platform-wide rule against testing memorization of one specific item. */
-export function getReviewReinforcementQuestion(conceptId: string, excludeId?: string | null): EngineFlatQuestion | null {
+/** Batch 3's Weak Topics — the existing failure-rate ranking, narrowed to the Review Tab's own "< 50% accuracy" bar (kairo.getWeakTopics() itself stays unfiltered — Practice's own "Weak Areas" boost still wants every topic with any real miss, not just this screen's stricter cut). */
+export interface WeakTopicForReview extends WeakTopicSummary {
+  drillCategory: 'calculation' | 'theory';
+}
+
+export function getWeakTopicsForReview(limit = 10): WeakTopicForReview[] {
   const kairo = getEngine();
-  if (!kairo) return null;
-  return kairo.getQuestionForConcept(conceptId, { excludeIds: excludeId ? [excludeId] : [] });
+  if (!kairo) return [];
+  return kairo.getWeakTopics({ subject: null, limit: 50 })
+    .filter((t: Engine) => t.failureRate > 0.5)
+    .slice(0, limit)
+    .map((t: Engine) => ({
+      subject: t.subject,
+      topic: t.topic,
+      incorrectAttempts: t.incorrectAttempts,
+      failureRate: t.failureRate,
+      drillCategory: kairo.classifyTopicCategory(t.subject, t.topic) as 'calculation' | 'theory',
+    }));
+}
+
+/**
+ * Batch 1's Smart Patch — a real timed CBT-style session built from exactly
+ * the ripe repairs (CBTExamMode.startFromQuestionIds(), not buildPaper()'s
+ * random pull). Ensures every relevant subject's content is loaded first,
+ * same as any other session start — the ledger's question ids may span
+ * subjects the current engine instance hasn't touched yet this session.
+ */
+export async function startSmartPatchSession(): Promise<{ totalTimeMin: number; startTime: number; paper: CbtPaperQuestion[] } | null> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureMistakePatchesLoaded();
+  // A ripe repair (or a fading concept needing a fresh question) can be in
+  // any subject the student has ever touched, not just their current
+  // target subjects — loading every seeded subject (ensureContentLoaded's
+  // own fallback for an unscoped request, same as a mixed/weak Practice
+  // session) before building the id list, so both the fading-concept
+  // lookups inside buildSmartPatchQuestionIds() and the resolution below
+  // see real question data instead of an empty questionGraph.
+  await ensureContentLoaded([]);
+  const ids: string[] = kairo.buildSmartPatchQuestionIds(20);
+  if (ids.length === 0) return null;
+  const subjects = Array.from(new Set(ids.map((id: string) => kairo.getQuestionById(id)?.subject).filter(Boolean))) as string[];
+  const totalTimeMin = cbtProportionalTimeMin(ids.length);
+  const started = kairo.cbt.startFromQuestionIds(ids, { subjects, totalTimeMin });
+  if (!started) return null;
+  const paper: CbtPaperQuestion[] = started.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }) => ({
+    ...q,
+    options: q.options.map((o) => ({ label: o.label, text: o.text })),
+  }));
+  return { totalTimeMin, startTime: started.startTime, paper };
 }
 
 /**
@@ -1207,12 +1331,6 @@ export function getRecommendedNextQuestion(conceptId: string, excludeIds: string
   const kairo = getEngine();
   if (!kairo) return null;
   return kairo.getQuestionForConcept(conceptId, { excludeIds, maxDifficulty: maxDifficulty ?? null });
-}
-
-/** A concept's current retention state, read directly (not recomputed) so a genuine Reinforced transition during a Review session (Review Module §5.9) can be told apart from routine completion. */
-export function getConceptRetentionState(conceptId: string): string | null {
-  const kairo = getEngine();
-  return kairo?.graph?.getConcept(conceptId)?.retentionState ?? null;
 }
 
 /** Real momentum-streak status ({ momentum, protectedGapsUsed, lastSessionDate, message }), or null if signed out. */
@@ -1244,6 +1362,7 @@ export interface CbtPaperQuestion {
   questionId: string;
   text: string;
   options: { label: string; text: string }[];
+  imageUrl?: string | null;
 }
 
 /** The one real, fully-seeded JAMB combination available today (Science/Medicine track). */
@@ -1284,7 +1403,7 @@ export interface StartCbtExamOptions {
   customTotalTimeMin?: number;
 }
 
-export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[] }> {
+export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[]; subjects: string[]; startTime: number }> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const subjects = options.subjects?.length ? options.subjects : CBT_DEFAULT_SUBJECTS;
@@ -1302,11 +1421,47 @@ export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{
   // Exam Mode spec §2.3/§5.2/§5.4 forbid any correctness signal reaching
   // the student mid-attempt, so strip it here defensively before this
   // ever reaches the browser's own state.
-  const paper: CbtPaperQuestion[] = built.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[] }) => ({
+  const paper: CbtPaperQuestion[] = built.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }) => ({
     ...q,
     options: q.options.map((o) => ({ label: o.label, text: o.text })),
   }));
-  return { totalQuestions: built.totalQuestions, totalTimeMin: setup.totalTimeMin, paper };
+  return { totalQuestions: built.totalQuestions, totalTimeMin: setup.totalTimeMin, paper, subjects, startTime: kairo.cbt.examData.startTime };
+}
+
+/**
+ * Anti-Refresh Wipeout (Batch 1) — rebuilds the live kairo.cbt exam state
+ * from a client-persisted snapshot (see sessionResume.ts's CbtSessionSnapshot),
+ * reusing the exact same questions in the exact same order rather than
+ * pulling a fresh random paper. Returns null when the snapshot's questions
+ * can no longer be resolved (e.g. its subjects' content never reloaded) —
+ * the caller should then fall back to a normal fresh setup.
+ */
+export async function resumeCbtExam(snapshot: { subjects: string[]; totalTimeMin: number; startTime: number; questionIds: string[]; answers: Record<number, string>; flaggedIndices: number[]; subjectTimes: Record<string, number>; current: number }): Promise<{ totalTimeMin: number; paper: CbtPaperQuestion[]; startTime: number } | null> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(snapshot.subjects);
+  const resumed = kairo.cbt.resumeFromSnapshot({
+    subjects: snapshot.subjects,
+    totalTimeMin: snapshot.totalTimeMin,
+    startTime: snapshot.startTime,
+    questionIds: snapshot.questionIds,
+    answers: snapshot.answers,
+    flaggedIndices: snapshot.flaggedIndices,
+    subjectTimes: snapshot.subjectTimes,
+    currentIndex: snapshot.current,
+  });
+  if (!resumed) return null;
+  const paper: CbtPaperQuestion[] = resumed.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }) => ({
+    ...q,
+    options: q.options.map((o) => ({ label: o.label, text: o.text })),
+  }));
+  return { totalTimeMin: snapshot.totalTimeMin, paper, startTime: snapshot.startTime };
+}
+
+/** Peeks at the live exam's per-subject time totals (CBTExamMode.examData.subjectTimes) — the one piece of live exam state the snapshot needs that isn't already mirrored in CbtExam.tsx's own React state. Empty object when no exam is running. */
+export function getCbtSubjectTimes(): Record<string, number> {
+  const kairo = getEngine();
+  return kairo?.cbt?.examData?.subjectTimes ? { ...kairo.cbt.examData.subjectTimes } : {};
 }
 
 export interface CbtQuestionResult {
