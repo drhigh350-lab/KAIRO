@@ -142,7 +142,7 @@ export class SyncManager {
    */
   _applyRemote({ remoteProfile, remoteConceptStates, remoteAttempts }) {
     if (remoteProfile) this._applyRemoteProfile(remoteProfile);
-    if (remoteConceptStates) this._applyRemoteConceptStates(remoteConceptStates, remoteAttempts || []);
+    if (remoteConceptStates) this.applyRemoteConceptStates(remoteConceptStates, remoteAttempts || []);
   }
 
   /**
@@ -186,8 +186,13 @@ export class SyncManager {
   /**
    * Concept dynamic state: most recent lastSeenAt/updated_at wins per
    * concept; attempt history is unioned and deduplicated, never truncated.
+   * Public (not the `_applyRemote*` naming convention the other merge
+   * helpers use) — loadContentCatalog() also calls this directly, right
+   * when a concept first becomes a real local ConceptNode, rather than
+   * relying on this method's own `if (!node) continue` skip ever getting
+   * a second chance via a later sync() call.
    */
-  _applyRemoteConceptStates(remoteConceptStates, remoteAttempts) {
+  applyRemoteConceptStates(remoteConceptStates, remoteAttempts) {
     const graph = this.engine.graph;
     const attemptsByConceptId = new Map();
     for (const row of remoteAttempts) {

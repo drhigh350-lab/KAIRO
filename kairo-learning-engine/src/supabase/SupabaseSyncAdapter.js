@@ -363,6 +363,32 @@ export class SupabaseSyncAdapter {
     return data || [];
   }
 
+  /**
+   * Concept-scoped, not time-scoped — the counterpart pullConceptStates()/
+   * pullAttempts() rely on `since`/an already-populated local graph, which
+   * both silently fail to backfill a concept's real history the first time
+   * it's ever loaded on a device (a fresh sign-in, a new device, or right
+   * after sign-out's own IndexedDB purge): pullAttempts(since) only ever
+   * asks for attempts newer than the student's last completed session — by
+   * definition excluding everything historical — and SyncManager's own
+   * merge (_applyRemoteConceptStates → applyRemoteConceptStates) silently
+   * skips any concept_states/attempts row whose concept isn't already in
+   * the local graph, with nothing ever re-fetching it afterward. Called
+   * from loadContentCatalog() itself, right when these concepts first
+   * become real ConceptNode instances locally, so rehydration doesn't
+   * depend on winning a race against — or ever re-running — a separate
+   * sync() call at all.
+   */
+  async pullConceptStatesForConcepts(studentId, conceptIds) {
+    if (!conceptIds || conceptIds.length === 0) return [];
+    const { data, error } = await this._table('concept_states')
+      .select('*')
+      .eq('student_id', studentId)
+      .in('concept_id', conceptIds);
+    if (error) throw error;
+    return data || [];
+  }
+
   // ─────────────────────────────────────────────
   // Attempts (kairo.attempts) — append-only log
   // ─────────────────────────────────────────────
@@ -386,6 +412,18 @@ export class SupabaseSyncAdapter {
     }
 
     const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  /** Concept-scoped counterpart to pullAttempts() — see pullConceptStatesForConcepts()'s doc comment for why this exists as a separate, non-time-limited path. */
+  async pullAttemptsForConcepts(studentId, conceptIds) {
+    if (!conceptIds || conceptIds.length === 0) return [];
+    const { data, error } = await this._table('attempts')
+      .select('*')
+      .eq('student_id', studentId)
+      .in('concept_id', conceptIds)
+      .order('answered_at', { ascending: true });
     if (error) throw error;
     return data || [];
   }

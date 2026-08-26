@@ -338,7 +338,7 @@ export class KairoEngine {
     // silently vanish from Today's Progress/streak/Insights for this whole
     // page load, exactly the "cleared unexpectedly" failure mode the
     // offline-first contract exists to prevent. Union + dedupe by
-    // sessionId, same pattern SyncManager._applyRemoteConceptStates()
+    // sessionId, same pattern SyncManager.applyRemoteConceptStates()
     // already uses for attempts.
     try {
       const localSessions = this.profile.sessions || [];
@@ -435,6 +435,7 @@ export class KairoEngine {
 
     let conceptsLoaded = 0;
     let questionsLoaded = 0;
+    const newConceptIds = [];
 
     for (const filter of filters) {
       const concepts = await this.sync.adapter.fetchConcepts(filter);
@@ -442,6 +443,7 @@ export class KairoEngine {
         if (this.graph.hasConcept(data.id)) continue;
         this.graph.addConcept(new ConceptNode(data));
         conceptsLoaded++;
+        newConceptIds.push(data.id);
       }
 
       const questions = await this.sync.adapter.fetchQuestions(filter);
@@ -455,6 +457,28 @@ export class KairoEngine {
     }
 
     this.questionGraph.autoBuildRelationships();
+
+    // A concept becoming a local ConceptNode for the first time (e.g. right
+    // after sign-in, before any sync() has run) previously left it "unseen"
+    // even when the student has real history on it: sync()'s own pull is
+    // time-cursor-scoped (profile.lastSessionAt) and races this method, so
+    // it silently skips concepts that aren't in the graph yet at the moment
+    // it runs. Fetching this device's real history for exactly the concepts
+    // just added — independent of any time cursor or the sync() race —
+    // makes Active Traps/Weak Topics reliable after signing back in on any
+    // device. Best-effort: offline or a failed fetch just leaves these
+    // concepts fresh (unseen), not fatal.
+    if (newConceptIds.length > 0) {
+      try {
+        const [remoteConceptStates, remoteAttempts] = await Promise.all([
+          this.sync.adapter.pullConceptStatesForConcepts(this.profile.studentId, newConceptIds),
+          this.sync.adapter.pullAttemptsForConcepts(this.profile.studentId, newConceptIds)
+        ]);
+        this.sync.applyRemoteConceptStates(remoteConceptStates, remoteAttempts);
+      } catch {
+        // offline or failed fetch — concepts stay fresh (unseen) this boot, not fatal
+      }
+    }
 
     return { conceptsLoaded, questionsLoaded };
   }
