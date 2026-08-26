@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
+import { InlineToast } from '../learning/shared';
 import {
   loadReviewData, getPendingRepairsCount, getRecentMistakes, markMistakeUnderstood, getWeakTopicsForReview,
   getBookmarkedQuestions, removeBookmark, getSessionHistory,
@@ -25,10 +26,10 @@ function CheckIcon() {
 
 /**
  * Batch 1's Hero Metric + Smart Patch. "Loaded" gates both the number and
- * the CTA — Pending Repairs reads live graph/attempt state that only
- * exists once loadReviewData() has resolved at least once this session
- * (Review can be the very first screen a student lands on), so a flash of
- * "0 Pending Repairs" before that would misreport, not just look empty.
+ * the CTA — Exposed Gaps reads live graph/attempt state that only exists
+ * once loadReviewData() has resolved at least once this session (Review
+ * can be the very first screen a student lands on), so a flash of
+ * "0 Exposed Gaps" before that would misreport, not just look empty.
  */
 function HeroCard({ loaded, pendingCount, onStartSmartPatch }: { loaded: boolean; pendingCount: number; onStartSmartPatch: () => void }) {
   const zero = loaded && pendingCount === 0;
@@ -45,21 +46,22 @@ function HeroCard({ loaded, pendingCount, onStartSmartPatch }: { loaded: boolean
               <CheckIcon />
             </div>
           </div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--dark-text-heading)' }}>Your Memory Is Tight</div>
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>Nothing is waiting on you right now.</div>
-          <div style={{ marginTop: 22 }}>
-            <Button variant="ghost" size="lg" fullWidth disabled>Your Memory Is Tight. 0 Pending Repairs.</Button>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 46, color: 'var(--dark-text-heading)', lineHeight: 1 }}>0</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--dark-text-muted)', textTransform: 'uppercase', marginTop: 8 }}>Exposed Gaps</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 8 }}>Your recall is locked in. Zero fading concepts in the queue. Go attack new topics.</div>
+          <div style={{ marginTop: 20 }}>
+            <Button variant="ghost" size="lg" fullWidth disabled>0 Exposed Gaps. Go Attack New Topics.</Button>
           </div>
         </>
       ) : (
         <>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--dark-text-muted)', textTransform: 'uppercase' }}>Pending Repairs</div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 46, color: 'var(--dark-text-heading)', marginTop: 8, lineHeight: 1 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 46, color: 'var(--dark-text-heading)', lineHeight: 1 }}>
             {loaded ? pendingCount : '—'}
           </div>
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 8 }}>Fading concepts and mistakes ready to retest.</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: 'var(--dark-text-muted)', textTransform: 'uppercase', marginTop: 8 }}>Exposed Gaps</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 8 }}>Your retention is dropping on these concepts. Patch the leaks before the examiner finds them.</div>
           <div style={{ marginTop: 20 }}>
-            <Button variant="gold" size="lg" fullWidth disabled={!loaded} onClick={onStartSmartPatch}>Start Smart Patch</Button>
+            <Button variant="gold" size="lg" fullWidth disabled={!loaded} onClick={onStartSmartPatch}>Execute Smart Patch</Button>
           </div>
         </>
       )}
@@ -144,6 +146,7 @@ export function Review() {
   const [mistakes, setMistakes] = useState<MistakeTicket[] | null>(null);
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
   const [savingTicket, setSavingTicket] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
@@ -166,6 +169,8 @@ export function Review() {
       .then(() => {
         setMistakes((prev) => prev?.filter((m) => m.questionId !== ticket.questionId) ?? prev);
         setExpandedTicket((cur) => (cur === ticket.questionId ? null : cur));
+        setToast('Ticket closed. Kai will re-test this in 3 days to verify mastery, not just memory.');
+        setTimeout(() => setToast(null), 3200);
       })
       .catch(() => {
         // Best-effort — leave the ticket in place so the student can retry.
@@ -183,7 +188,8 @@ export function Review() {
   }
 
   return (
-    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1 }}>
+    <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 18, background: 'var(--dark-bg-canvas)', flex: 1, position: 'relative' }}>
+      {toast && <InlineToast tone="caution">{toast}</InlineToast>}
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>Review</div>
 
       <div className="desktop-grid">
@@ -191,14 +197,14 @@ export function Review() {
           <HeroCard loaded={dataLoaded} pendingCount={pendingCount} onStartSmartPatch={() => navigate('/cbt', { state: { entry: 'smartPatch' } })} />
 
           <AccordionCard
-            label="Recent Mistakes"
-            desc="From the last 72 hours — still cooling down before a retest."
+            label="Active Traps"
+            desc="Mistakes from your last 72 hours. Don't just memorize the correct option—diagnose why you fell for it."
             count={mistakes?.length ?? 0}
             open={expandedSection === 'mistakes'}
             onToggle={() => setExpandedSection((s) => (s === 'mistakes' ? null : 'mistakes'))}
           >
             {mistakes == null && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>Loading…</div>}
-            {mistakes?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>Nothing fresh to triage right now.</div>}
+            {mistakes?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No active traps right now.</div>}
             {mistakes?.map((m) => (
               <MistakeTicket
                 key={m.questionId}
@@ -214,7 +220,7 @@ export function Review() {
 
           <AccordionCard
             label="Weak Topics"
-            desc="Under 50% accuracy — real gaps, not just recent misses."
+            desc="Kai caught a failing pattern. These areas will heavily drag your score down if we don't rebuild them now."
             count={weakTopics.length}
             open={expandedSection === 'weak'}
             onToggle={() => setExpandedSection((s) => (s === 'weak' ? null : 'weak'))}
@@ -242,8 +248,8 @@ export function Review() {
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--dark-text-faint)', textTransform: 'uppercase', padding: '0 2px' }}>The Vault</div>
 
           <AccordionCard
-            label="Bookmarks"
-            desc="Questions you marked as worth revisiting."
+            label="Your Bookmarks"
+            desc="Your saved high-yield questions. Guard these for your final revision."
             count={bookmarks?.length ?? 0}
             open={expandedSection === 'bookmarks'}
             onToggle={() => setExpandedSection((s) => (s === 'bookmarks' ? null : 'bookmarks'))}
@@ -263,8 +269,8 @@ export function Review() {
           </AccordionCard>
 
           <AccordionCard
-            label="Session History"
-            desc="A look back at your past sessions."
+            label="Your Session History"
+            desc="The raw data of your daily grind. Every session, every score, zero excuses."
             count={history?.length ?? 0}
             open={expandedSection === 'history'}
             onToggle={() => setExpandedSection((s) => (s === 'history' ? null : 'history'))}

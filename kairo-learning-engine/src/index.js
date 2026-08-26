@@ -1348,11 +1348,6 @@ export class KairoEngine {
     return { data, kaiNote };
   }
 
-  getMonthlyWrapped() {
-    const wrapped = new MonthlyWrapped(this.profile, this.graph);
-    return wrapped.generate();
-  }
-
   getStreakStatus() {
     return this.streak.getStatus();
   }

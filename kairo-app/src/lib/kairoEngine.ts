@@ -1151,29 +1151,6 @@ export function getWeeklyReviewSummary(): Engine | null {
   return { ...data, kaiNote: kaiNote?.text || null };
 }
 
-/** Real month-in-review ("Kairo Wrapped") — reinforced concepts, biggest turnaround, score trend, session/question totals. All computed by MonthlyWrapped; Insights only renders it. */
-export function getMonthlyWrapped(): Engine | null {
-  const kairo = getEngine();
-  return kairo ? kairo.getMonthlyWrapped() : null;
-}
-
-/**
- * Real "what needs review" summary for the Review screen. Mirrors
- * ReviewModule.getPreSessionRecap()'s own contract: null both when nothing is
- * signed in AND when genuinely nothing is due — the caller shouldn't have to
- * tell those two "show nothing" cases apart.
- */
-export function getReviewSummary(): Engine | null {
-  const kairo = getEngine();
-  return kairo ? kairo.review.getPreSessionRecap() : null;
-}
-
-/** Weakness Review's error-pattern breakdown, for Review's "Weak Topics" card. */
-export function getWeaknessReview(): Engine | null {
-  const kairo = getEngine();
-  return kairo ? kairo.review.buildWeaknessReview() : null;
-}
-
 // ─────────────────────────────────────────────
 // Spaced Sandbox (Batch 1/2) — Pending Repairs, the Triage Inbox, and Smart
 // Patch. A missed question is never re-tested immediately: KairoEngine.
@@ -1341,59 +1318,6 @@ export async function startSmartPatchSession(): Promise<{ totalTimeMin: number; 
   return { totalTimeMin, startTime: started.startTime, paper };
 }
 
-// ─────────────────────────────────────────────
-// Review Session — a real Session Framing -> Reflection Moment -> Resolution
-// -> Pattern Surfacing -> Reinforcement Attempt -> Consolidation Summary
-// flow (Review Module Spec §5.3), built from ReviewModule.buildReviewSession()
-// and each concept's own real attemptHistory/questionGraph state — not a
-// second intelligence layer of its own (Review Module §7.8).
-// ─────────────────────────────────────────────
-
-export interface ReviewSessionItem {
-  conceptId: string;
-  conceptName: string;
-  subject: string | null;
-  topic: string | null;
-  reason: 'fading' | 'recently_missed' | 'stale';
-  priority: string;
-  hasPriorMiss: boolean;
-  priorQuestionId: string | null;
-  priorSelectedOption: string | null;
-  priorCorrectOption: string | null;
-  priorErrorTag: string | null;
-}
-
-export interface ReviewSessionPlan {
-  items: ReviewSessionItem[];
-  framing: string;
-  estimatedTimeMin: number;
-  pattern: { tag: string; count: number } | null;
-}
-
-export function getReviewSessionPlan(limit = 8): ReviewSessionPlan | null {
-  const kairo = getEngine();
-  return kairo ? kairo.review.buildReviewSession({ limit }) : null;
-}
-
-/** Loads real content for whatever subjects a Review session's items span, so getReviewOriginalQuestion/getReviewReinforcementQuestion can resolve real questions instead of ones from a subject that was never loaded this session. */
-export async function ensureReviewContentLoaded(items: ReviewSessionItem[]): Promise<void> {
-  const subjects = [...new Set(items.map((i) => i.subject).filter((s): s is string => !!s))];
-  await ensureContentLoaded(subjects.length ? subjects : []);
-}
-
-/** The exact original question a student answered (Reflection Moment, Review Module §5.5) — distinct from a fresh question, since reconsidering one's own past reasoning is the point. */
-export function getReviewOriginalQuestion(questionId: string): EngineFlatQuestion | null {
-  const kairo = getEngine();
-  return kairo ? kairo.getQuestionById(questionId) : null;
-}
-
-/** A fresh Reinforcement/Alternative Representation question for the same concept (Review Module §5.8) — never the identical original, per the platform-wide rule against testing memorization of one specific item. */
-export function getReviewReinforcementQuestion(conceptId: string, excludeId?: string | null): EngineFlatQuestion | null {
-  const kairo = getEngine();
-  if (!kairo) return null;
-  return kairo.getQuestionForConcept(conceptId, { excludeIds: excludeId ? [excludeId] : [] });
-}
-
 /**
  * A fresh question for the concept RecommendationEngine.processAnswer()
  * decided the student should see next — a prerequisite reroute after a
@@ -1407,12 +1331,6 @@ export function getRecommendedNextQuestion(conceptId: string, excludeIds: string
   const kairo = getEngine();
   if (!kairo) return null;
   return kairo.getQuestionForConcept(conceptId, { excludeIds, maxDifficulty: maxDifficulty ?? null });
-}
-
-/** A concept's current retention state, read directly (not recomputed) so a genuine Reinforced transition during a Review session (Review Module §5.9) can be told apart from routine completion. */
-export function getConceptRetentionState(conceptId: string): string | null {
-  const kairo = getEngine();
-  return kairo?.graph?.getConcept(conceptId)?.retentionState ?? null;
 }
 
 /** Real momentum-streak status ({ momentum, protectedGapsUsed, lastSessionDate, message }), or null if signed out. */

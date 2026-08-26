@@ -1,16 +1,13 @@
 /**
- * Session Resume — "Quick Resume" (Practice Module §2.5/§3.2) and
- * "Continue Reviewing" (Review Module §4.3 item 2), both referenced by
- * their own specs as an existing precedent neither module actually had:
- * engine.currentSession is in-memory only, lost on any reload, and
- * ReviewSession.tsx never even called startSession() at all. Persisted
+ * Session Resume — "Quick Resume" (Practice Module §2.5/§3.2), referenced by
+ * its own spec as an existing precedent the module didn't actually have:
+ * engine.currentSession is in-memory only, lost on any reload. Persisted
  * client-side (one active snapshot per signed-in student) rather than a
  * new kairo.sessions row — an interrupted session isn't a "real" session
- * yet (Review Module §7.9's own consistency-contribution rule only counts
- * a *completed* session), it's scratch state for picking back up on the
- * same device. Cleared on natural completion, kept across an explicit
- * exit, mirroring how LearnModule.activeLessons already treats a lesson
- * left without finishing (resumable, not lost).
+ * yet, it's scratch state for picking back up on the same device. Cleared
+ * on natural completion, kept across an explicit exit, mirroring how
+ * LearnModule.activeLessons already treats a lesson left without finishing
+ * (resumable, not lost).
  */
 
 const STORAGE_PREFIX = 'kairo_session_resume_v1';
@@ -27,15 +24,6 @@ export interface PracticeSessionSnapshot {
   difficulty: string | null;
   questionIds: string[];
   qIndex: number;
-  resultsJson: string;
-  savedAt: number;
-}
-
-export interface ReviewSessionSnapshot {
-  kind: 'review';
-  planJson: string;
-  /** Resume always restarts at the beginning of this item — mid-item (reflect vs. reinforce) position isn't preserved, to avoid reconstructing partial-item state. */
-  itemIndex: number;
   resultsJson: string;
   savedAt: number;
 }
@@ -63,7 +51,7 @@ export interface CbtSessionSnapshot {
   savedAt: number;
 }
 
-type SessionSnapshot = PracticeSessionSnapshot | ReviewSessionSnapshot | CbtSessionSnapshot;
+type SessionSnapshot = PracticeSessionSnapshot | CbtSessionSnapshot;
 
 function storageKey(studentId: string | null | undefined): string | null {
   if (!studentId || studentId === 'pending') return null;
@@ -93,19 +81,6 @@ export function getPracticeSessionSnapshot(studentId: string | null | undefined)
   }
 }
 
-export function getReviewSessionSnapshot(studentId: string | null | undefined): ReviewSessionSnapshot | null {
-  const key = storageKey(studentId);
-  if (!key) return null;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SessionSnapshot;
-    return parsed.kind === 'review' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 export function getCbtSessionSnapshot(studentId: string | null | undefined): CbtSessionSnapshot | null {
   const key = storageKey(studentId);
   if (!key) return null;
@@ -122,10 +97,10 @@ export function getCbtSessionSnapshot(studentId: string | null | undefined): Cbt
 /**
  * Clears the snapshot — scoped to `kind` so completing a session in one
  * mode can't wipe out an unrelated, still-resumable snapshot from another
- * (there's only one active slot per student across practice/review/cbt)
- * and vice versa.
+ * (there's only one active slot per student across practice/cbt) and vice
+ * versa.
  */
-export function clearSessionSnapshot(studentId: string | null | undefined, kind: 'practice' | 'review' | 'cbt'): void {
+export function clearSessionSnapshot(studentId: string | null | undefined, kind: 'practice' | 'cbt'): void {
   const key = storageKey(studentId);
   if (!key) return;
   try {
