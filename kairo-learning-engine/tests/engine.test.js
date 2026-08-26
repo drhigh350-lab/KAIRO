@@ -2828,6 +2828,174 @@ await test('ProfileSettings.deleteAllData() rebuilds every profile-bound subsyst
   assertEqual(score.total, 0, 'a freshly reset student with no graph/sessions should score 0, confirming eliteScore is reading the new empty profile, not the deleted one\'s history');
 });
 
+// ═══════════════════════════════════════════════════════════════
+// SPACED SANDBOX — Review Tab's mistake retest cooldown
+// ═══════════════════════════════════════════════════════════════
+
+const MISTAKE_COOLDOWN_MS = 72 * 60 * 60 * 1000;
+
+/** submitAnswer() only actually records onto concept.attemptHistory via RecommendationEngine.processAnswer() — this.recommendation stays null (and every submitAnswer() below a silent no-op) until startSession() has run at least once, same precedent every other submitAnswer()-using test in this file already follows. */
+async function makeSandboxEngine(id) {
+  const engine = new KairoEngine({
+    studentId: id, name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry']
+  });
+  await engine.init();
+  engine.startSession({ mode: 'standard', plan: [] });
+  return engine;
+}
+
+/** Backdates the most recent attempt recorded for `questionId` on `conceptId` — the only way to exercise the 72h boundary deterministically without a real wait. */
+function backdateLastAttempt(engine, conceptId, questionId, msAgo) {
+  const concept = engine.graph.getConcept(conceptId);
+  const attempt = [...concept.attemptHistory].reverse().find(a => a.questionId === questionId);
+  attempt.timestamp = Date.now() - msAgo;
+  return attempt;
+}
+
+await test('Spaced Sandbox: a mistake inside its 72h window is not yet a Pending Repair; past it, it is', async () => {
+  const engine = await makeSandboxEngine('sandbox1');
+  const conceptId = engine.addConcept({ name: 'Cooldown Concept', subject: 'Chemistry', topic: 'Acids' });
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb1_q1', questionDifficulty: 1 });
+
+  assertEqual(engine.getPendingRepairsCount(), 0, 'A mistake missed moments ago is still cooling down — not yet a Pending Repair');
+  const ledgerFresh = engine.review.getMistakeLedger();
+  assertEqual(ledgerFresh.length, 1, 'The ledger tracks the mistake regardless of ripeness');
+  assert(!ledgerFresh[0].ripe, 'A fresh mistake is not ripe');
+
+  backdateLastAttempt(engine, conceptId, 'sb1_q1', MISTAKE_COOLDOWN_MS + 60 * 1000);
+  assertEqual(engine.getPendingRepairsCount(), 1, 'Once 72h has genuinely elapsed since the wrong answer, it becomes a Pending Repair on its own — no explicit ack required');
+});
+
+await test('Spaced Sandbox: a later correct attempt on the same question clears it as a pending mistake', async () => {
+  const engine = await makeSandboxEngine('sandbox2');
+  const conceptId = engine.addConcept({ name: 'Resolved Concept', subject: 'Chemistry', topic: 'Acids' });
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb2_q1', questionDifficulty: 1 });
+  backdateLastAttempt(engine, conceptId, 'sb2_q1', MISTAKE_COOLDOWN_MS + 60 * 1000);
+  assertEqual(engine.getPendingRepairsCount(), 1, 'Ripe mistake counted before the retest');
+
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'sb2_q1', questionDifficulty: 1 });
+  assertEqual(engine.getPendingRepairsCount(), 0, 'A later correct attempt on the exact same question resolves it — it is no longer a pending mistake');
+});
+
+await test('Spaced Sandbox: "I Understand" resets the cooldown to a fresh 72h from the acknowledgment, dismissing it from the Triage Inbox immediately', async () => {
+  const engine = await makeSandboxEngine('sandbox3');
+  const conceptId = engine.addConcept({ name: 'Ack Concept', subject: 'Chemistry', topic: 'Acids' });
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb3_q1', questionDifficulty: 1 });
+
+  const inboxBefore = engine.getRecentMistakes(20);
+  assertEqual(inboxBefore.length, 1, 'A fresh, unacknowledged mistake sits in the Triage Inbox');
+
+  engine.setMistakePatch('sb3_q1', Date.now() + MISTAKE_COOLDOWN_MS);
+  const inboxAfter = engine.getRecentMistakes(20);
+  assertEqual(inboxAfter.length, 0, '"I Understand" removes it from the Triage Inbox immediately');
+  assertEqual(engine.getPendingRepairsCount(), 0, 'and it is not a Pending Repair either, since its fresh cooldown has not elapsed yet');
+});
+
+await test('Spaced Sandbox: a stale "I Understand" patch from a resolved miss never lets a brand-new mistake on the same question skip its own cooldown', async () => {
+  const engine = await makeSandboxEngine('sandbox4');
+  const conceptId = engine.addConcept({ name: 'Stale Patch Concept', subject: 'Chemistry', topic: 'Acids' });
+
+  // First miss, ten days ago, acknowledged an hour later, then genuinely
+  // retested successfully — real chronological gaps between each step
+  // (submitAnswer/setMistakePatch calls in a synchronous test can otherwise
+  // land in the very same millisecond, which would make this scenario
+  // impossible to tell apart from the normal "ack happened after the miss"
+  // case — real students never manage that). The old patch is left sitting
+  // in mistakePatches — nothing ever clears it.
+  const tenDaysAgo = Date.now() - 10 * 24 * 60 * 60 * 1000;
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb4_q1', questionDifficulty: 1 });
+  backdateLastAttempt(engine, conceptId, 'sb4_q1', Date.now() - tenDaysAgo);
+  engine.setMistakePatch('sb4_q1', tenDaysAgo + 60 * 60 * 1000 + MISTAKE_COOLDOWN_MS); // acked 1h after that miss
+  engine.submitAnswer({ conceptId, correct: true, responseTimeMs: 3000, selectedOption: 'A', correctOption: 'A', questionId: 'sb4_q1', questionDifficulty: 1 });
+  backdateLastAttempt(engine, conceptId, 'sb4_q1', Date.now() - (tenDaysAgo + 2 * 60 * 60 * 1000)); // retested correctly 2h after the miss
+  assertEqual(engine.getPendingRepairsCount(), 0, 'Resolved by the correct retest');
+
+  // Missed again, right now — a brand-new mistake episode, ten days after
+  // the acknowledged-and-resolved first one. The stale patch (whose value
+  // is a full ~9 days in the past by now) must not let this new miss
+  // appear ripe immediately.
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'C', correctOption: 'A', questionId: 'sb4_q1', questionDifficulty: 1 });
+  assertEqual(engine.getPendingRepairsCount(), 0, 'A fresh mistake on a question with an old, now-irrelevant ack must still serve its own real 72h cooldown, not inherit the stale one');
+
+  const ledger = engine.review.getMistakeLedger();
+  const entry = ledger.find(m => m.questionId === 'sb4_q1');
+  assert(!entry.acknowledged, 'The stale patch does not count as acknowledging this new miss');
+  assert(entry.cooldownUntil > Date.now() + MISTAKE_COOLDOWN_MS - 60 * 1000, 'cooldownUntil reflects the new miss\'s own natural cooldown, not the old patch\'s timestamp');
+});
+
+await test('Spaced Sandbox: getQuestionForConcept excludes a cooling-down question but falls back to it when nothing else qualifies', async () => {
+  const engine = await makeSandboxEngine('sandbox5');
+  const conceptId = engine.addConcept({ name: 'Selection Concept', subject: 'Chemistry', topic: 'Acids' });
+  for (const id of ['sb5_q1', 'sb5_q2']) {
+    engine.questionGraph.addQuestion(new Question({
+      id, subject: 'Chemistry', topic: 'Acids',
+      conceptsTested: [{ conceptId, weight: 'primary' }],
+      difficultyRating: 2, stem: `Q ${id}`,
+      options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+      correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb5_q1', questionDifficulty: 2 });
+
+  for (let i = 0; i < 10; i++) {
+    const q = engine.getQuestionForConcept(conceptId);
+    assertEqual(q.id, 'sb5_q2', 'With a real, non-cooling alternative available, the cooling-down question is never served');
+  }
+
+  // Now make sb5_q2 cool down too — nothing ripe left for this concept.
+  engine.submitAnswer({ conceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb5_q2', questionDifficulty: 2 });
+  const fallback = engine.getQuestionForConcept(conceptId);
+  assert(['sb5_q1', 'sb5_q2'].includes(fallback.id), 'When every real question for this concept is cooling down, falls back to the full pool rather than returning null');
+});
+
+await test('Spaced Sandbox: buildSmartPatchQuestionIds returns ripe mistakes plus a fresh question per uncovered fading concept', async () => {
+  const engine = await makeSandboxEngine('sandbox6');
+  const mistakeConceptId = engine.addConcept({ name: 'Ripe Mistake Concept', subject: 'Chemistry', topic: 'Acids' });
+  engine.submitAnswer({ conceptId: mistakeConceptId, correct: false, responseTimeMs: 3000, selectedOption: 'B', correctOption: 'A', questionId: 'sb6_q1', questionDifficulty: 1 });
+  backdateLastAttempt(engine, mistakeConceptId, 'sb6_q1', MISTAKE_COOLDOWN_MS + 60 * 1000);
+
+  const fadingConceptId = engine.addConcept({ name: 'Fading Concept', subject: 'Chemistry', topic: 'Bonding' });
+  engine.questionGraph.addQuestion(new Question({
+    id: 'sb6_q2', subject: 'Chemistry', topic: 'Bonding',
+    conceptsTested: [{ conceptId: fadingConceptId, weight: 'primary' }],
+    difficultyRating: 2, stem: 'Q sb6_q2',
+    options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+    correctOption: 'A', lifecycleState: 'live'
+  }));
+  engine.graph.getConcept(fadingConceptId).retentionState = RetentionState.FADING;
+
+  assertEqual(engine.getPendingRepairsCount(), 2, 'One ripe mistake + one fading concept');
+  const ids = engine.buildSmartPatchQuestionIds(20);
+  assert(ids.includes('sb6_q1'), 'The ripe mistake resurfaces the exact question it missed');
+  assert(ids.includes('sb6_q2'), 'The fading concept contributes a real question of its own');
+  assertEqual(ids.length, 2, 'No duplicates, nothing extraneous');
+});
+
+await test('CBTExamMode.startFromQuestionIds builds a real, fresh, correctly-ordered paper from an explicit id list', async () => {
+  const engine = await makeSandboxEngine('sandbox7');
+  const conceptId = engine.addConcept({ name: 'Smart Patch Paper Concept', subject: 'Chemistry', topic: 'Acids' });
+  for (const id of ['sb7_q1', 'sb7_q2']) {
+    engine.questionGraph.addQuestion(new Question({
+      id, subject: 'Chemistry', topic: 'Acids',
+      conceptsTested: [{ conceptId, weight: 'primary' }],
+      difficultyRating: 2, stem: `Stem ${id}`,
+      options: [{ label: 'A', text: 'A', isCorrect: true }, { label: 'B', text: 'B', isCorrect: false }],
+      correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+
+  const started = engine.cbt.startFromQuestionIds(['sb7_q2', 'sb7_q1'], { subjects: ['Chemistry'], totalTimeMin: 12 });
+  assert(started, 'Builds successfully when every id resolves');
+  assertEqual(started.paper.length, 2, 'Both questions resolved');
+  assertEqual(started.paper[0].questionId, 'sb7_q2', 'Preserves the exact order given, not a random pull');
+  assertEqual(started.paper[1].questionId, 'sb7_q1', 'Preserves the exact order given');
+  assertEqual(engine.cbt.state, 'running', 'A fresh Smart Patch session starts running immediately, same as any other CBT paper');
+  assertEqual(Object.keys(engine.cbt.examData.answers).length, 0, 'Genuinely fresh — no answers carried over from anywhere');
+
+  const missing = engine.cbt.startFromQuestionIds(['sb7_q1', 'does_not_exist'], { subjects: ['Chemistry'], totalTimeMin: 12 });
+  assertEqual(missing, null, 'Aborts cleanly (rather than building a paper with a gap) when any id fails to resolve');
+});
+
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) {
   console.log(`\n⚠️  ${failCount} test(s) need attention.`);

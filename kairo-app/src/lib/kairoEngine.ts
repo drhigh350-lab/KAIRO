@@ -348,6 +348,7 @@ export async function signOutAndDisconnect(): Promise<void> {
   }
   engine = null;
   contentLoadedFor = [];
+  mistakePatchesLoaded = false;
 }
 
 // Only these five subjects have a seeded live question bank today (verified
@@ -366,6 +367,13 @@ let contentLoadedFor: string[] = [];
 async function ensureContentLoaded(subjects: string[]): Promise<void> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
+  // Spaced Sandbox protocol (Batch 2) — every question-selecting caller of
+  // ensureContentLoaded() (Practice, CBT, recommendations) needs real
+  // mistake-cooldown data in place *before* getQuestionForConcept() runs,
+  // not just Review's own screens. Its own idempotency guard (not the
+  // `missing.length === 0` early return below) is what makes this safe to
+  // call unconditionally here.
+  await ensureMistakePatchesLoaded();
   const wanted = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
   const target = wanted.length ? wanted : SEEDED_SUBJECTS;
   const missing = target.filter((s) => !contentLoadedFor.includes(s));
@@ -1164,6 +1172,173 @@ export function getReviewSummary(): Engine | null {
 export function getWeaknessReview(): Engine | null {
   const kairo = getEngine();
   return kairo ? kairo.review.buildWeaknessReview() : null;
+}
+
+// ─────────────────────────────────────────────
+// Spaced Sandbox (Batch 1/2) — Pending Repairs, the Triage Inbox, and Smart
+// Patch. A missed question is never re-tested immediately: KairoEngine.
+// mistakePatches (loaded here, read inside getQuestionForConcept() itself)
+// and ReviewModule's ledger both enforce the same 72h-minimum cooldown
+// everywhere a question gets picked — ordinary Practice/recommendation
+// selection too, not just this screen's own Smart Patch session.
+// ─────────────────────────────────────────────
+
+let mistakePatchesLoaded = false;
+
+/** Loaded once per engine connection (ensureContentLoaded() calls this unconditionally, so Practice/CBT/recommendations see real cooldown data even if the student never opens Review first) — same idempotent-cache shape as ensureBookmarksLoaded(). */
+async function ensureMistakePatchesLoaded(): Promise<void> {
+  if (mistakePatchesLoaded) return;
+  const kairo = getEngine();
+  if (!kairo) return;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('mistake_patches')
+    .select('question_id, verify_after')
+    .eq('student_id', kairo.profile.studentId);
+  if (error) throw error;
+  for (const row of (data || []) as { question_id: string; verify_after: string }[]) {
+    kairo.setMistakePatch(row.question_id, new Date(row.verify_after).getTime());
+  }
+  mistakePatchesLoaded = true;
+}
+
+/**
+ * getPendingRepairsCount()/getWeakTopicsForReview() below both read live
+ * `graph.nodes` state (attemptHistory, retentionState) that only exists
+ * once the relevant subjects' content has actually been loaded this
+ * session — true of every Review computation already, not new here, but
+ * Review is the one screen a student can land on *first* (no prior
+ * Practice/CBT visit to have triggered ensureContentLoaded() already).
+ * Call once on mount before reading anything below.
+ */
+export async function loadReviewData(): Promise<void> {
+  await ensureContentLoaded([]);
+}
+
+/** Batch 1's Hero Metric — Fading concepts + mistakes past their 72h cooling period. 0 until loadReviewData() (or any other ensureContentLoaded() call this session) has resolved. */
+export function getPendingRepairsCount(): number {
+  const kairo = getEngine();
+  return kairo ? kairo.getPendingRepairsCount() : 0;
+}
+
+export interface MistakeTicket {
+  questionId: string;
+  conceptId: string | null;
+  subject: string | null;
+  topic: string | null;
+  stem: string;
+  options: { label: string; text: string }[];
+  correctOption: string;
+  explanation: string | null;
+  missedAt: number;
+}
+
+/** Batch 2's Triage Inbox — real question data (for the expand-to-explain ticket) for every mistake missed in the last 72h that's still cooling down and hasn't been acknowledged yet. */
+export async function getRecentMistakes(limit = 20): Promise<MistakeTicket[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureMistakePatchesLoaded();
+  const ledger: { questionId: string; conceptId: string | null; subject: string | null; topic: string | null; missedAt: number }[] = kairo.getRecentMistakes(limit);
+  if (ledger.length === 0) return [];
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('questions')
+    .select('id, stem, options, correct_option, explanation')
+    .in('id', ledger.map((m) => m.questionId));
+  if (error) throw error;
+  const byId = new Map((data || []).map((row: Record<string, unknown>) => [row.id, row]));
+  // The Supabase `.in()` fetch above doesn't preserve order — ledger is
+  // already most-recently-missed first, so that's what drives the result order.
+  return ledger
+    .map((m) => {
+      const row = byId.get(m.questionId);
+      if (!row) return null;
+      return {
+        questionId: m.questionId,
+        conceptId: m.conceptId,
+        subject: m.subject,
+        topic: m.topic,
+        stem: row.stem as string,
+        options: row.options as { label: string; text: string }[],
+        correctOption: row.correct_option as string,
+        explanation: row.explanation as string | null,
+        missedAt: m.missedAt,
+      };
+    })
+    .filter((t): t is MistakeTicket => !!t);
+}
+
+/**
+ * Batch 2's "I Understand" — resets this question's Spaced Sandbox clock to
+ * a full fresh 72h from right now (overriding the natural answered_at-
+ * derived cooldown), and removes it from the Triage Inbox immediately.
+ * Written directly to Supabase (not the offline sync queue) — a single
+ * small, low-frequency row, same precedent as bookmarks/reportQuestion.
+ */
+export async function markMistakeUnderstood(questionId: string, conceptId: string | null): Promise<void> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const verifyAfter = Date.now() + 72 * 60 * 60 * 1000;
+  const supabase = getSupabase();
+  const { error } = await supabase.schema('kairo').from('mistake_patches').upsert({
+    student_id: kairo.profile.studentId,
+    question_id: questionId,
+    concept_id: conceptId,
+    verify_after: new Date(verifyAfter).toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+  kairo.setMistakePatch(questionId, verifyAfter);
+}
+
+/** Batch 3's Weak Topics — the existing failure-rate ranking, narrowed to the Review Tab's own "< 50% accuracy" bar (kairo.getWeakTopics() itself stays unfiltered — Practice's own "Weak Areas" boost still wants every topic with any real miss, not just this screen's stricter cut). */
+export interface WeakTopicForReview extends WeakTopicSummary {
+  drillCategory: 'calculation' | 'theory';
+}
+
+export function getWeakTopicsForReview(limit = 10): WeakTopicForReview[] {
+  const kairo = getEngine();
+  if (!kairo) return [];
+  return kairo.getWeakTopics({ subject: null, limit: 50 })
+    .filter((t: Engine) => t.failureRate > 0.5)
+    .slice(0, limit)
+    .map((t: Engine) => ({
+      subject: t.subject,
+      topic: t.topic,
+      incorrectAttempts: t.incorrectAttempts,
+      failureRate: t.failureRate,
+      drillCategory: kairo.classifyTopicCategory(t.subject, t.topic) as 'calculation' | 'theory',
+    }));
+}
+
+/**
+ * Batch 1's Smart Patch — a real timed CBT-style session built from exactly
+ * the ripe repairs (CBTExamMode.startFromQuestionIds(), not buildPaper()'s
+ * random pull). Ensures every relevant subject's content is loaded first,
+ * same as any other session start — the ledger's question ids may span
+ * subjects the current engine instance hasn't touched yet this session.
+ */
+export async function startSmartPatchSession(): Promise<{ totalTimeMin: number; startTime: number; paper: CbtPaperQuestion[] } | null> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureMistakePatchesLoaded();
+  // A ripe repair (or a fading concept needing a fresh question) can be in
+  // any subject the student has ever touched, not just their current
+  // target subjects — loading every seeded subject (ensureContentLoaded's
+  // own fallback for an unscoped request, same as a mixed/weak Practice
+  // session) before building the id list, so both the fading-concept
+  // lookups inside buildSmartPatchQuestionIds() and the resolution below
+  // see real question data instead of an empty questionGraph.
+  await ensureContentLoaded([]);
+  const ids: string[] = kairo.buildSmartPatchQuestionIds(20);
+  if (ids.length === 0) return null;
+  const subjects = Array.from(new Set(ids.map((id: string) => kairo.getQuestionById(id)?.subject).filter(Boolean))) as string[];
+  const totalTimeMin = cbtProportionalTimeMin(ids.length);
+  const started = kairo.cbt.startFromQuestionIds(ids, { subjects, totalTimeMin });
+  if (!started) return null;
+  const paper: CbtPaperQuestion[] = started.paper.map((q: { globalIndex: number; subject: string; questionId: string; text: string; options: { label: string; text: string }[]; imageUrl?: string | null }) => ({
+    ...q,
+    options: q.options.map((o) => ({ label: o.label, text: o.text })),
+  }));
+  return { totalTimeMin, startTime: started.startTime, paper };
 }
 
 // ─────────────────────────────────────────────

@@ -146,19 +146,15 @@ export class CBTExamMode {
   }
 
   /**
-   * Rebuild examData directly from a previously-persisted client snapshot
-   * instead of buildPaper()'s random pull — Anti-Refresh Wipeout fix
-   * (Batch 1). A page reload wipes this whole engine instance, so a
-   * resumed attempt must land on the *exact same* questions in the exact
-   * same order the interrupted attempt was already using (buildPaper()
-   * would otherwise silently hand back a different random paper), with
-   * whatever answers/flags/timing it had already recorded replayed on top.
-   * `questionIds` must be looked up in original paper order — if any one
-   * of them no longer resolves (its subject's content never got reloaded,
-   * say), this aborts and returns null rather than resuming into a paper
-   * with a gap that would desync every index-keyed answer/flag from here on.
+   * Resolves an ordered question-id list into a real paper array (globalIndex/
+   * subjectIndex/studentAnswer/flagged/visited alongside each question's own
+   * flattened fields) — shared by resumeFromSnapshot() (replaying prior
+   * answers/flags onto it) and startFromQuestionIds() (a genuinely fresh
+   * start, nothing to replay). Returns null if any id fails to resolve —
+   * a partial paper would desync every index-keyed answer/flag from that
+   * gap onward, so callers get a clean "couldn't build this" instead.
    */
-  resumeFromSnapshot({ subjects, totalTimeMin, startTime, questionIds, answers = {}, flaggedIndices = [], subjectTimes = {}, currentIndex = 0 }) {
+  _resolvePaperFromIds(questionIds, { answers = {}, flaggedIndices = [] } = {}) {
     const paper = [];
     const subjectCounters = {};
     for (let i = 0; i < questionIds.length; i++) {
@@ -177,7 +173,33 @@ export class CBTExamMode {
         visited: false
       });
     }
-    if (paper.length === 0) return null;
+    return paper.length > 0 ? paper : null;
+  }
+
+  /** The client-facing slice of a paper — same shape buildPaper() returns, so every CBT paper (fresh, resumed, or a Smart Patch) looks identical to the UI. */
+  _clientPaper(paper) {
+    return paper.map(q => ({
+      globalIndex: q.globalIndex,
+      subject: q.subject,
+      questionId: q.questionId || q.id,
+      text: q.text,
+      options: q.options,
+      imageUrl: q.imageUrl || null
+    }));
+  }
+
+  /**
+   * Rebuild examData directly from a previously-persisted client snapshot
+   * instead of buildPaper()'s random pull — Anti-Refresh Wipeout fix
+   * (Batch 1). A page reload wipes this whole engine instance, so a
+   * resumed attempt must land on the *exact same* questions in the exact
+   * same order the interrupted attempt was already using (buildPaper()
+   * would otherwise silently hand back a different random paper), with
+   * whatever answers/flags/timing it had already recorded replayed on top.
+   */
+  resumeFromSnapshot({ subjects, totalTimeMin, startTime, questionIds, answers = {}, flaggedIndices = [], subjectTimes = {}, currentIndex = 0 }) {
+    const paper = this._resolvePaperFromIds(questionIds, { answers, flaggedIndices });
+    if (!paper) return null;
 
     this.config = { ...this.config, subjects, totalTimeMin };
     this.examData = {
@@ -191,18 +213,38 @@ export class CBTExamMode {
     };
     this.state = 'running';
 
-    return {
-      totalQuestions: paper.length,
-      subjects,
-      paper: paper.map(q => ({
-        globalIndex: q.globalIndex,
-        subject: q.subject,
-        questionId: q.questionId || q.id,
-        text: q.text,
-        options: q.options,
-        imageUrl: q.imageUrl || null
-      }))
+    return { totalQuestions: paper.length, subjects, paper: this._clientPaper(paper) };
+  }
+
+  /**
+   * Review Tab's Smart Patch (Batch 1) — a real timed CBT-style session
+   * built from an explicit, pre-selected question list (every ripe repair
+   * ReviewModule.buildSmartPatchQuestionIds() found) rather than buildPaper()'s
+   * random subject-scoped pull. A genuinely fresh start (empty answers/
+   * flags, real Date.now() start), reusing the same paper-resolution and
+   * client-facing shape every other CBT paper already uses so CbtExam.tsx
+   * needs no Smart-Patch-specific rendering path at all.
+   */
+  startFromQuestionIds(questionIds, { subjects, totalTimeMin }) {
+    const paper = this._resolvePaperFromIds(questionIds);
+    if (!paper) return null;
+
+    const subjectTimes = {};
+    for (const s of subjects) subjectTimes[s] = 0;
+
+    this.config = { ...this.config, subjects, totalTimeMin };
+    this.examData = {
+      paper,
+      startTime: Date.now(),
+      endTime: null,
+      currentIndex: 0,
+      answers: {},
+      subjectTimes,
+      flagged: new Set()
     };
+    this.state = 'running';
+
+    return { totalQuestions: paper.length, subjects, totalTimeMin, startTime: this.examData.startTime, paper: this._clientPaper(paper) };
   }
 
   start() {

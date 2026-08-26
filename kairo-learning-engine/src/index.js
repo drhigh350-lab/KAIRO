@@ -32,7 +32,7 @@ import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.
 import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
 import { conceptId, shuffleArray, isCalculationQuestion } from "./utils/helpers.js";
-import { KairoPointsAwards } from "./utils/constants.js";
+import { KairoPointsAwards, ReviewConstants } from "./utils/constants.js";
 
 // Practice Modes
 import { RapidFireEngine } from "./practice/RapidFireEngine.js";
@@ -115,6 +115,14 @@ export class KairoEngine {
 
     this.currentSession = null;
     this.sessionStartTime = null;
+
+    // Spaced Sandbox protocol — questionId -> verifyAfter (ms), an explicit
+    // "I Understand" acknowledgment that overrides the natural
+    // answered_at-derived cooldown ReviewModule computes for every other
+    // missed question. Not profile-bound (not part of _rebuildProfileBoundSubsystems),
+    // not persisted locally — hydrated fresh from kairo.mistake_patches on
+    // each connect, same as bookmarks.
+    this.mistakePatches = new Map();
 
     // Hydration state — a caller gating access on auth/onboarding status
     // (e.g. a route guard) needs a safe thing to await: `ready` stays
@@ -476,6 +484,32 @@ export class KairoEngine {
   }
 
   /**
+   * Spaced Sandbox protocol — when a specific question is next eligible for
+   * retest. An explicit "I Understand" acknowledgment (this.mistakePatches)
+   * always wins; absent one, a question whose most recent attempt on *that
+   * exact question* was wrong gets the same minimum cooldown by default,
+   * counted from the wrong answer itself — every mistake is covered, not
+   * just ones a student has actively engaged with. Returns 0 (always ripe)
+   * for a question that's never been attempted or was last answered correctly.
+   */
+  _questionCooldownUntil(questionId, concept) {
+    let lastAttempt = null;
+    for (const a of concept?.attemptHistory || []) {
+      if (a.questionId === questionId && (!lastAttempt || a.timestamp > lastAttempt.timestamp)) lastAttempt = a;
+    }
+    if (!lastAttempt || lastAttempt.correct) return 0;
+    const natural = lastAttempt.timestamp + ReviewConstants.MISTAKE_COOLDOWN_MS;
+    const explicit = this.mistakePatches.get(questionId);
+    // An "I Understand" ack from *before* this exact wrong attempt (a stale
+    // patch left over from an earlier miss on the same question, already
+    // retested and missed again since) must never let a brand-new mistake
+    // skip its own cooldown — max() keeps whichever is genuinely later,
+    // and an ack made *after* this attempt (the normal case) is naturally
+    // later than `natural` anyway, so this never shortens a real ack either.
+    return explicit != null ? Math.max(explicit, natural) : natural;
+  }
+
+  /**
    * Pick a live question that tests the given concept — the missing link
    * between a session plan (a list of concept IDs) and something a
    * consumer can actually render. Returns the flat consumer shape (see
@@ -513,7 +547,17 @@ export class KairoEngine {
     const concept = this.graph.getConcept(cid);
     const attemptedIds = new Set((concept?.attemptHistory || []).map(a => a.questionId));
     const unseen = candidates.filter(q => !attemptedIds.has(q.id));
-    const pool = unseen.length > 0 ? unseen : candidates;
+    let pool = unseen.length > 0 ? unseen : candidates;
+
+    // Spaced Sandbox protocol: a question still cooling down from a recent
+    // miss never gets handed back through ordinary recommendation/practice
+    // selection either, not just the dedicated Smart Patch session — same
+    // fallback-if-it-empties-the-pool philosophy as the difficulty window
+    // above, so a concept with only one real question (which happens to be
+    // cooling down) still gets *a* question rather than none at all.
+    const now = Date.now();
+    const ripe = pool.filter(q => this._questionCooldownUntil(q.id, concept) <= now);
+    if (ripe.length > 0) pool = ripe;
 
     // Shuffle rather than a single Math.random() index pick — this pool
     // backs every 10-slot recommendation/practice queue, so it must be
@@ -1405,6 +1449,45 @@ export class KairoEngine {
 
     ranked.sort((a, b) => b.failureRate - a.failureRate || b.incorrectAttempts - a.incorrectAttempts);
     return ranked.slice(0, limit);
+  }
+
+  /**
+   * Review's Weak Topics context-aware CTA — the same regex heuristic
+   * buildHeuristicDrillQueue() already uses to tell a calculation question
+   * from a theory one, majority-voted across every live question actually
+   * seeded for this topic. Defaults to 'theory' for a topic with no live
+   * questions loaded yet rather than claiming a false split.
+   */
+  classifyTopicCategory(subject, topic) {
+    const questions = Array.from(this.questionGraph.questions.values())
+      .filter(q => q.subject === subject && q.topic === topic && q.lifecycleState === 'live');
+    if (questions.length === 0) return 'theory';
+    const calcCount = questions.filter(q => isCalculationQuestion(q.stem)).length;
+    return calcCount / questions.length >= 0.4 ? 'calculation' : 'theory';
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SPACED SANDBOX — Review Tab's mistake retest cooldown (Batch 2)
+  // ═══════════════════════════════════════════════════════════════
+
+  /** In-memory only — the caller (kairo-app) persists the real row to kairo.mistake_patches and calls this afterward to keep live question selection in sync without a full resync. */
+  setMistakePatch(questionId, verifyAfterMs) {
+    this.mistakePatches.set(questionId, verifyAfterMs);
+  }
+
+  /** Batch 1's Hero Metric — Fading concepts + ripe (cooldown-elapsed) mistakes. */
+  getPendingRepairsCount() {
+    return this.review.getPendingRepairsCount();
+  }
+
+  /** Batch 1's Smart Patch — question ids for every ripe repair, ready to hand straight to a CBT-style session builder. */
+  buildSmartPatchQuestionIds(limit = 20) {
+    return this.review.buildSmartPatchQuestionIds(limit);
+  }
+
+  /** Batch 2's Triage Inbox — full ledger entries for mistakes still cooling down (missed in the last 72h, not yet acknowledged). */
+  getRecentMistakes(limit = 20) {
+    return this.review.getRecentMistakes(limit);
   }
 
   exportState() {

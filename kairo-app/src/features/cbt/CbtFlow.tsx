@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ExamSetup } from './ExamSetup';
 import { ExamInstructions } from './ExamInstructions';
 import { CbtExam } from './CbtExam';
 import { CbtSummary, type CbtResults } from './CbtSummary';
 import { CbtReview } from './CbtReview';
 import { CbtHistory } from './CbtHistory';
-import { startCbtExam, finishCbtExam, resumeCbtExam, getEngine, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
+import { startCbtExam, finishCbtExam, resumeCbtExam, startSmartPatchSession, getEngine, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
 import { getCbtSessionSnapshot, clearSessionSnapshot } from '../../lib/sessionResume';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
@@ -33,12 +33,20 @@ const SCREEN_DEPTH: Record<Screen, number> = {
 /** Controller for CBT Exam Mode: setup -> instructions -> exam -> summary -> review, driven by the real kairo.cbt (CBTExamMode) instance. */
 export function CbtFlow() {
   const navigate = useNavigate();
+  const location = useLocation();
   const studentId = getEngine()?.profile?.studentId;
+  // Review Tab's Smart Patch (Batch 1) — arrives with no picker screens at
+  // all, straight into a live session built from exactly the ripe repairs
+  // Review already computed. Read once via ref, same reasoning as every
+  // other Practice/CBT auto-start entry (PracticeFlow's anchorConceptIdRef,
+  // verifyStateRef, etc.) — only the initial mount's auto-start needs it.
+  const isSmartPatchRef = useRef((location.state as { entry?: string } | null)?.entry === 'smartPatch');
   // Anti-Refresh Wipeout (Batch 1): a snapshot from an interrupted exam
   // means this mount should skip straight to resuming it — read
   // synchronously (localStorage) so the very first render already lands on
-  // 'starting' instead of flashing the setup screen first.
-  const [screen, setScreen] = useState<Screen>(() => (getCbtSessionSnapshot(studentId) ? 'starting' : 'setup'));
+  // 'starting' instead of flashing the setup screen first. A fresh Smart
+  // Patch entry (no snapshot yet) does the same, for the same reason.
+  const [screen, setScreen] = useState<Screen>(() => (getCbtSessionSnapshot(studentId) || isSmartPatchRef.current ? 'starting' : 'setup'));
   // Persistent bottom nav (AppTabs) hides for the live exam itself and the
   // brief 'starting' transition into it — both already treat a casual exit
   // as unavailable (see useBackIntercept below); every other CBT screen
@@ -59,35 +67,59 @@ export function CbtFlow() {
   // Anti-Refresh Wipeout (Batch 1): rebuild the live exam from the
   // snapshot rather than silently discarding it and sending the student
   // back to setup — same questions, same order, same answers/flags/timer.
+  // A still-active exam (Smart Patch included, since it persists through
+  // the exact same CBT snapshot mechanism) always wins over starting a new
+  // Smart Patch — same "one active session slot" precedent as Practice.
   useEffect(() => {
     const snapshot = getCbtSessionSnapshot(studentId);
-    if (!snapshot) return;
-    resumeCbtExam({
-      subjects: snapshot.subjects,
-      totalTimeMin: snapshot.totalTimeMin,
-      startTime: snapshot.startTime,
-      questionIds: snapshot.paper.map((p) => p.questionId),
-      answers: snapshot.answers,
-      flaggedIndices: snapshot.flaggedIndices,
-      subjectTimes: snapshot.subjectTimes,
-      current: snapshot.current,
-    })
-      .then((resumed) => {
-        if (!resumed) {
+    if (snapshot) {
+      resumeCbtExam({
+        subjects: snapshot.subjects,
+        totalTimeMin: snapshot.totalTimeMin,
+        startTime: snapshot.startTime,
+        questionIds: snapshot.paper.map((p) => p.questionId),
+        answers: snapshot.answers,
+        flaggedIndices: snapshot.flaggedIndices,
+        subjectTimes: snapshot.subjectTimes,
+        current: snapshot.current,
+      })
+        .then((resumed) => {
+          if (!resumed) {
+            clearSessionSnapshot(studentId, 'cbt');
+            setScreen('setup');
+            return;
+          }
+          setPaper(resumed.paper);
+          setTotalTimeMin(resumed.totalTimeMin);
+          setStartTime(resumed.startTime);
+          setResumeState({ answers: snapshot.answers, flagged: Object.fromEntries(snapshot.flaggedIndices.map((i) => [i, true])), current: snapshot.current });
+          setScreen('exam');
+        })
+        .catch(() => {
           clearSessionSnapshot(studentId, 'cbt');
           setScreen('setup');
-          return;
-        }
-        setPaper(resumed.paper);
-        setTotalTimeMin(resumed.totalTimeMin);
-        setStartTime(resumed.startTime);
-        setResumeState({ answers: snapshot.answers, flagged: Object.fromEntries(snapshot.flaggedIndices.map((i) => [i, true])), current: snapshot.current });
-        setScreen('exam');
-      })
-      .catch(() => {
-        clearSessionSnapshot(studentId, 'cbt');
-        setScreen('setup');
-      });
+        });
+      return;
+    }
+    if (isSmartPatchRef.current) {
+      startSmartPatchSession()
+        .then((started) => {
+          if (!started) {
+            setStartError("Nothing's ripe for a Smart Patch right now — check back later.");
+            setScreen('setup');
+            return;
+          }
+          setPaper(started.paper);
+          setTotalTimeMin(started.totalTimeMin);
+          setStartTime(started.startTime);
+          setResumeState(null);
+          setScreen('exam');
+        })
+        .catch((err) => {
+          setStartError(err instanceof Error ? err.message : 'Could not start your Smart Patch session.');
+          setScreen('setup');
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -95,7 +127,11 @@ export function CbtFlow() {
     setCustomSubjects((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
   }
 
-  const toHome = () => navigate('/home');
+  // A Smart Patch entry came from Review — exiting (a setup-time failure,
+  // or quitting the live session) belongs back there, not the generic
+  // Home tab, so the student lands next to the Pending Repairs count they
+  // were just acting on.
+  const toHome = () => navigate(isSmartPatchRef.current ? '/review' : '/home');
   // CBT is inherently a non-recommendation session type — Batch 4's Streak
   // Savior always applies to its Summary screen's "back to Home" (button or
   // physical back button below), whether or not today's real recommendation
