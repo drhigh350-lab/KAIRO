@@ -2781,6 +2781,74 @@ await test('loadContentCatalog() populates engine.graph and engine.questionGraph
   assertEqual(q.correctOption, 'A', 'getQuestionForConcept should carry correctOption through untranslated');
 });
 
+await test('loadContentCatalog() rehydrates a brand-new concept\'s real attemptHistory/retentionState from Supabase, without ever calling sync() — fixing a bug where Active Traps/Weak Topics showed empty after signing back in on any device', async () => {
+  const conceptRow = { id: 'chem_c1', name: 'Molarity', subject: 'Chemistry', topic: 'Molarity', subtopic: null, difficulty_weight: 1.0, dependency_ids: [], question_pool_ids: [] };
+  const questionRow = {
+    id: 'chem_q1', subject: 'Chemistry', topic: 'Molarity', subtopic: null,
+    learning_objective: 'Understand Molarity well enough to apply it, not just recall it.',
+    concepts_tested: [{ conceptId: 'chem_c1', weight: 1.0 }], prerequisite_concepts: [],
+    difficulty_rating: 2, cognitive_level: 'recall', estimated_solving_time_sec: 30,
+    reading_load: 'low', calculation_load: 'none', distractors: [], skills_assessed: [],
+    source: 'techmed_authored', year: null, exam_body: 'JAMB', related_question_ids: [],
+    stem: 'What is the molarity of a solution with 2 moles of solute in 1 liter?',
+    options: [{ label: 'A', text: '2 M', isCorrect: true }, { label: 'B', text: '1 M', isCorrect: false }],
+    correct_option: 'A', explanation: 'Molarity = moles of solute / liters of solution = 2/1 = 2 M.',
+    lifecycle_state: 'live', empirical_stats: null, distractor_rationale: null
+  };
+  const remoteMissedAt = Date.now() - 10 * 24 * 60 * 60 * 1000; // 10 days ago — long past the 72h Spaced Sandbox cooldown, so it should already be "ripe"
+  const conceptStateRow = {
+    student_id: 'rehydrate_test', concept_id: 'chem_c1', retention_state: 'fading',
+    confidence_score: 0.3, last_seen_at: new Date(remoteMissedAt).toISOString(),
+    decay_estimate: 0.6, next_review_estimate: null, error_pattern_tags: {},
+    reinforced_cycles: 0, personal_decay_rate: 0.1
+  };
+  const attemptRow = {
+    student_id: 'rehydrate_test', concept_id: 'chem_c1', question_id: 'chem_q1',
+    correct: false, response_time_ms: 8000, answered_at: new Date(remoteMissedAt).toISOString(),
+    error_tag: 'careless', question_difficulty: 2
+  };
+
+  const mockClient = {
+    schema() {
+      return {
+        from(table) {
+          const builder = {
+            select() { return builder; }, eq() { return builder; }, in() { return builder; }, order() { return builder; },
+            then(resolve) {
+              if (table === 'concepts') return resolve({ data: [conceptRow], error: null });
+              if (table === 'questions') return resolve({ data: [questionRow], error: null });
+              if (table === 'concept_states') return resolve({ data: [conceptStateRow], error: null });
+              if (table === 'attempts') return resolve({ data: [attemptRow], error: null });
+              return resolve({ data: [], error: null });
+            }
+          };
+          return builder;
+        }
+      };
+    }
+  };
+
+  // A brand-new engine with no prior sync() call at all — simulates the
+  // exact post-sign-in-on-a-new-device state this bug affected.
+  const freshEngine = new KairoEngine({ studentId: 'rehydrate_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: ['Chemistry'] });
+  await freshEngine.init();
+  const adapter = new SupabaseSyncAdapter(mockClient, freshEngine.store);
+  freshEngine.sync.attachRemote(adapter, freshEngine);
+
+  await freshEngine.loadContentCatalog({ subjects: ['Chemistry'] });
+
+  const node = freshEngine.graph.getConcept('chem_c1');
+  assert(node, 'loadContentCatalog should still add the concept itself');
+  assertEqual(node.retentionState, 'fading', 'the concept\'s real remote retentionState should be applied immediately, not left at the fresh-node default of unseen — this is what makes it show up under Weak Topics');
+  assertEqual(node.attemptHistory.length, 1, 'the concept\'s real remote attempt should be merged into attemptHistory immediately, without a separate sync() call ever running');
+  assertEqual(node.attemptHistory[0].questionId, 'chem_q1', 'the rehydrated attempt should be the real remote one');
+  assertEqual(node.attemptHistory[0].correct, false, 'the rehydrated attempt should carry its real correct/incorrect outcome through');
+
+  const ledger = freshEngine.getRecentMistakes(20);
+  assert(ledger.length === 0, 'a mistake missed 10 days ago is past its 72h cooldown, so it belongs in Pending Repairs, not the still-cooling-down Recent Mistakes/Active Traps inbox');
+  assertEqual(freshEngine.getPendingRepairsCount(), 2, 'getPendingRepairsCount() (the Review tab\'s Hero Metric — fading concepts + ripe mistakes counted separately) should count both the rehydrated fading concept and its ripe mistake immediately after loadContentCatalog(), proving Weak Topics/Active Traps reflect real Supabase history right after sign-in on a new device, not just after a later sync()');
+});
+
 await test('engine.settings is reconstructed on init() reload — saved preferences are not silently ignored', async () => {
   const sessionA = new KairoEngine({ studentId: 'settings_reload_test', name: 'Test', examDate: Date.now() + 90 * 24 * 60 * 60 * 1000, targetSubjects: [] });
   await sessionA.init();
