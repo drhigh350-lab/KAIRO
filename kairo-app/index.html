@@ -2,9 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/assets/kairo-mark.png" />
+    <link rel="icon" type="image/png" href="/assets/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Kairo</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+
+    <!-- iOS "Add to Home Screen" — Apple never reads manifest.json, so its
+         install affordances need their own meta tags/icon link. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Kairo" />
+    <link rel="apple-touch-icon" href="/assets/icon-192.png" />
   </head>
   <body>
     <div id="root"></div>

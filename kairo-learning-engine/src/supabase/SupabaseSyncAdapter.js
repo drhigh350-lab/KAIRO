@@ -64,13 +64,29 @@ export class SupabaseSyncAdapter {
     return data.session;
   }
 
-  async signUp(email, password, metadata = {}) {
+  /**
+   * `data.session` comes back null (not an error) whenever the project has
+   * "Confirm email" turned on — the account exists but can't sign in until
+   * the student clicks the link Supabase just sent. Callers must check
+   * `data.session` themselves rather than assuming signUp() = signed in.
+   */
+  async signUp(email, password, metadata = {}, { emailRedirectTo } = {}) {
     const { data, error } = await this.supabase.auth.signUp({
       email, password,
-      options: { data: metadata }
+      options: { data: metadata, ...(emailRedirectTo ? { emailRedirectTo } : {}) }
     });
     if (error) throw error;
     return data;
+  }
+
+  /** Re-sends the signup confirmation link — the only recovery path once the first one expires, is lost, or lands in spam. */
+  async resendSignUpConfirmation(email, { emailRedirectTo } = {}) {
+    const { error } = await this.supabase.auth.resend({
+      type: 'signup',
+      email,
+      ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
+    });
+    if (error) throw error;
   }
 
   async signOut() {

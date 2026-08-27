@@ -13,7 +13,7 @@ export function KaiMessage({ children, compact = false }: KaiMessageProps) {
         width: 36, height: 36, borderRadius: '50%', background: loaded ? 'var(--kairo-blue-100)' : undefined, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
       }}>
-        <img src="/assets/illustration-kai-mascot.png" alt="Kai" onLoad={() => setLoaded(true)} style={{ width: '160%', height: '160%', objectFit: 'cover', objectPosition: '20% 30%', opacity: loaded ? 1 : 0, transition: 'opacity var(--dur-base, 200ms)' }} />
+        <img src="/assets/kai-avatar.png" alt="Kai" onLoad={() => setLoaded(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: 'opacity var(--dur-base, 200ms)' }} />
       </div>
       <div style={{
         background: compact ? 'transparent' : 'var(--kairo-blue-100)', padding: compact ? 0 : '10px 14px',

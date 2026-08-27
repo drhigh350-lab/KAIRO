@@ -33,10 +33,10 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
     <div style={{ display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 18, padding: '64px 28px 40px' }}>
         <KairoWordmark tone="white" width={220} />
-        {/* The wordmark's own mask image already carries "Seize the moment" as
-            part of the brand lockup — restating it here read as the same line
-            twice in one glance (the same duplication Home's header consolidation
-            fixed). This just states what Kairo actually does. */}
+        {/* Splash already shows "Seize the Moment" once, right after this
+            wordmark, in the app's opening beat — this is a second, later
+            landing screen, so it states what Kairo actually does instead
+            of repeating the tagline. */}
         <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--dark-text-heading)', maxWidth: 300, lineHeight: 1.5 }}>
           Study smarter for your UTME — one question at a time.
         </div>

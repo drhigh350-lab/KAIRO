@@ -147,16 +147,43 @@ export interface SignUpArgs {
   password: string;
 }
 
-/** Creates a new Supabase Auth account, then connects a fresh KairoEngine to it. */
-export async function signUpAndConnect({ name, email, password }: SignUpArgs): Promise<Engine> {
+/** Where Supabase's confirmation-link email sends the browser back to. */
+function emailConfirmRedirect(): string {
+  return `${window.location.origin}/onboarding`;
+}
+
+/**
+ * Result of a sign-up attempt. With "Confirm email" active in Supabase,
+ * `signUp()` creates the account and sends the confirmation link but
+ * returns no session — there is nothing to connect the engine to yet, so
+ * the caller gets `{ needsEmailVerification: true }` instead of a
+ * ready-to-use Engine and must show a "check your inbox" state rather
+ * than proceeding into onboarding.
+ */
+export type SignUpResult = Engine | { needsEmailVerification: true; email: string };
+
+/** Creates a new Supabase Auth account, then connects a fresh KairoEngine to it — unless email confirmation is still pending. */
+export async function signUpAndConnect({ name, email, password }: SignUpArgs): Promise<SignUpResult> {
   const supabase = getSupabase();
   await clearStaleSession(supabase);
   const kairo = createEngine(name);
   await kairo.init();
   const adapter = new SupabaseSyncAdapter(supabase, kairo.store);
-  await adapter.signUp(email, password, { name });
+  const { session } = await adapter.signUp(email, password, { name }, { emailRedirectTo: emailConfirmRedirect() });
+  if (!session) {
+    engine = null;
+    return { needsEmailVerification: true, email };
+  }
   await kairo.connectSupabase(supabase, { email, password });
   return kairo;
+}
+
+/** Re-sends the signup confirmation link — the "Resend Link" CTA on the Check Your Inbox screen. */
+export async function resendSignUpConfirmation(email: string): Promise<void> {
+  const supabase = getSupabase();
+  // No local store needed — resend() never touches it, only auth.resend().
+  const adapter = new SupabaseSyncAdapter(supabase, null);
+  await adapter.resendSignUpConfirmation(email, { emailRedirectTo: emailConfirmRedirect() });
 }
 
 export interface SignInArgs {
@@ -230,6 +257,12 @@ export async function restoreSession(): Promise<boolean> {
   }
   engine = null;
   return false;
+}
+
+/** True when a sign-in attempt failed because the account exists but hasn't clicked its confirmation link yet — Supabase's stable error_code, not message-sniffing first. */
+export function isEmailNotConfirmed(err: unknown): boolean {
+  if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'email_not_confirmed') return true;
+  return /email not confirmed|confirm.*email/i.test(describeError(err));
 }
 
 function isAuthRejection(err: unknown): boolean {
@@ -2126,6 +2159,100 @@ export async function setLeaderboardOptIn(allowed: boolean): Promise<void> {
   if (!kairo) throw new Error('No active engine — sign in first.');
   kairo.comms.consent.setLeaderboardOptIn(allowed);
   await persistConsent(kairo);
+}
+
+// ─────────────────────────────────────────────
+// Web Push subscription (V1 architecture Batch 3) — the actual browser
+// PushManager subscription behind push consent above. grantChannelConsent
+// ('push')/revokeChannelConsent('push') only ever flip a consent flag on
+// kairo.students; neither one has ever created or removed a real
+// subscription, so there was previously no endpoint anywhere a server-side
+// sender could actually deliver to.
+// ─────────────────────────────────────────────
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const output = new Uint8Array(new ArrayBuffer(rawData.length));
+  for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i);
+  return output;
+}
+
+/**
+ * Registers this browser for Web Push and upserts the subscription into
+ * kairo.push_subscriptions (keyed on its unique `endpoint`, so a browser's
+ * periodic endpoint rotation re-subscribes cleanly instead of piling up
+ * dead rows). A no-op — not an error — wherever Push isn't supported
+ * (iOS Safari <16.4, no VITE_VAPID_PUBLIC_KEY configured) or no student is
+ * signed in yet, matching every other optional-browser-feature helper here.
+ */
+export async function subscribeToPushNotifications(): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+  if (!vapidPublicKey) return;
+  const kairo = getEngine();
+  if (!kairo?.profile?.studentId) return;
+
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+    });
+  }
+
+  const json = subscription.toJSON();
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
+
+  const supabase = getSupabase();
+  const { error } = await supabase.schema('kairo').from('push_subscriptions').upsert(
+    {
+      student_id: kairo.profile.studentId,
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+      user_agent: navigator.userAgent,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'endpoint' },
+  );
+  if (error) throw error;
+}
+
+export interface NotificationEmailPayload {
+  subject: string;
+  heading: string;
+  body: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  previewText?: string;
+}
+
+/**
+ * Triggers the notifications-email Edge Function (supabase/functions/
+ * notifications-email) — sends a branded Resend email, via a real React
+ * Email template, to the signed-in student's own account email. Always
+ * self-addressed: the function resolves the recipient from the caller's
+ * own JWT server-side, never from anything passed here.
+ */
+export async function sendNotificationEmail(payload: NotificationEmailPayload): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.functions.invoke('notifications-email', { body: payload });
+  if (error) throw error;
+}
+
+/** The other half of revoking push consent — tears down the real subscription, not just the local permission/consent flag. */
+export async function unsubscribeFromPushNotifications(): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = await registration?.pushManager.getSubscription();
+  if (!subscription) return;
+  const endpoint = subscription.endpoint;
+  await subscription.unsubscribe();
+  const supabase = getSupabase();
+  await supabase.schema('kairo').from('push_subscriptions').delete().eq('endpoint', endpoint);
 }
 
 // ─────────────────────────────────────────────

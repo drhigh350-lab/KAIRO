@@ -7,16 +7,36 @@ export interface KaiMarkProps {
   check?: boolean;
 }
 
+/**
+ * Kai's own portrait (the goat mascot, /assets/kai-avatar.png — same asset
+ * KaiPanel/KaiMessage/ProfileInsights already use) in a ringed circle,
+ * with an optional confirmation badge. Previously this rendered an
+ * abstract placeholder — a plain ring/disc/dot built from CSS, no actual
+ * likeness of Kai — across every auth/status interstitial (Sign In,
+ * Reset Password, Google callback, Account Ready, Check Your Inbox,
+ * Learn's lesson open/close). tone only ever arrives as 'white' in
+ * practice (this app has one dark theme throughout) but stays supported
+ * for the 'navy' case (used nowhere today).
+ */
 export function KaiMark({ size = 64, tone = 'navy', check = false }: KaiMarkProps) {
-  const ring = tone === 'white' ? 'rgba(255,255,255,0.55)' : 'var(--kairo-blue-500)';
-  const disc = tone === 'white' ? '#fff' : 'var(--kairo-navy-900)';
+  const ring = tone === 'white' ? 'rgba(255,255,255,0.35)' : 'var(--kairo-blue-500)';
   return (
     <div style={{ width: size, height: size, position: 'relative', flexShrink: 0 }}>
-      <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `2px solid ${ring}` }} />
-      <div style={{ position: 'absolute', width: '60%', height: '60%', top: '20%', left: '20%', borderRadius: '50%', background: disc, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {check && <svg width="46%" height="46%" viewBox="0 0 24 24" fill="none" stroke={tone === 'white' ? 'var(--kairo-navy-900)' : '#fff'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>}
+      <div style={{
+        width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden',
+        border: `2px solid ${ring}`, background: 'var(--dark-bg-elevated)',
+      }}>
+        <img src="/assets/kai-avatar.png" alt="Kai" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       </div>
-      <div style={{ position: 'absolute', width: '15%', height: '15%', top: '6%', right: '4%', borderRadius: '50%', background: 'var(--kairo-gold-500)' }} />
+      {check && (
+        <div style={{
+          position: 'absolute', width: '36%', height: '36%', bottom: '-3%', right: '-3%', borderRadius: '50%',
+          background: 'var(--dark-accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '2px solid var(--dark-bg-canvas)',
+        }}>
+          <svg width="58%" height="58%" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>
+        </div>
+      )}
     </div>
   );
 }

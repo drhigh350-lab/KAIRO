@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { LandingPage } from './LandingPage';
 import { SignIn } from './SignIn';
 import { SignUp } from './SignUp';
+import { CheckYourInbox } from './CheckYourInbox';
 import { AboutYou } from './AboutYou';
 import { DiagnosticIntro } from './DiagnosticIntro';
 import { DiagnosticQuiz } from './DiagnosticQuiz';
@@ -17,7 +18,7 @@ import {
 } from '../../lib/kairoEngine';
 import type { EngineFlatQuestion } from '../../lib/engineAdapter';
 
-type Screen = 'landing' | 'signin' | 'signup' | 'about' | 'ready' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'notifications';
+type Screen = 'landing' | 'signin' | 'signup' | 'checkInbox' | 'about' | 'ready' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'notifications';
 
 // segmented indicator covers Sign Up -> Account Ready
 const SEQ: Screen[] = ['signup', 'about', 'ready'];
@@ -32,6 +33,7 @@ export function OnboardingFlow() {
   const [screen, setScreen] = useState<Screen>(googleName ? 'about' : 'landing');
   const [history, setHistory] = useState<Screen[]>([]);
   const [data, setData] = useState<OnboardingData>({ name: googleName || '', email: '', examDate: null, course: null, subjects: [] });
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState('');
   const [diagnosticIntroStep, setDiagnosticIntroStep] = useState<OnboardingKaiStep>({});
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
@@ -131,6 +133,11 @@ export function OnboardingFlow() {
           go('about');
         }}
         onGoToSignUp={() => go('signup')}
+        onNeedsEmailVerification={(email) => {
+          setData((d) => ({ ...d, email }));
+          setPendingVerificationEmail(email);
+          go('checkInbox');
+        }}
       />
     );
   } else if (screen === 'signup') {
@@ -144,12 +151,19 @@ export function OnboardingFlow() {
           beginOnboarding(name);
           go('about');
         }}
+        onNeedsEmailVerification={(email) => {
+          setData((d) => ({ ...d, email }));
+          setPendingVerificationEmail(email);
+          go('checkInbox');
+        }}
         onGoToSignIn={(email) => {
           if (email) setData((d) => ({ ...d, email }));
           go('signin');
         }}
       />
     );
+  } else if (screen === 'checkInbox') {
+    body = <CheckYourInbox email={pendingVerificationEmail} onReturnToLogin={() => go('signin')} />;
   } else if (screen === 'about') {
     body = (
       <AboutYou
