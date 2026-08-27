@@ -7,9 +7,10 @@
 -- subscription, so there was no endpoint for any server-side sender to
 -- deliver to. This table is that missing subscription record: one row per
 -- browser/device subscription (a student signed in on two devices holds
--- two rows), upserted by lib/pushSubscription.ts whenever the student
--- opts in, and read by whatever server-side process actually sends a Web
--- Push message (out of scope here — this is the storage half only).
+-- two rows), upserted by subscribeToPushNotifications() in
+-- src/lib/kairoEngine.ts whenever the student opts in, and read by
+-- whatever server-side process actually sends a Web Push message (out of
+-- scope here — this is the storage half only).
 
 create table kairo.push_subscriptions (
   id uuid primary key default gen_random_uuid(),
