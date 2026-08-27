@@ -1,31 +1,54 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KairoWordmark } from '../../components';
+import { LandingPage } from '../onboarding/LandingPage';
 import { restoreSession, isOnboarded } from '../../lib/kairoEngine';
 
+/**
+ * The public "/" route. A returning, signed-in student gets the same
+ * brief branded moment as before, then lands straight in the app — but a
+ * signed-out visitor (including Google's crawler) now sees Kairo's real
+ * marketing content directly at this URL instead of a loading spinner
+ * that always redirects into /onboarding via JS. That redirect used to be
+ * the *only* way to ever reach LandingPage's content at all, which made
+ * "/" a dead end for both SEO and a plain, un-authenticated visit.
+ */
 export function Splash() {
   const navigate = useNavigate();
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    const minDelay = new Promise((resolve) => setTimeout(resolve, 1400));
-    Promise.all([minDelay, restoreSession().catch(() => false)]).then(([, restored]) => {
+    restoreSession().catch(() => false).then((restored) => {
       if (cancelled) return;
+      if (!restored) {
+        // Nothing to redirect into — show the real page immediately
+        // rather than holding a signed-out visitor (or a crawler) on a
+        // branded loading beat that was only ever meaningful pre-redirect.
+        setChecking(false);
+        return;
+      }
       // A restored session only means "authenticated" — a student who
       // signed up but never finished onboarding (no targetSubjects/
       // examDate/targetCourse set yet) restores successfully too, and
       // previously landed straight on a blank Home instead of picking
       // back up where they left off.
-      navigate(restored && isOnboarded() ? '/home' : '/onboarding', { replace: true });
+      const minDelay = new Promise((resolve) => setTimeout(resolve, 1400));
+      minDelay.then(() => {
+        if (!cancelled) navigate(isOnboarded() ? '/dashboard' : '/onboarding', { replace: true });
+      });
     });
     return () => {
       cancelled = true;
     };
   }, [navigate]);
 
+  if (!checking) {
+    return <LandingPage onGetStarted={() => navigate('/signup')} onSignIn={() => navigate('/login')} />;
+  }
+
   return (
     <div
-      onClick={() => navigate('/onboarding', { replace: true })}
       style={{
         flex: 1,
         display: 'flex',
@@ -34,7 +57,6 @@ export function Splash() {
         justifyContent: 'center',
         gap: 20,
         background: 'var(--dark-bg-canvas)',
-        cursor: 'pointer',
         position: 'relative',
         overflow: 'hidden',
       }}

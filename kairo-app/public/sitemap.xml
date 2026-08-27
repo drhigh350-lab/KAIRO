@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kairo is a Vite SPA (client-side React Router, no server-rendering
+  framework), so this is a plain static file rather than an app-router
+  sitemap.ts generator — Vite copies it into the build root as-is.
+
+  Deliberately lists only the routes that are genuinely public and return
+  real, indexable content for a signed-out visitor (verified directly —
+  "/" now renders LandingPage's real marketing content instead of a
+  redirect, see src/features/splash/Splash.tsx). Every authenticated
+  route (/dashboard, /practice, /review, /planner, /challenges, /profile,
+  etc.) is deliberately left out: Google would only ever see those
+  gated behind sign-in, which Search Console flags as a soft-404/blocked-
+  by-login rather than something worth indexing — see robots.txt's
+  Disallow list for the full set. /challenges is public-facing content
+  in a near-future release, not yet — add it here once that ships.
+
+  Update lastmod when a listed page's content meaningfully changes; there
+  is no build step wiring this to real dates automatically yet.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://kairo.techmedng.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://kairo.techmedng.com/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://kairo.techmedng.com/signup</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://kairo.techmedng.com/privacy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://kairo.techmedng.com/terms</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

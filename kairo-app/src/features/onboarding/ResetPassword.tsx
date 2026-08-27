@@ -46,8 +46,8 @@ export function ResetPasswordCallback() {
       await confirmPasswordReset(password);
       setDone(true);
       // OnboardingFlow's own boot check (restoreSession() + isOnboarded())
-      // takes it from here — straight home for an already-onboarded
-      // student, or the normal landing flow otherwise.
+      // takes it from here — straight to /dashboard for an already-onboarded
+      // student, or resuming profile setup otherwise.
       setTimeout(() => navigate('/onboarding', { replace: true }), 1400);
     } catch (err) {
       setError(describeError(err));
@@ -68,7 +68,7 @@ export function ResetPasswordCallback() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>This reset link is invalid or has expired.</div>
-        <button type="button" onClick={() => navigate('/onboarding', { replace: true })} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Sign In</button>
+        <button type="button" onClick={() => navigate('/login', { replace: true })} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Sign In</button>
       </div>
     );
   }

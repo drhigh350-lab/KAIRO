@@ -28,7 +28,7 @@ export function Profile() {
   async function handleSignOut() {
     setSigningOut(true);
     await signOutAndDisconnect();
-    navigate('/onboarding');
+    navigate('/login');
   }
 
   return (
