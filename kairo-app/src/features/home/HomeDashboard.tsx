@@ -150,7 +150,7 @@ export function HomeDashboard() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={{ fontSize: 16, color: 'var(--dark-text-heading)', fontWeight: 600 }}>{greeting()}, {firstName} 👋</div>
-          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginTop: 4 }}>Ready to start your learning journey?</div>
+          <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--dark-text-heading)', marginTop: 4 }}>Seize the moment.</div>
         </div>
         <FlameIndicator lit={hasCompletedTodaysRecommendation()} days={streakStatus?.momentum ?? 0} freezesAvailable={streakStatus?.freezesAvailable ?? 0} />
       </div>

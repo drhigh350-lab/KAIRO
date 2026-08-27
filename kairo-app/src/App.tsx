@@ -4,8 +4,12 @@ import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
 import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
+import { LoginPage } from './features/onboarding/LoginPage';
+import { SignupPage } from './features/onboarding/SignupPage';
 import { GoogleAuthCallback } from './features/onboarding/GoogleAuthCallback';
 import { ResetPasswordCallback } from './features/onboarding/ResetPassword';
+import { PrivacyPage } from './features/legal/PrivacyPage';
+import { TermsPage } from './features/legal/TermsPage';
 import { HomeDashboard } from './features/home/HomeDashboard';
 import { PracticeFlow } from './features/practice/PracticeFlow';
 import { CbtFlow } from './features/cbt/CbtFlow';
@@ -33,7 +37,7 @@ import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecomme
 // out"-looking screen even though their Supabase auth session was still
 // sitting in localStorage the whole time — this is what read as "my
 // progress reset" / "I have to sign in again" on every refresh.
-const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/profile', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior'];
+const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/review', '/profile', '/leaderboard', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior'];
 
 // Real multi-column desktop layouts exist only for these browsing/hub
 // screens (see AppShell's `wide` prop). Exact matches, not prefixes:
@@ -42,7 +46,7 @@ const ROUTES_NEEDING_RESTORE = ['/home', '/practice', '/cbt', '/review', '/profi
 // URL), so there's no way to tell them apart from the path alone — safer
 // to leave both at the narrow, focused width everywhere than to risk a
 // question screen rendering wide.
-const WIDE_ROUTES = ['/home', '/profile', '/review'];
+const WIDE_ROUTES = ['/home', '/dashboard', '/profile', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore(): boolean {
@@ -89,7 +93,10 @@ function BootScreen() {
  * pick up onboarding where they left off.
  */
 function RequireOnboarded() {
-  if (!getEngine() || !isOnboarded()) {
+  if (!getEngine()) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!isOnboarded()) {
     return <Navigate to="/onboarding" replace />;
   }
   return <Outlet />;
@@ -119,13 +126,29 @@ export default function App() {
       {ready ? (
         <Routes>
           <Route path="/" element={<Splash />} />
+          {/* Real, dedicated, indexable auth routes — Sign In/Sign Up used
+              to be internal screen states inside OnboardingFlow, reachable
+              only via /onboarding, which meant there was never a stable
+              /login or /signup URL of its own to deep-link, bookmark, or
+              list in the sitemap. */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/onboarding/google" element={<GoogleAuthCallback />} />
           <Route path="/onboarding/reset-password" element={<ResetPasswordCallback />} />
+          {/* Protected: the post-signup profile-setup flow only, not a
+              general-purpose auth gateway anymore (see OnboardingFlow's
+              own doc comment). */}
           <Route path="/onboarding/*" element={<OnboardingFlow />} />
 
           <Route element={<RequireOnboarded />}>
             <Route element={<AppTabs />}>
               <Route path="/home" element={<HomeDashboard />} />
+              {/* /dashboard is the canonical name going forward — /home stays
+                  live indefinitely as an alias (existing bookmarks, already-
+                  sent push/email deep links, nothing regresses). */}
+              <Route path="/dashboard" element={<HomeDashboard />} />
               <Route path="/practice/*" element={<PracticeFlow />} />
               <Route path="/cbt/*" element={<CbtFlow />} />
               <Route path="/review" element={<Review />} />
@@ -135,6 +158,10 @@ export default function App() {
             <Route path="/profile/edit" element={<EditProfile />} />
             <Route path="/profile/notifications" element={<NotificationSettings />} />
             <Route path="/profile/leaderboard" element={<Leaderboard />} />
+            {/* Top-level alias — same reasoning as /dashboard above; a
+                strategic section deserves a stable URL of its own instead
+                of only ever living nested under /profile. */}
+            <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/challenges/*" element={<ChallengesFlow />} />
             <Route path="/learn" element={<LearnHome />} />
             <Route path="/learn/:conceptId" element={<LearnLesson />} />

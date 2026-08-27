@@ -14,7 +14,7 @@ export function GoogleAuthCallback() {
         if (isNewStudent) {
           navigate('/onboarding', { replace: true, state: { googleName: name || 'there' } });
         } else {
-          navigate('/home', { replace: true });
+          navigate('/dashboard', { replace: true });
         }
       })
       .catch((err) => setError(describeError(err)));
@@ -26,7 +26,7 @@ export function GoogleAuthCallback() {
       {error ? (
         <>
           <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>{error}</div>
-          <button type="button" onClick={() => navigate('/onboarding', { replace: true })} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Sign In</button>
+          <button type="button" onClick={() => navigate('/login', { replace: true })} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Sign In</button>
         </>
       ) : (
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Finishing sign-in…</div>

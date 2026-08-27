@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LandingPage } from './LandingPage';
-import { SignIn } from './SignIn';
-import { SignUp } from './SignUp';
-import { CheckYourInbox } from './CheckYourInbox';
 import { AboutYou } from './AboutYou';
 import { DiagnosticIntro } from './DiagnosticIntro';
 import { DiagnosticQuiz } from './DiagnosticQuiz';
@@ -18,22 +14,32 @@ import {
 } from '../../lib/kairoEngine';
 import type { EngineFlatQuestion } from '../../lib/engineAdapter';
 
-type Screen = 'landing' | 'signin' | 'signup' | 'checkInbox' | 'about' | 'ready' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'notifications';
+type Screen = 'about' | 'ready' | 'diagnosticIntro' | 'diagnosticQuiz' | 'diagnosticResults' | 'notifications';
 
-// segmented indicator covers Sign Up -> Account Ready
-const SEQ: Screen[] = ['signup', 'about', 'ready'];
-
+/**
+ * The protected post-signup profile-setup flow (UTME subjects, target
+ * course, exam date, then the real diagnostic) — reached only from a
+ * fresh /signup or /login (Sign In / Sign Up now live at their own
+ * routes; see LoginPage.tsx/SignupPage.tsx), a first-time Google sign-in,
+ * or a legacy account that authenticated but never finished this. Never
+ * shown to a signed-out visitor — there's no profile-setup data to carry
+ * without a real account behind it.
+ */
 export function OnboardingFlow() {
   const navigate = useNavigate();
   const location = useLocation();
-  // GoogleAuthCallback already connected the engine and created the student row for a
-  // first-time Google sign-in — land straight on 'about' with the real Google name instead
-  // of re-showing intro/welcome/signup for someone who's already authenticated.
-  const googleName = (location.state as { googleName?: string } | null)?.googleName;
-  const [screen, setScreen] = useState<Screen>(googleName ? 'about' : 'landing');
+  const routerState = location.state as { googleName?: string; name?: string; email?: string } | null;
+  // GoogleAuthCallback, LoginPage, and SignupPage each already connected the
+  // engine (and, for Google's first-time case, called beginOnboarding())
+  // before navigating here — trust that and skip the restoreSession()
+  // re-check entirely for a fresh arrival, rather than reconnecting a
+  // second time and re-fetching the row we just wrote.
+  const googleName = routerState?.googleName;
+  const freshName = routerState?.name;
+  const freshEntry = !!googleName || !!freshName;
+  const [screen, setScreen] = useState<Screen>('about');
   const [history, setHistory] = useState<Screen[]>([]);
-  const [data, setData] = useState<OnboardingData>({ name: googleName || '', email: '', examDate: null, course: null, subjects: [] });
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState('');
+  const [data, setData] = useState<OnboardingData>({ name: googleName || freshName || '', email: routerState?.email || '', examDate: null, course: null, subjects: [] });
   const [diagnosticIntroStep, setDiagnosticIntroStep] = useState<OnboardingKaiStep>({});
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
@@ -41,13 +47,13 @@ export function OnboardingFlow() {
   const [diagnosticSummary, setDiagnosticSummary] = useState<{ total: number; correct: number; accuracy: number; message: string } | null>(null);
   const [diagnosticPointsEarned, setDiagnosticPointsEarned] = useState(0);
   const startedGoogleOnboarding = useRef(false);
-  // Landing here with a googleName means GoogleAuthCallback already
-  // decided this is a genuinely new student — nothing to restore/recheck.
-  // Any other arrival (a stale bookmark, back-navigation, or a direct
-  // link to /onboarding) might belong to an already signed-in, already
-  // onboarded student, so that has to be ruled out before showing the
-  // intro carousel again.
-  const [checkingExisting, setCheckingExisting] = useState(!googleName);
+  // A fresh arrival (Google/Login/Signup) means nothing to restore/recheck.
+  // Any other arrival (a stale bookmark, back-navigation, a direct link, or
+  // a real page refresh mid-flow) needs that ruled out first — it might
+  // belong to a signed-out visitor (no /onboarding for them at all — send
+  // them to /signup) or an already fully onboarded student (send them to
+  // /dashboard instead of showing this again).
+  const [checkingExisting, setCheckingExisting] = useState(!freshEntry);
 
   useEffect(() => {
     if (!googleName || startedGoogleOnboarding.current) return;
@@ -57,14 +63,31 @@ export function OnboardingFlow() {
   }, []);
 
   useEffect(() => {
-    if (googleName) return;
+    if (freshEntry) return;
     let cancelled = false;
     restoreSession().catch(() => false).then((restored) => {
       if (cancelled) return;
-      if (restored && isOnboarded()) {
-        navigate('/home', { replace: true });
+      if (!restored) {
+        navigate('/signup', { replace: true });
         return;
       }
+      if (isOnboarded()) {
+        navigate('/dashboard', { replace: true });
+        return;
+      }
+      // Signed in (a refresh mid-flow, or a legacy account) but not
+      // onboarded yet — exactly what this route is for. Seed `data` from
+      // whatever's actually saved on the account (survives a refresh;
+      // router state does not) rather than requiring a fresh navigation.
+      const profile = getEngine()?.profile;
+      setData((d) => ({
+        ...d,
+        name: profile?.name || d.name,
+        email: profile?.email || d.email,
+        course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : d.course,
+        examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : d.examDate,
+        subjects: profile?.targetSubjects?.length ? profile.targetSubjects : d.subjects,
+      }));
       setCheckingExisting(false);
     });
     return () => {
@@ -81,90 +104,33 @@ export function OnboardingFlow() {
     setHistory((h) => {
       const n = [...h];
       const prev = n.pop();
-      if (prev) setScreen(prev);
-      else if (googleName) navigate('/home', { replace: true });
+      if (prev) {
+        setScreen(prev);
+      } else if (googleName) {
+        // Nothing earlier in this flow — Google's first-time entry has no
+        // signup form of its own to return to.
+        navigate('/dashboard', { replace: true });
+      } else {
+        // The account already exists by this point (signUpAndConnect()
+        // already ran) — this is "let me reconsider", not a real second
+        // signup attempt. SignUp's own isAlreadyRegistered() handling
+        // covers the edge case of resubmitting the same email anyway.
+        navigate('/signup');
+      }
       return n;
     });
   }
 
-  const total = SEQ.length;
-  const stepIndex = SEQ.indexOf(screen) + 1;
+  const total = 3;
+  // Step 1 is /signup's own screen — this flow only ever renders steps 2-3.
+  const stepIndex = screen === 'about' ? 2 : screen === 'ready' ? 3 : 0;
 
   if (checkingExisting) {
     return <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }} />;
   }
 
   let body: ReactNode = null;
-  if (screen === 'landing') {
-    body = <LandingPage onGetStarted={() => go('signup')} onSignIn={() => go('signin')} />;
-  } else if (screen === 'signin') {
-    body = (
-      <SignIn
-        onBack={back}
-        initialEmail={data.email}
-        onSignedIn={() => {
-          const profile = getEngine()?.profile;
-          if (isOnboarded()) {
-            navigate('/home', {
-              state: {
-                name: profile?.name || data.name || 'there',
-                course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : data.course,
-                examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : data.examDate,
-                subjects: profile?.targetSubjects?.length ? profile.targetSubjects : data.subjects,
-              },
-            });
-            return;
-          }
-          // Signed in successfully but never finished the diagnostic — e.g. a legacy
-          // TechMed/RoboMed account signing into Kairo for the first time, or a student
-          // who closed the app mid-onboarding. RequireOnboarded would otherwise bounce
-          // this straight back to the bare Landing Page with no memory of any of this
-          // (the exact "press Log In, it just refreshes back to onboarding" loop), so
-          // resume onboarding instead — pre-filled with whatever's already saved — via
-          // the same beginOnboarding() entry point the sign-up path uses.
-          setData((d) => ({
-            ...d,
-            name: profile?.name || d.name,
-            course: profile?.targetCourse ? { name: profile.targetCourse, subjects: profile.targetSubjects || [] } : d.course,
-            examDate: profile?.examDate ? new Date(profile.examDate).toISOString().slice(0, 10) : d.examDate,
-            subjects: profile?.targetSubjects?.length ? profile.targetSubjects : d.subjects,
-          }));
-          beginOnboarding(profile?.name || data.name || '');
-          go('about');
-        }}
-        onGoToSignUp={() => go('signup')}
-        onNeedsEmailVerification={(email) => {
-          setData((d) => ({ ...d, email }));
-          setPendingVerificationEmail(email);
-          go('checkInbox');
-        }}
-      />
-    );
-  } else if (screen === 'signup') {
-    body = (
-      <SignUp
-        step={stepIndex}
-        total={total}
-        onBack={back}
-        onEmailSignUp={({ name, email }) => {
-          setData((d) => ({ ...d, name, email }));
-          beginOnboarding(name);
-          go('about');
-        }}
-        onNeedsEmailVerification={(email) => {
-          setData((d) => ({ ...d, email }));
-          setPendingVerificationEmail(email);
-          go('checkInbox');
-        }}
-        onGoToSignIn={(email) => {
-          if (email) setData((d) => ({ ...d, email }));
-          go('signin');
-        }}
-      />
-    );
-  } else if (screen === 'checkInbox') {
-    body = <CheckYourInbox email={pendingVerificationEmail} onReturnToLogin={() => go('signin')} />;
-  } else if (screen === 'about') {
+  if (screen === 'about') {
     body = (
       <AboutYou
         step={stepIndex}
@@ -227,7 +193,7 @@ export function OnboardingFlow() {
     body = (
       <DiagnosticQuiz
         questions={diagnosticQuestions}
-        onExit={() => navigate('/home')}
+        onExit={() => navigate('/dashboard')}
         onComplete={(answers: DiagnosticAnswer[]) => {
           completeOnboardingFlow(answers)
             .then(({ diagnosticSummary: summary, pointsEarned }) => {
@@ -258,7 +224,7 @@ export function OnboardingFlow() {
   } else if (screen === 'notifications') {
     body = (
       <EnableNotifications
-        onDone={() => navigate('/home', { state: { name: data.name, course: data.course, examDate: data.examDate, subjects: data.subjects } })}
+        onDone={() => navigate('/dashboard', { state: { name: data.name, course: data.course, examDate: data.examDate, subjects: data.subjects } })}
       />
     );
   }
