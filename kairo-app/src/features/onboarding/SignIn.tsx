@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { Input, Button } from '../../components';
 import { KaiMark, OrDivider, GoogleButton } from './shared';
-import { signInAndConnect, signInWithGoogle, requestPasswordReset, describeError } from '../../lib/kairoEngine';
+import { signInAndConnect, signInWithGoogle, requestPasswordReset, describeError, isEmailNotConfirmed } from '../../lib/kairoEngine';
 
 export interface SignInProps {
   onBack: () => void;
   onSignedIn: () => void;
   onGoToSignUp: () => void;
+  /** An existing account tried to sign in before clicking its confirmation link — route back to the same Check Your Inbox screen SignUp uses, instead of a raw "email not confirmed" error. */
+  onNeedsEmailVerification: (email: string) => void;
   /** Pre-fills the email field — e.g. when arriving here from SignUp after an
    * "already registered" bounce, so the student doesn't have to retype it. */
   initialEmail?: string;
 }
 
-export function SignIn({ onBack, onSignedIn, onGoToSignUp, initialEmail }: SignInProps) {
+export function SignIn({ onBack, onSignedIn, onGoToSignUp, onNeedsEmailVerification, initialEmail }: SignInProps) {
   const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,7 +34,11 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp, initialEmail }: SignI
       await signInAndConnect({ email: email.trim(), password });
       onSignedIn();
     } catch (err) {
-      setError(describeError(err));
+      if (isEmailNotConfirmed(err)) {
+        onNeedsEmailVerification(email.trim());
+      } else {
+        setError(describeError(err));
+      }
     } finally {
       setSubmitting(false);
     }

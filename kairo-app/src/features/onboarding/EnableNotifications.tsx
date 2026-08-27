@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../../components';
-import { grantChannelConsent } from '../../lib/kairoEngine';
+import { grantChannelConsent, subscribeToPushNotifications } from '../../lib/kairoEngine';
 
 export interface EnableNotificationsProps {
   onDone: () => void;
@@ -25,6 +25,9 @@ export function EnableNotifications({ onDone }: EnableNotificationsProps) {
       const result = await Notification.requestPermission();
       if (result === 'granted') {
         await grantChannelConsent('push');
+        // Best-effort — a subscribe failure (e.g. no VAPID key configured
+        // yet) shouldn't block onboarding; push consent is still recorded.
+        subscribeToPushNotifications().catch(() => {});
         onDone();
       } else {
         // §7.3 — honest, not guilt-tripping: reflect the real OS decision, offer no retry pressure.

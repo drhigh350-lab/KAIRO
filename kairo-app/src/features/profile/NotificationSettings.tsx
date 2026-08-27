@@ -5,6 +5,7 @@ import { ScreenHeader, Modal } from '../learning/shared';
 import {
   getConsentSummary, grantChannelConsent, revokeChannelConsent, setCategoryConsent,
   setEditorialConsent, setHardStopConsent, CONSENT_PRODUCT_CATEGORIES,
+  subscribeToPushNotifications, unsubscribeFromPushNotifications,
   type ConsentChannel, type ConsentCategory, type ConsentSummary,
 } from '../../lib/kairoEngine';
 
@@ -49,9 +50,13 @@ export function NotificationSettings() {
     try {
       if (consent.channelPermissions[channel]) {
         await revokeChannelConsent(channel);
+        if (channel === 'push') await unsubscribeFromPushNotifications().catch(() => {});
       } else if (channel === 'push' && typeof Notification !== 'undefined') {
         const result = await Notification.requestPermission();
-        if (result === 'granted') await grantChannelConsent(channel);
+        if (result === 'granted') {
+          await grantChannelConsent(channel);
+          await subscribeToPushNotifications().catch(() => {});
+        }
       } else {
         await grantChannelConsent(channel);
       }

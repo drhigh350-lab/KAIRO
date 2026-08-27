@@ -9,6 +9,7 @@ export interface SignUpProps {
   total: number;
   onBack: () => void;
   onEmailSignUp: (data: { name: string; email: string }) => void;
+  onNeedsEmailVerification: (email: string) => void;
   onGoToSignIn: (email?: string) => void;
 }
 
@@ -22,7 +23,7 @@ function isAlreadyRegistered(err: unknown): boolean {
   return /already registered|already exists/i.test(describeError(err));
 }
 
-export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: SignUpProps) {
+export function SignUp({ step, total, onBack, onEmailSignUp, onNeedsEmailVerification, onGoToSignIn }: SignUpProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,8 +44,12 @@ export function SignUp({ step, total, onBack, onEmailSignUp, onGoToSignIn }: Sig
     setAlreadyRegistered(false);
     setSubmitting(true);
     try {
-      await signUpAndConnect({ name: name.trim(), email: email.trim(), password });
-      onEmailSignUp({ name: name.trim(), email: email.trim() });
+      const result = await signUpAndConnect({ name: name.trim(), email: email.trim(), password });
+      if (result && typeof result === 'object' && 'needsEmailVerification' in result) {
+        onNeedsEmailVerification(result.email);
+      } else {
+        onEmailSignUp({ name: name.trim(), email: email.trim() });
+      }
     } catch (err) {
       if (isAlreadyRegistered(err)) {
         // This is expected and recoverable, not a dead end — say so plainly, with the one

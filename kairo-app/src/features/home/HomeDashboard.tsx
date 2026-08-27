@@ -7,6 +7,7 @@ import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
 import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus } from '../../lib/kairoEngine';
 import { getPinnedTodayFocus } from '../../lib/dailyRecommendation';
+import { InstallAppBanner } from './InstallAppBanner';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -160,6 +161,8 @@ export function HomeDashboard() {
           {daysToGo} days to your UTME
         </div>
       )}
+
+      <InstallAppBanner />
 
       {/*
         Tablet/desktop (>=768px, via .app-shell--wide): a real two-column
