@@ -154,7 +154,7 @@ function OneThingCallout({ copy }: { copy: string }) {
     }}>
       <div style={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
         <div style={{ width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', background: 'var(--dark-bg-elevated)' }}>
-          <img src="/assets/illustration-kai-mascot.png" alt="Kai" style={{ width: '160%', height: '160%', objectFit: 'cover', objectPosition: '20% 30%' }} />
+          <img src="/assets/kai-avatar.png" alt="Kai" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <div style={{
           position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: '50%',

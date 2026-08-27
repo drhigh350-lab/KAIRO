@@ -40,7 +40,10 @@ export function Splash() {
       }}
     >
       <KairoWordmark tone="white" width={260} />
-      <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--dark-text-heading)', textAlign: 'center', letterSpacing: '.01em' }}>Seize the Moment</div>
+      {/* The wordmark mask is tagline-free (kairo-wordmark-mask.png carries only
+          "Kairo") — this is the one place "Seize the Moment" renders, not a
+          repeat of anything baked into the logo. */}
+      <div style={{ fontFamily: 'var(--font-body)', fontSize: 20, fontWeight: 600, color: '#fff', textAlign: 'center', letterSpacing: '.01em' }}>Seize the Moment</div>
       <div style={{ display: 'flex', gap: 8, marginTop: 28 }}>
         {[0, 1, 2].map((i) => (
           <div key={i} style={{
