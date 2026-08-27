@@ -15,14 +15,20 @@
   gap: 20px;
 }
 
-/* Quick-action / subject-picker style button grids: fixed 2-up at every
-   width reads as cramped once there's real tablet/desktop room — grid-
-   template-columns lives here (not inline) at both tiers so the >=768px
-   override below can actually take effect; an inline style would always
-   win over it regardless of the media query. */
+/* Quick-action style button grids (currently Home's 6-item Quick Actions):
+   fixed 2-up at every width reads as cramped once there's real tablet/
+   desktop room — grid-template-columns lives here (not inline) at every
+   tier so the media queries below can actually take effect; an inline
+   style would always win over it regardless of the media query.
+   Explicit column counts, not auto-fit/minmax — auto-fit packs as many
+   columns as fit the container's exact pixel width, which for a 6-item
+   grid means the count of columns (and so which row the 6th item lands
+   on) depends on incidental viewport width, not a deliberate tier; that's
+   what produced a lone orphan card on its own row at some widths. 2/3/6
+   all divide 6 evenly, so every tier ends on a full row. */
 .desktop-reflow-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -38,6 +44,16 @@
     top: calc(20px + var(--safe-top));
   }
   .desktop-reflow-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+}
+
+/* Laptop tier and up: desktop-main (the 1fr side of desktop-grid's 1fr/
+   340px split) has comfortable room for all 6 cards on one row well
+   before --container-max-wide's 1440px ceiling. */
+@media (min-width: 1280px) {
+  .desktop-reflow-grid {
+    grid-template-columns: repeat(6, 1fr);
   }
 }

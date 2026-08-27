@@ -19,12 +19,16 @@
 --touch-min:48px;
 --container-max:420px;
 /* Reading-width cap for focused question-answering screens (Practice
-   Question, CBT Exam, Rapid Fire, Review Session, Learn) once the viewport
-   is genuinely tablet-sized (>=768px, see layout.css) — replaces the fixed
-   420px phone column with an optimal ~65-character reading measure so a
-   12-inch tablet isn't stuck with two huge dead margins either side of a
-   phone-width strip. Below 768px, --container-max (420px) still applies. */
---container-max-reading:65ch;
+   Question, CBT Exam, Rapid Fire, Review Session, Learn) and for
+   onboarding/settings forms, once the viewport is genuinely tablet-sized
+   (>=768px, see layout.css) — replaces the fixed 420px phone column with
+   a wider measure so a 12-inch tablet or laptop isn't stuck with two huge
+   dead margins either side of a phone-width strip. Was 65ch (~575-590px
+   with the app's body font) — widened to a fixed px value in the
+   max-w-2xl/max-w-3xl range, comfortable for question option cards and
+   longer stems without approaching Home/Profile/Review's fluid hub width.
+   Below 768px, --container-max (420px) still applies. */
+--container-max-reading:720px;
 /* Hub/dashboard screens (Home, Profile, Practice Home, Insights, Review)
    on tablet/desktop have no hard width cap — see .app-shell--wide in
    layout.css, which lets them expand fluidly to fill the viewport via
