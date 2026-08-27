@@ -457,8 +457,8 @@ export function Modal({ children, onClose, tone = 'light' }: ModalProps) {
   const dark = tone === 'dark';
   useEscapeToClose(onClose);
   return (
-    <div onClick={onClose} role="presentation" style={{ position: 'absolute', inset: 0, background: 'rgba(11,23,32,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 30 }}>
-      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" className="modal-sheet" style={{ background: dark ? 'var(--dark-bg-elevated)' : '#fff', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }}>
+    <div onClick={onClose} role="presentation" className="modal-backdrop" style={{ position: 'absolute', inset: 0, background: 'rgba(11,23,32,0.45)', display: 'flex', zIndex: 30 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" className="modal-sheet" style={{ background: dark ? 'var(--dark-bg-elevated)' : '#fff', padding: 24, width: '100%', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box', fontFamily: 'var(--font-body)' }}>
         {children}
       </div>
     </div>

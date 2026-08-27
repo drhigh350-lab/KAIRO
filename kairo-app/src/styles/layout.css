@@ -87,15 +87,34 @@
   }
 }
 
-/* Modal/bottom-sheet dialogs (learning/shared.tsx's Modal) — full-width
-   sheet on mobile; once .app-shell's own position: relative (above) gives
-   it a real containing block, cap and center it like a focused dialog
-   instead of the sheet stretching to match whatever width the shell
-   happens to be (up to Home/Profile/Review's 1440px ceiling). */
+/* Modal/bottom-sheet dialogs (learning/shared.tsx's Modal) — a full-width
+   bottom sheet on mobile (flush to the bottom edge, rounded top corners
+   only); once .app-shell's own position: relative (above) gives it a
+   real containing block, becomes a real centered dialog on tablet/
+   desktop instead of a sheet stretched to match whatever width the shell
+   happens to be. Both rules live here (mobile-first base + the >=768px
+   override) rather than as inline styles on Modal's own elements — an
+   inline style always wins over an external class regardless of the
+   media query, so the override could never actually take effect from
+   inline alone. */
+.modal-backdrop {
+  align-items: flex-end;
+}
+
+.modal-sheet {
+  border-radius: 20px 20px 0 0;
+}
+
 @media (min-width: 768px) {
+  .modal-backdrop {
+    align-items: center;
+  }
+
   .modal-sheet {
     max-width: 640px;
     margin: 0 auto;
+    border-radius: 20px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   }
 }
 
