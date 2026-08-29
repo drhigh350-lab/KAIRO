@@ -11,7 +11,7 @@ export function PrivacyPage() {
         <div style={{ fontSize: 13, color: 'var(--dark-text-faint)' }}>Last updated: August 27, 2026</div>
 
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', lineHeight: 1.65 }}>
-          Kairo is a UTME exam-prep app built by TechMed. This policy explains what information we collect
+          Kairo is a UTME exam-prep app built by Techmed Integrated Services ("TechMed"). This policy explains what information we collect
           when you use Kairo, why we collect it, and what choices you have. It covers Kairo at{' '}
           <LegalLink href="https://kairo.techmedng.com">kairo.techmedng.com</LegalLink> — not TechMed's other products,
           except where noted below.
@@ -122,8 +122,8 @@ export function PrivacyPage() {
             Questions about this policy or your data? Email <LegalLink href="mailto:privacy@techmedng.com">privacy@techmedng.com</LegalLink>.
           </div>
           <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', marginTop: 6 }}>
-            TechMed, operator of Kairo — kairo.techmedng.com. This policy is governed by the laws of the Federal
-            Republic of Nigeria.
+            Techmed Integrated Services, operator of Kairo — kairo.techmedng.com. This policy is governed by the laws
+            of the Federal Republic of Nigeria.
           </div>
         </div>
       </div>

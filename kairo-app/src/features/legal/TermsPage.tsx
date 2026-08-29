@@ -11,8 +11,9 @@ export function TermsPage() {
         <div style={{ fontSize: 13, color: 'var(--dark-text-faint)' }}>Last updated: August 27, 2026</div>
 
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', lineHeight: 1.65 }}>
-          These Terms of Service ("Terms") govern your use of Kairo, a UTME exam-preparation app built by TechMed,
-          available at <LegalLink href="https://kairo.techmedng.com">kairo.techmedng.com</LegalLink>. By creating an
+          These Terms of Service ("Terms") govern your use of Kairo, a UTME exam-preparation app built by Techmed
+          Integrated Services ("TechMed"), available at{' '}
+          <LegalLink href="https://kairo.techmedng.com">kairo.techmedng.com</LegalLink>. By creating an
           account or using Kairo, you agree to these Terms. If you don't agree, please don't use Kairo.
         </div>
 
@@ -95,8 +96,8 @@ export function TermsPage() {
             Questions about these Terms? Email <LegalLink href="mailto:support@techmedng.com">support@techmedng.com</LegalLink>.
           </div>
           <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', marginTop: 6 }}>
-            TechMed, operator of Kairo — kairo.techmedng.com. These Terms are governed by the laws of the Federal
-            Republic of Nigeria.
+            Techmed Integrated Services, operator of Kairo — kairo.techmedng.com. These Terms are governed by the laws
+            of the Federal Republic of Nigeria.
           </div>
         </div>
       </div>
