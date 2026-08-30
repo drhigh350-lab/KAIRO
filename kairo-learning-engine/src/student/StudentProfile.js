@@ -108,6 +108,21 @@ export class StudentProfile {
     // Recovery tracking
     this.atRiskTriggeredAt = null;
     this.recoverySessionCount = 0;
+
+    // ─── Kairo V1 Dashboard tracking (RecommendationEngine.getDashboardOptions()) ───
+    // Anti-Fatigue Circuit Breaker: the subject of the most recent Focused
+    // Sprint/Frontier Push that finished below FRUSTRATION_ACCURACY_THRESHOLD.
+    // Barred from the next dashboard's Primary slot only — cleared the
+    // moment a *different* subject's session completes, per
+    // recordDashboardSessionOutcome().
+    this.lastFrustratedSubject = null;
+    this.lastFrustratedAt = null;
+    // Avoidance Tracking: subject -> consecutive count of picking the
+    // Secondary option over that subject's own offered Focused Sprint.
+    // Reset to 0 the moment that subject's Sprint is actually completed
+    // (not just offered again) — a dodge streak describes ongoing
+    // avoidance, not a permanent mark.
+    this.avoidanceStreaks = {};
   }
 
   /**
@@ -301,7 +316,10 @@ export class StudentProfile {
       totalCorrect: this.totalCorrect,
       streakData: this.streakData,
       atRiskTriggeredAt: this.atRiskTriggeredAt,
-      recoverySessionCount: this.recoverySessionCount
+      recoverySessionCount: this.recoverySessionCount,
+      lastFrustratedSubject: this.lastFrustratedSubject,
+      lastFrustratedAt: this.lastFrustratedAt,
+      avoidanceStreaks: this.avoidanceStreaks
     };
   }
 

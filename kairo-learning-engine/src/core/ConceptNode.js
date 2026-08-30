@@ -4,7 +4,7 @@
  */
 
 import { RetentionState, DecayConstants, ErrorTag } from "../utils/constants.js";
-import { clamp, daysBetween, isExamProximity } from "../utils/helpers.js";
+import { clamp, daysBetween } from "../utils/helpers.js";
 
 export class ConceptNode {
   constructor({
@@ -166,41 +166,12 @@ export class ConceptNode {
     return recent.filter(a => a.correct).length / recent.length;
   }
 
-  /**
-   * Priority score for the recommendation engine.
-   * Higher = more urgent to practice.
-   */
-  getPriorityScore(examDate = null) {
-    let score = 0;
-
-    // Urgent decay: Fading concepts are highest priority
-    if (this.retentionState === RetentionState.FADING) {
-      score += 100 * (1 - this.decayEstimate);
-    }
-
-    // Active gaps: Forming with conceptual errors
-    if (this.retentionState === RetentionState.FORMING) {
-      score += 60;
-      if (this.errorPatternTags.get(ErrorTag.CONCEPTUAL_GAP) > 0) score += 20;
-    }
-
-    // Held but decaying
-    if (this.retentionState === RetentionState.HELD) {
-      score += 30 * (1 - this.decayEstimate);
-    }
-
-    // Reinforced = low priority (but not zero — maintenance)
-    if (this.retentionState === RetentionState.REINFORCED) {
-      score += 5 * (1 - this.decayEstimate);
-    }
-
-    // Exam proximity boost
-    if (examDate && isExamProximity(examDate)) {
-      score *= 1.5;
-    }
-
-    return score;
-  }
+  // Note: this class used to also carry a getPriorityScore() method — a
+  // second, never-called scoring function that duplicated (and diverged
+  // from) RecommendationEngine's own logic. Its correct half (rewarding
+  // the MORE-forgotten Fading concept, `100 * (1 - decayEstimate)`) is now
+  // the one actually live, inside RecommendationEngine._conceptUrgencyScore().
+  // Removed rather than left as dead code once its logic had a real home.
 
   toJSON() {
     return {

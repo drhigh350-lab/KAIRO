@@ -134,7 +134,19 @@ export const SessionConstants = Object.freeze({
   FATIGUE_SLIP_THRESHOLD: 3,         // careless slips in a row = fatigue
   DIFFICULTY_PULLBACK_WINDOW_MS: 5 * 60 * 1000, // 5 min
   MACRO_STATE_WINDOW_SESSIONS: 14,
-  CONSISTENCY_ROLLING_WINDOW_DAYS: 21
+  CONSISTENCY_ROLLING_WINDOW_DAYS: 21,
+  // General-purpose "don't immediately re-serve a question the student just
+  // failed" lock used by getQuestionForConcept() (Practice, Focused Sprint,
+  // Frontier Push, UTME Mix, Rapid Fire, CBT) — deliberately SEPARATE from
+  // ReviewConstants.MISTAKE_COOLDOWN_MS below, which stays 72h and governs
+  // only the dedicated Review Module (Spaced Sandbox/Smart Patch/Triage
+  // Inbox). Two different jobs: Review's 72h window is "how long before a
+  // mistake even becomes eligible for deliberate retesting"; this 24h
+  // window is "how long before ordinary practice is allowed to hand the
+  // same question back at all." Never merge these into one constant again —
+  // that's exactly the kind of shared-meaning drift this fix exists to
+  // avoid, not reintroduce.
+  QUESTION_REQUEUE_COOLDOWN_MS: 24 * 60 * 60 * 1000
 });
 
 // ─── Spaced Sandbox (Review Module — mistake retest cooldown) ───
@@ -144,6 +156,52 @@ export const ReviewConstants = Object.freeze({
   // acknowledgment (from the moment it's tapped) both use this same minimum,
   // so short-term rote memorization can't pass as real retention.
   MISTAKE_COOLDOWN_MS: 72 * 60 * 60 * 1000
+});
+
+// ─── Kairo V1 Dashboard — Three Session Types (Focused Sprint / Frontier
+// Push / UTME Mix) + the 2-Option Dashboard that picks between them ───
+export const DashboardConstants = Object.freeze({
+  // Focused Sprint's Hybrid Lock (question-level): a previously-failed
+  // question unlocks only once BOTH conditions hold — the time lock
+  // (QUESTION_REQUEUE_COOLDOWN_MS above) AND a volume lock scoped to the
+  // Sprint's own topic. A flat 30 is unreachable for real content today in
+  // several subjects (e.g. every Mathematics topic currently has fewer
+  // than 30 questions total, per the live kairo.questions counts checked
+  // 2026-08-30) — so the volume threshold is computed at call time as
+  // min(FOCUSED_SPRINT_VOLUME_LOCK_CAP, floor(topicPoolSize * FOCUSED_SPRINT_VOLUME_LOCK_RATIO)),
+  // never this raw cap alone. A thin topic gets a proportionally smaller
+  // requirement instead of a lock that can never lift; a rich topic (like
+  // most of Biology/Chemistry) gets the real cap.
+  FOCUSED_SPRINT_VOLUME_LOCK_CAP: 30,
+  FOCUSED_SPRINT_VOLUME_LOCK_RATIO: 0.5,
+
+  // Anti-Fatigue Circuit Breaker: a Focused Sprint or Frontier Push session
+  // finishing below this accuracy marks its subject "frustrated" — that
+  // subject is barred from the NEXT dashboard's Primary slot (it can still
+  // appear as Secondary, or as Primary again the time after, once a
+  // session in a different subject has happened). Deliberately not applied
+  // to UTME Mix sessions, which mix subjects and can't fairly indict one.
+  FRUSTRATION_ACCURACY_THRESHOLD: 0.5,
+
+  // UTME Mix ("critical mass") eligibility: offered when the student is in
+  // peak_readiness OR has built up enough Held/Reinforced concepts that
+  // real cross-subject pressure-testing is worthwhile. The 0.3 ratio
+  // mirrors computeMacroState()'s own COMPOUNDING threshold (reinforcedRatio
+  // > 0.3) for consistency with how the rest of the engine already reads
+  // "meaningfully ahead" — not a new, unrelated number. The minimum count
+  // guards against a tiny early sample (e.g. 2 of 3 touched concepts
+  // Held) satisfying the ratio by accident.
+  UTME_MIX_HELD_RATIO_THRESHOLD: 0.3,
+  UTME_MIX_MIN_TOUCHED_CONCEPTS: 15,
+
+  // Avoidance Tracking: choosing the Secondary option over the same
+  // subject's Focused Sprint this many times IN A ROW (reset the moment
+  // that subject's Sprint is actually completed, not just offered) shifts
+  // Kai's tone for that subject's next nudge from gentle to direct —
+  // still bound by KaiRules.NEVER_GUILT_BASED_REENGAGEMENT and the
+  // platform-wide banned-phrase list; "direct" means naming the pattern
+  // plainly, not guilt or comparison.
+  AVOIDANCE_STREAK_THRESHOLD: 3
 });
 
 // ─── Momentum Streak ───

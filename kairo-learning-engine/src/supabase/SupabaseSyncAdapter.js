@@ -18,7 +18,11 @@
  *                              Student Intelligence Model §1 Identity
  *                              fields, added by migration
  *                              add_sjee_comms_learn_and_identity_columns_
- *                              to_students). Keep _profileToRow/
+ *                              to_students; last_frustrated_subject/
+ *                              last_frustrated_at/avoidance_streaks added by
+ *                              add_dashboard_circuit_breaker_columns_to_students
+ *                              for RecommendationEngine's Kairo V1 Dashboard).
+ *                              Keep _profileToRow/
  *                              _rowToProfile and this list in lockstep with
  *                              StudentProfile.toJSON() — a field missing
  *                              from either silently stops reaching Supabase.
@@ -151,6 +155,12 @@ export class SupabaseSyncAdapter {
       streak_longest_momentum: profileData.streakData?.longestMomentum || 0,
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
+      // Kairo V1 Dashboard — RecommendationEngine's Anti-Fatigue Circuit
+      // Breaker / Avoidance Tracker (see recordSessionOutcome()/
+      // recordSprintDodged()).
+      last_frustrated_subject: profileData.lastFrustratedSubject || null,
+      last_frustrated_at: profileData.lastFrustratedAt ? new Date(profileData.lastFrustratedAt).toISOString() : null,
+      avoidance_streaks: profileData.avoidanceStreaks || {},
       notification_history: profileData.notificationHistory || [],
       completed_challenges: profileData.completedChallenges || [],
       // Kairo Points (formerly "XP") — a strictly additive ledger, distinct
@@ -240,6 +250,9 @@ export class SupabaseSyncAdapter {
       },
       atRiskTriggeredAt: row.at_risk_triggered_at ? new Date(row.at_risk_triggered_at).getTime() : null,
       recoverySessionCount: row.recovery_session_count,
+      lastFrustratedSubject: row.last_frustrated_subject || null,
+      lastFrustratedAt: row.last_frustrated_at ? new Date(row.last_frustrated_at).getTime() : null,
+      avoidanceStreaks: row.avoidance_streaks || {},
       notificationHistory: row.notification_history || [],
       completedChallenges: row.completed_challenges || [],
       kairoPoints: row.kairo_points || 0,
