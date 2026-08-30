@@ -980,6 +980,13 @@ export class KairoEngine {
         topic: option.topic || null,
         reason: option.reason,
         conceptIds: option.conceptIds,
+        // Exposed so a caller starting a REAL session (not just rendering
+        // the dashboard card) can build a full, macro-state-length-capped
+        // queue by cycling into overflow once the primary topic's own
+        // concepts run out — this preview only ever resolves up to
+        // `previewLength` real questions, deliberately short of a full
+        // session.
+        overflowConceptIds: option.overflowConceptIds || [],
         questions
       };
     };

@@ -949,6 +949,18 @@ test('getQuestionForConcept({enforceVolumeLock}): a failed question stays locked
   assert(unlockedNow <= Date.now(), 'Once both the time lock and the topic-volume lock are satisfied, the failed question should unlock');
 });
 
+test('KairoEngine.getDashboardOptions(): exposes overflowConceptIds so a real session can be built beyond the preview length', () => {
+  const engine = new KairoEngine({ studentId: 'dashboard_overflow_student', name: 'S', targetSubjects: ['Chemistry'] });
+  const fadingId = engine.addConcept({ name: 'Titration', subject: 'Chemistry', topic: 'Acids, bases and salts' });
+  engine.graph.getConcept(fadingId).retentionState = 'fading';
+  const otherFadingId = engine.addConcept({ name: 'pH Scale', subject: 'Chemistry', topic: 'Water' });
+  engine.graph.getConcept(otherFadingId).retentionState = 'fading';
+
+  const { primary } = engine.getDashboardOptions();
+  assert(primary !== null, 'A student with Fading concepts should get a real Primary Focused Sprint option');
+  assert(Array.isArray(primary.overflowConceptIds), 'overflowConceptIds must be present on the resolved dashboard option, not just used internally');
+});
+
 // ═══════════════════════════════════════════════════════════════
 // PLANNER HANDSHAKE — PlannerBridge
 // ═══════════════════════════════════════════════════════════════
