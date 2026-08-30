@@ -172,6 +172,25 @@ export class KaiBehavior {
           text: `We're starting light today, on purpose. No need to make up for lost time — just move forward.`,
           tone: 'permission_giving'
         };
+      // EXPLICIT, NARROW exception to KaiRules.NEVER_GUILT_BASED_REENGAGEMENT
+      // — authorized directly by the product owner (2026-08-30), scoped
+      // strictly to this one state: RecommendationEngine.recordSprintDodged()
+      // crossing DashboardConstants.AVOIDANCE_STREAK_THRESHOLD (the student
+      // has picked the Secondary dashboard option over the same subject's
+      // Focused Sprint AVOIDANCE_STREAK_THRESHOLD times in a row). This is
+      // not a general precedent — every other message in this file still
+      // honors NEVER_GUILT_BASED_REENGAGEMENT and the platform-wide
+      // banned-phrase list (CommsConstants.BANNED_PHRASES) untouched, and
+      // this copy was specified verbatim by the product owner, not authored
+      // here. If NEVER_GUILT_BASED_REENGAGEMENT is ever revisited platform-
+      // wide, revisit this case explicitly rather than assuming it should
+      // change with it.
+      case 'avoidance_intervention':
+        return {
+          text: `Look, you've avoided ${data.subject} all week. The UTME won't let you skip it. Give me 5 minutes to help you fix this.`,
+          tone: 'direct_intervention',
+          action: 'focused_sprint_cta'
+        };
       default:
         return null;
     }

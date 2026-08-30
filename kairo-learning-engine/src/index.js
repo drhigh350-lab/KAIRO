@@ -966,12 +966,16 @@ export class KairoEngine {
 
   /**
    * Report that the student picked the Secondary option over a Focused
-   * Sprint offered for `subject` — the Avoidance Tracker. Returns true
-   * once that subject's dodge streak crosses
-   * DashboardConstants.AVOIDANCE_STREAK_THRESHOLD, so the caller can shift
-   * Kai's next nudge for that subject to a more direct tone — this only
-   * reports the pattern; it never generates or contains that copy itself,
-   * and it stays bound by KaiRules.NEVER_GUILT_BASED_REENGAGEMENT.
+   * Sprint offered for `subject` — the Avoidance Tracker.
+   * RecommendationEngine.recordSprintDodged() only reports the pattern
+   * (a plain boolean, no tone) and stays bound by
+   * KaiRules.NEVER_GUILT_BASED_REENGAGEMENT; generating the actual message
+   * is this engine's job, not RecommendationEngine's, since KaiBehavior
+   * (this.kai) is where the product owner's explicit, narrowly-scoped
+   * exception to that rule lives (KaiBehavior.proactiveMessage()'s
+   * 'avoidance_intervention' case — see its own comment for the
+   * authorization). kaiMessage is null unless the dodge streak just
+   * crossed DashboardConstants.AVOIDANCE_STREAK_THRESHOLD.
    */
   recordSprintDodged(subject) {
     const rec = new RecommendationEngine({
@@ -981,7 +985,11 @@ export class KairoEngine {
       examDate: this.profile.examDate,
       scheduler: this.scheduler
     });
-    return rec.recordSprintDodged(subject);
+    const thresholdCrossed = rec.recordSprintDodged(subject);
+    return {
+      thresholdCrossed,
+      kaiMessage: thresholdCrossed ? this.kai.proactiveMessage('avoidance_intervention', { subject }) : null
+    };
   }
 
   /**

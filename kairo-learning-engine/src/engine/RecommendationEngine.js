@@ -515,6 +515,11 @@ export class RecommendationEngine {
     switch (macro) {
       case 'wavering':
       case 'recovering':
+      // Fixed: at_risk previously fell through to the shared default (15)
+      // — the same length as a thriving 'building' student — despite
+      // being the more fragile state. Now matches wavering/recovering's
+      // gentle minimum.
+      case 'at_risk':
         return SessionConstants.MIN_SESSION_LENGTH;
       case 'orienting':
         return 10;
@@ -672,8 +677,10 @@ export class RecommendationEngine {
     const macro = this.profile.macroState;
     const sessionLen = this.sessionHistory.length;
 
-    // Wavering/Recovering: shorter sessions
-    if ((macro === 'wavering' || macro === 'recovering') && sessionLen >= 8) {
+    // Wavering/Recovering/At Risk: shorter sessions — at_risk added
+    // alongside the _sessionLengthCap() fix above; the same fragile state
+    // deserves the same early-out, not just a shorter starting cap.
+    if ((macro === 'wavering' || macro === 'recovering' || macro === 'at_risk') && sessionLen >= 8) {
       return { end: true, reason: 'Gentle session limit reached. Come back tomorrow.' };
     }
 

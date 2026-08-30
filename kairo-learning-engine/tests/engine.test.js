@@ -888,6 +888,35 @@ test("recordSessionOutcome()/recordSprintDodged(): Circuit Breaker sets and clea
   assertEqual(profile.avoidanceStreaks['Mathematics'], 0, "Actually completing the subject's Sprint should reset its avoidance streak");
 });
 
+test("KairoEngine.recordSprintDodged(): stays silent until the avoidance streak crosses threshold, then returns Kai's explicitly-authorized direct-tone message", () => {
+  const engine = new KairoEngine({ studentId: 'avoidance_kai_student', name: 'S', targetSubjects: ['Physics'] });
+
+  for (let i = 1; i < DashboardConstants.AVOIDANCE_STREAK_THRESHOLD; i++) {
+    const result = engine.recordSprintDodged('Physics');
+    assertEqual(result.thresholdCrossed, false, `Dodge #${i} should not cross the threshold`);
+    assertEqual(result.kaiMessage, null, `No Kai message should be generated before the threshold is crossed`);
+  }
+
+  const final = engine.recordSprintDodged('Physics');
+  assertEqual(final.thresholdCrossed, true, 'The final dodge should cross AVOIDANCE_STREAK_THRESHOLD');
+  assert(final.kaiMessage !== null, 'Crossing the threshold should produce a real Kai message');
+  assertEqual(final.kaiMessage.text, "Look, you've avoided Physics all week. The UTME won't let you skip it. Give me 5 minutes to help you fix this.",
+    'The message must be the exact, product-owner-authorized copy, with the real subject interpolated');
+});
+
+test('_sessionLengthCap()/shouldEndSession(): at_risk gets the same gentle treatment as wavering/recovering (was previously falling through to the 15-question default)', () => {
+  const graph = new KnowledgeGraph();
+  const profile = new StudentProfile({ studentId: 'at_risk_student', name: 'S', targetSubjects: ['Biology'] });
+  profile.macroState = 'at_risk';
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  assertEqual(rec._sessionLengthCap(), 5, 'at_risk should get the same 5-question gentle cap as wavering/recovering, not the 15-question default');
+
+  rec.sessionQueue = ['x']; // non-empty, so only the gentle-limit branch can trigger "end"
+  rec.sessionHistory = new Array(8).fill('y');
+  assertEqual(rec.shouldEndSession().end, true, 'at_risk should also trigger the gentle 8-question early-end, matching wavering/recovering');
+});
+
 test('getQuestionForConcept({enforceVolumeLock}): a failed question stays locked until BOTH the 24h time lock and the topic-volume lock clear', () => {
   const engine = new KairoEngine({ studentId: 'hybrid_lock_student', name: 'S', targetSubjects: ['Physics'] });
   const conceptId = engine.addConcept({ name: 'Vectors', subject: 'Physics', topic: 'Kinematics' });
