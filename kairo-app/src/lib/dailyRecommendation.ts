@@ -13,14 +13,20 @@
 // until hasCompletedTodaysRecommendation() flips true (the flame lights),
 // at which point a fresh pin is free to form for the rest of the day if
 // asked again (there's nothing left to protect once it's done).
-import { getEngine, getTodayFocus, hasCompletedTodaysRecommendation, type TodayFocus } from './kairoEngine';
+import { getEngine, getTodayFocus, getDashboardOptions, hasCompletedTodaysRecommendation, type TodayFocus, type DashboardOptions } from './kairoEngine';
 import { toLocalIso } from './planner/plannerEngine';
 
 const STORAGE_PREFIX = 'kairo_daily_recommendation_pin_v1';
+const DASHBOARD_STORAGE_PREFIX = 'kairo_dashboard_options_pin_v1';
 
 interface PinnedFocus {
   pinnedOnIso: string;
   focus: TodayFocus;
+}
+
+interface PinnedDashboardOptions {
+  pinnedOnIso: string;
+  options: DashboardOptions;
 }
 
 function storageKey(studentId: string | null | undefined): string | null {
@@ -32,6 +38,15 @@ function readPin(key: string): PinnedFocus | null {
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as PinnedFocus) : null;
+  } catch {
+    return null;
+  }
+}
+
+function readDashboardPin(key: string): PinnedDashboardOptions | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as PinnedDashboardOptions) : null;
   } catch {
     return null;
   }
@@ -63,6 +78,41 @@ export function getPinnedTodayFocus(): TodayFocus | null {
     else localStorage.removeItem(key);
   } catch {
     // Storage full/unavailable — the pin is a convenience, never worth surfacing an error for (same reasoning as sessionResume.ts).
+  }
+  return fresh;
+}
+
+/**
+ * The Kairo V1 2-Option Dashboard, pinned — same "first real pick of the
+ * day stays stable" rule as getPinnedTodayFocus() above, applied to the
+ * whole { primary, secondary } payload instead of a single concept. This
+ * one matters even more than the single-recommendation pin: without it, a
+ * Primary/Secondary pair rendered on Home could silently stop matching
+ * what startDashboardSession() would actually build if the student
+ * navigated away and the tie-breaking shuffle inside RecommendationEngine
+ * landed differently on a later call — always pass the exact pinned
+ * DashboardOption object back into startDashboardSession(), never a
+ * freshly-refetched one, so what the student tapped is what they get.
+ */
+export function getPinnedDashboardOptions(): DashboardOptions | null {
+  const kairo = getEngine();
+  const studentId = kairo?.profile?.studentId;
+  const key = storageKey(studentId) ? `${DASHBOARD_STORAGE_PREFIX}:${studentId}` : null;
+  const todayIso = toLocalIso(new Date());
+
+  if (!key) return getDashboardOptions();
+
+  if (!hasCompletedTodaysRecommendation()) {
+    const existing = readDashboardPin(key);
+    if (existing && existing.pinnedOnIso === todayIso) return existing.options;
+  }
+
+  const fresh = getDashboardOptions();
+  try {
+    if (fresh) localStorage.setItem(key, JSON.stringify({ pinnedOnIso: todayIso, options: fresh } satisfies PinnedDashboardOptions));
+    else localStorage.removeItem(key);
+  } catch {
+    // Storage full/unavailable — same non-fatal fallback as the pin above.
   }
   return fresh;
 }

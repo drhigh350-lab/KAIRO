@@ -523,6 +523,108 @@ export async function startSuggestedSession(limit = 5, anchorConceptId?: string 
   return { questions, kaiMessage };
 }
 
+// ═══════════════════════════════════════════════════════════════
+// KAIRO V1 DASHBOARD — Three Session Types, Primary/Secondary
+// ═══════════════════════════════════════════════════════════════
+
+export interface DashboardOption {
+  type: 'focused_sprint' | 'frontier_push' | 'utme_mix';
+  subject: string | null;
+  topic: string | null;
+  /** The engine's own real reasoning — RecommendationEngine._withDashboardCopy() — never client-authored copy. */
+  reason: string;
+  conceptIds: string[];
+  overflowConceptIds: string[];
+  /** Preview-length questions only (see getDashboardOptions()'s previewLength) — enough to render the card, not a full session. startDashboardSession() resolves the real session-length batch separately. */
+  questions: Engine[];
+}
+
+export interface DashboardOptions {
+  macroState: string;
+  primary: DashboardOption | null;
+  secondary: DashboardOption | null;
+}
+
+/** Raw (unpinned) read of KairoEngine.getDashboardOptions() — prefer getPinnedDashboardOptions() (dailyRecommendation.ts) for anything the student will actually see and tap, since RecommendationEngine's tie-breaking reshuffles call to call. */
+export function getDashboardOptions(previewLength = 10): DashboardOptions | null {
+  const kairo = getEngine();
+  if (!kairo) return null;
+  return kairo.getDashboardOptions({ previewLength });
+}
+
+/**
+ * Starts a real adaptive session from an ALREADY-RESOLVED DashboardOption —
+ * the exact object the student saw and tapped (from a pinned
+ * getDashboardOptions() read), never a fresh recompute. RecommendationEngine's
+ * scoring reshuffles genuine ties call to call (same reason
+ * dailyRecommendation.ts pins the single-recommendation read), so
+ * re-deriving "primary" or "secondary" at tap time could silently hand the
+ * student a different topic than the one the card actually named.
+ *
+ * Still mode: 'standard' (Kairo V1's three dashboard types deliberately
+ * don't get their own kairo.sessions mode value yet — shipping without
+ * re-litigating the streak/Kairo Points economy; see
+ * RecommendationEngine.getDashboardOptions()'s own doc comment).
+ * option.type/option.subject are attached to kairo.currentSession as
+ * local-only metadata (never synced to kairo.sessions) purely so
+ * reportDashboardSessionOutcome() can be called with the right values once
+ * the session ends — see PracticeFlow's entry:'dashboard' handling.
+ */
+export async function startDashboardSession(option: DashboardOption): Promise<SuggestedSessionResult> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  await ensureContentLoaded(kairo.profile.targetSubjects || []);
+
+  const { kaiMessage } = kairo.startSession({ mode: 'standard' });
+  const ordered = [...option.conceptIds, ...option.overflowConceptIds];
+  kairo.currentSession.plan = ordered;
+  kairo.currentSession.dashboardType = option.type;
+  kairo.currentSession.dashboardSubject = option.subject;
+
+  const targetLength: number = kairo.recommendation._sessionLengthCap();
+  const questions: Engine[] = [];
+  const seenIds: string[] = [];
+  const enforceVolumeLock = option.type === 'focused_sprint';
+  for (let i = 0; questions.length < targetLength && i < ordered.length; i++) {
+    const q = kairo.getQuestionForConcept(ordered[i], { excludeIds: seenIds, enforceVolumeLock });
+    if (q) { questions.push(q); seenIds.push(q.id); }
+  }
+  return { questions, kaiMessage };
+}
+
+/**
+ * Call once a dashboard session (Focused Sprint / Frontier Push) actually
+ * finishes — the Anti-Fatigue Circuit Breaker's input. `type`/`subject`
+ * should be the same DashboardOption the session was started from
+ * (PracticeFlow.tsx reads it from its own router-state ref, same
+ * survives-a-mid-session-refresh limitation Verification Sessions already
+ * accept for plannerTopicKeyRef — best-effort, not a new gap). A no-op for
+ * utme_mix or a missing subject, matching
+ * RecommendationEngine.recordSessionOutcome()'s own guard. Note:
+ * startDashboardSession() also stamps this same type/subject onto
+ * kairo.currentSession.dashboardType/dashboardSubject as a second, more
+ * durable copy — unused by PracticeFlow.tsx today, but there if a future
+ * caller wants the value straight off endSession()'s result.session
+ * instead of tracking its own ref.
+ */
+export function reportDashboardSessionOutcome(type: string | undefined, subject: string | null | undefined, accuracy: number): void {
+  const kairo = getEngine();
+  if (!kairo || !type || !subject) return;
+  kairo.recordDashboardSessionOutcome({ type, subject, accuracy });
+}
+
+export interface SprintDodgeResult {
+  thresholdCrossed: boolean;
+  kaiMessage: { text: string; tone: string; action?: string } | null;
+}
+
+/** Call when the student picks Secondary over a Focused Sprint offered for `subject` (i.e. primary.type === 'focused_sprint' and Secondary was tapped instead). Returns Kai's exact, product-owner-authorized intervention copy once the dodge streak crosses threshold — never generate or paraphrase that copy client-side. */
+export function reportSprintDodged(subject: string): SprintDodgeResult {
+  const kairo = getEngine();
+  if (!kairo) return { thresholdCrossed: false, kaiMessage: null };
+  return kairo.recordSprintDodged(subject);
+}
+
 export interface CustomSessionArgs {
   /** Real subject names (e.g. "Physics"), or [] for no subject filter ("All Subjects"). */
   subjects?: string[];

@@ -1,3 +1,8 @@
+export interface MissionCardSecondaryOption {
+  label: string;
+  onStart: () => void;
+}
+
 export interface MissionCardProps {
   eyebrow?: string;
   badge?: string;
@@ -8,9 +13,11 @@ export interface MissionCardProps {
   progress?: number;
   ctaLabel?: string;
   onStart?: () => void;
+  /** Kairo V1 2-Option Dashboard's Secondary option — a ghost/outline CTA under the solid Primary one. Absent entirely (not just unclicked) when RecommendationEngine had nothing eligible to offer as Secondary. */
+  secondary?: MissionCardSecondaryOption;
 }
 
-export function MissionCard({ eyebrow = "TODAY'S MISSION", badge, title, reason, duration, chips, progress, ctaLabel = 'Start Mission', onStart }: MissionCardProps) {
+export function MissionCard({ eyebrow = "TODAY'S MISSION", badge, title, reason, duration, chips, progress, ctaLabel = 'Start Mission', onStart, secondary }: MissionCardProps) {
   return (
     <div style={{
       background: 'linear-gradient(160deg, var(--dark-accent-blue) 0%, var(--dark-accent-blue-deep) 60%, var(--dark-bg-elevated) 100%)',
@@ -50,6 +57,21 @@ export function MissionCard({ eyebrow = "TODAY'S MISSION", badge, title, reason,
         {ctaLabel}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue-deep)" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
       </button>
+      {secondary && (
+        // Ghost/outline, not the shared Button component's variant="ghost"
+        // (that one's tokened for the light theme — --kairo-blue-700 on a
+        // light surface — and would read wrong on this card's dark
+        // gradient). Transparent fill + translucent white border/text
+        // reads as "the other option" without competing with the solid
+        // white Primary CTA above it.
+        <button onClick={secondary.onStart} style={{
+          marginTop: 10, width: '100%', minHeight: 'var(--touch-min)', background: 'transparent', color: '#fff',
+          border: '1.5px solid rgba(255,255,255,0.5)', borderRadius: 'var(--radius-pill)', fontWeight: 600, fontSize: 'var(--fs-body)', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+          {secondary.label}
+        </button>
+      )}
     </div>
   );
 }

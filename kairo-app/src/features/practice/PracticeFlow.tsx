@@ -9,7 +9,7 @@ import { PracticeQuestion, type PracticeQuestionResult, type PracticeExplanation
 import { PracticeSummary, type PracticeResult, type PracticeSummaryAction, type SessionRewards } from './PracticeSummary';
 import { PracticeReview } from './PracticeReview';
 import { subjects, type Subject } from './data';
-import { getEngine, startSuggestedSession, startCustomSession, startTopicPracticeSession, startHeuristicDrillSession, startEnduranceSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, detectTierUpgradeMessages, type WeakTopicSummary } from '../../lib/kairoEngine';
+import { getEngine, startSuggestedSession, startDashboardSession, reportDashboardSessionOutcome, startCustomSession, startTopicPracticeSession, startHeuristicDrillSession, startEnduranceSession, startLearnFromIncorrectAnswer, getRecommendedNextQuestion, resumePracticeQuestions, loadBookmarks, getWeakTopics, hasCompletedTodaysRecommendation, detectTierUpgradeMessages, type WeakTopicSummary, type DashboardOption } from '../../lib/kairoEngine';
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
@@ -34,7 +34,7 @@ const EXAM_PACE_SEC = 45;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
-type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'verify' | 'drill' | 'endurance';
+type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'dashboard' | 'verify' | 'drill' | 'endurance';
 
 interface InitialState {
   screen: Screen;
@@ -67,6 +67,13 @@ function computeInitial(entry: string, verifyTarget: { subjectLabel: string; top
     return { ...base, subject: { key: 'weak', label: 'Weak Areas' }, screen: 'practiceHub' };
   }
   if (kind === 'suggested') {
+    return { ...base, subject: subjects[0], difficulty: 'adaptive', length: 5, screen: 'practiceQuestion' };
+  }
+  // Kairo V1 2-Option Dashboard — the length shown here is just the
+  // initial-state placeholder (PracticeQuestion re-derives real progress
+  // from the actual resolved question count); the real session length is
+  // whatever startDashboardSession() built from the macro-state cap.
+  if (kind === 'dashboard') {
     return { ...base, subject: subjects[0], difficulty: 'adaptive', length: 5, screen: 'practiceQuestion' };
   }
   if (kind === 'drill') {
@@ -103,6 +110,13 @@ export function PracticeFlow() {
   // Read once via ref: only the initial mount's auto-start needs it, and a
   // ref avoids re-triggering that effect.
   const anchorConceptIdRef = useRef((location.state as { anchorConceptId?: string | null } | null)?.anchorConceptId ?? null);
+  // Kairo V1 2-Option Dashboard — the EXACT DashboardOption object the
+  // student tapped on Home (from a pinned getPinnedDashboardOptions()
+  // read), carried through router state so startDashboardSession() never
+  // re-derives Primary/Secondary itself: RecommendationEngine's tie-
+  // breaking reshuffles call to call, so a fresh recompute here could
+  // silently hand back a different topic than the one actually shown.
+  const dashboardOptionRef = useRef((location.state as { dashboardOption?: DashboardOption | null } | null)?.dashboardOption ?? null);
   // Planner's Verification Session (Batch 2) — the exact subject/topic to
   // bypass every picker for, and the Planner topic key its accuracy result
   // reports back to (Batch 3's tiered SRS). Read once via ref, same
@@ -217,6 +231,47 @@ export function PracticeFlow() {
       return;
     }
     startSuggested(anchorConceptIdRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Kairo V1 2-Option Dashboard session (entry:'dashboard') — the student
+   * tapped Primary or Secondary on Home's MissionCard. Unlike
+   * startSuggested() above, there's no re-deriving anything here:
+   * dashboardOptionRef.current is the exact, already-resolved
+   * DashboardOption object the card showed, passed straight into
+   * startDashboardSession() so what was tapped is what actually starts.
+   */
+  const startedDashboard = useRef(false);
+  function startDashboard(option: DashboardOption) {
+    setEngineQuestions(null);
+    setEngineLoadError(null);
+    startDashboardSession(option)
+      .then(({ questions }) => {
+        if (questions.length === 0) {
+          setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
+        } else {
+          setEngineQuestions(questions);
+          const subj = subjects.find((s) => s.label === option.subject) ?? subjects[0];
+          persistFreshSnapshot('dashboard', subj, option.topic ?? null, null, 'adaptive', questions);
+        }
+      })
+      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+  }
+
+  useEffect(() => {
+    if (entryFlow !== 'dashboard' || startedDashboard.current) return;
+    startedDashboard.current = true;
+    const existing = getPracticeSessionSnapshot(getEngine()?.profile?.studentId);
+    if (existing && existing.entryFlow === 'dashboard') {
+      resumeSession(existing);
+      return;
+    }
+    if (!dashboardOptionRef.current) {
+      setEngineLoadError('Missing dashboard selection — go back to Home and try again.');
+      return;
+    }
+    startDashboard(dashboardOptionRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -613,6 +668,17 @@ export function PracticeFlow() {
         // down to Forming (see classifyTier() in plannerSrs.ts).
         const highFrictionPassCount = countHighFrictionPasses(newResults.map((r) => ({ correct: r.correct, timeSec: r.time ?? 0 })));
         recordVerificationResult(plannerTopicKeyRef.current, accuracyPct, highFrictionPassCount).catch(() => {});
+      }
+      // Kairo V1 Dashboard's Anti-Fatigue Circuit Breaker — real completed-
+      // session accuracy (0-1, not a percentage) feeds RecommendationEngine's
+      // FRUSTRATION_ACCURACY_THRESHOLD check for the NEXT dashboard load.
+      // dashboardOptionRef (from router state, read once at mount) is the
+      // same "doesn't survive a hard refresh mid-session" limitation
+      // plannerTopicKeyRef above already has for Verification Sessions —
+      // best-effort, matching that existing precedent rather than a new gap.
+      if (entryFlow === 'dashboard' && dashboardOptionRef.current) {
+        const accuracy = newResults.length ? newResults.filter((r) => r.correct).length / newResults.length : 0;
+        reportDashboardSessionOutcome(dashboardOptionRef.current.type, dashboardOptionRef.current.subject, accuracy);
       }
       if (kairo) {
         // endSession() itself no longer waits on IndexedDB/Supabase (that
