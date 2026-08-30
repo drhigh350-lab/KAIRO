@@ -201,7 +201,18 @@ export const DashboardConstants = Object.freeze({
   // still bound by KaiRules.NEVER_GUILT_BASED_REENGAGEMENT and the
   // platform-wide banned-phrase list; "direct" means naming the pattern
   // plainly, not guilt or comparison.
-  AVOIDANCE_STREAK_THRESHOLD: 3
+  AVOIDANCE_STREAK_THRESHOLD: 3,
+
+  // Planner Handshake (PlannerBridge): additive urgency boost for a
+  // concept whose mapped Study Planner topic is an unresolved critical
+  // gap or a due resurface. Deliberately less than Fading's flat +1000 or
+  // Forming's +400/+600 (a real, but not concept-graph-verified,
+  // retention signal shouldn't override what the engine has actually
+  // observed this student do) but enough to meaningfully outrank a
+  // comfortably Held/Reinforced concept with no other urgency of its own
+  // — a tunable, not something derived from another constant; revisit if
+  // it under- or over-weights Planner signal in practice.
+  PLANNER_DUE_CRITICAL_BOOST: 300
 });
 
 // ─── Momentum Streak ───

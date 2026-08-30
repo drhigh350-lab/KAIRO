@@ -599,6 +599,38 @@ export class SupabaseSyncAdapter {
   }
 
   /**
+   * The Planner Handshake's static half — every REVIEWED subjectSlug/
+   * topicTitle -> engine subject/topic row (see PlannerBridge.js and
+   * scripts/generate-planner-topic-map-candidates.js). Small (~78 rows for
+   * the sciences today) and rarely changes, so callers fetch this once per
+   * session and cache it, not per lookup. 'candidate' rows are excluded —
+   * a generator's unreviewed proposal must never influence a real
+   * recommendation.
+   */
+  async fetchPlannerTopicMap() {
+    const { data, error } = await this._table('planner_topic_map').select('*').eq('confidence', 'reviewed');
+    if (error) throw error;
+    return data || [];
+  }
+
+  /**
+   * The Planner Handshake's per-student half — one student's real
+   * completed_topic_keys/topic_progress, the same shape
+   * kairo-app/src/lib/planner/plannerApi.ts already upserts into this
+   * table on every Planner save. Null if the student has never used the
+   * Planner (no row yet), which PlannerBridge treats identically to an
+   * empty one.
+   */
+  async fetchPlannerState(studentId) {
+    const { data, error } = await this._table('planner_state')
+      .select('completed_topic_keys, topic_progress')
+      .eq('student_id', studentId)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
+
+  /**
    * kairo.concepts row -> ConceptNode constructor shape. IDs come straight
    * from the row — they're already the canonical conceptId() hash computed
    * at seed time, so this never recomputes or re-derives them.

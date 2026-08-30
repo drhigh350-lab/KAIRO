@@ -1,0 +1,804 @@
+{
+  "Chemistry": {
+    "rows": [
+      {
+        "topicTitle": "Separation of Mixtures & Purification",
+        "bestMatch": "Separation of mixtures and purification of chemical substances",
+        "score": 0.825,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Rates of Chemical Reaction",
+          "score": 0.483
+        }
+      },
+      {
+        "topicTitle": "Chemical Combination",
+        "bestMatch": "Chemical combination",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Rates of Chemical Reaction",
+          "score": 0.591
+        }
+      },
+      {
+        "topicTitle": "Kinetic Theory & Gas Laws",
+        "bestMatch": "Kinetic theory of matter and Gas Laws",
+        "score": 0.839,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Chemistry and Industry",
+          "score": 0.372
+        }
+      },
+      {
+        "topicTitle": "Atomic Structure & Bonding",
+        "bestMatch": "Atomic structure and bonding",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Oxidation and reduction",
+          "score": 0.4
+        }
+      },
+      {
+        "topicTitle": "Air",
+        "bestMatch": "Air",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Environmental Pollution",
+          "score": 0.091
+        }
+      },
+      {
+        "topicTitle": "Water",
+        "bestMatch": "Water",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Kinetic theory of matter and Gas Laws",
+          "score": 0.15
+        }
+      },
+      {
+        "topicTitle": "Solubility",
+        "bestMatch": "Solubility",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Chemical equilibria",
+          "score": 0.148
+        }
+      },
+      {
+        "topicTitle": "Environmental Pollution",
+        "bestMatch": "Environmental Pollution",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Chemical combination",
+          "score": 0.256
+        }
+      },
+      {
+        "topicTitle": "Acids, Bases & Salts",
+        "bestMatch": "Acids, bases and salts",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Metals and their compounds",
+          "score": 0.326
+        }
+      },
+      {
+        "topicTitle": "Oxidation & Reduction",
+        "bestMatch": "Oxidation and reduction",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Atomic structure and bonding",
+          "score": 0.4
+        }
+      },
+      {
+        "topicTitle": "Electrolysis",
+        "bestMatch": "Electrolysis",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Chemistry and Industry",
+          "score": 0.143
+        }
+      },
+      {
+        "topicTitle": "Energy Changes",
+        "bestMatch": "Energy changes",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Organic Compounds",
+          "score": 0.207
+        }
+      },
+      {
+        "topicTitle": "Rates of Chemical Reaction",
+        "bestMatch": "Rates of Chemical Reaction",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Chemical combination",
+          "score": 0.591
+        }
+      },
+      {
+        "topicTitle": "Chemical Equilibrium",
+        "bestMatch": "Chemical equilibria",
+        "score": 0.919,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Chemical combination",
+          "score": 0.421
+        }
+      },
+      {
+        "topicTitle": "Non-metals & Their Compounds",
+        "bestMatch": "Non-metals and their compounds",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Metals and their compounds",
+          "score": 0.923
+        }
+      },
+      {
+        "topicTitle": "Metals & Their Compounds",
+        "bestMatch": "Metals and their compounds",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Non-metals and their compounds",
+          "score": 0.923
+        }
+      },
+      {
+        "topicTitle": "Organic Compounds",
+        "bestMatch": "Organic Compounds",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Metals and their compounds",
+          "score": 0.5
+        }
+      },
+      {
+        "topicTitle": "Chemistry & Industry",
+        "bestMatch": "Chemistry and Industry",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Atomic structure and bonding",
+          "score": 0.372
+        }
+      }
+    ],
+    "unclaimedDbTopics": [],
+    "collisions": []
+  },
+  "Physics": {
+    "rows": [
+      {
+        "topicTitle": "Measurements and Units",
+        "bestMatch": "Measurements and Units",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Temperature and its Measurement",
+          "score": 0.711
+        }
+      },
+      {
+        "topicTitle": "Scalars and Vectors",
+        "bestMatch": "Scalars and Vectors",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electrical Energy and Power",
+          "score": 0.381
+        }
+      },
+      {
+        "topicTitle": "Motion",
+        "bestMatch": "Motion",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Friction",
+          "score": 0.5
+        }
+      },
+      {
+        "topicTitle": "Gravitational Field",
+        "bestMatch": "Gravitational Field",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Magnetic Field",
+          "score": 0.387
+        }
+      },
+      {
+        "topicTitle": "Equilibrium of Forces",
+        "bestMatch": "Equilibrium of Forces",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Liquids at Rest",
+          "score": 0.235
+        }
+      },
+      {
+        "topicTitle": "Simple Machines",
+        "bestMatch": "Simple Machines",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electromagnetic Induction",
+          "score": 0.222
+        }
+      },
+      {
+        "topicTitle": "Friction",
+        "bestMatch": "Friction",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Motion",
+          "score": 0.5
+        }
+      },
+      {
+        "topicTitle": "Elasticity",
+        "bestMatch": "Elasticity",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Current Electricity",
+          "score": 0.37
+        }
+      },
+      {
+        "topicTitle": "Work, Energy and Power",
+        "bestMatch": "Work, Energy and Power",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electrical Energy and Power",
+          "score": 0.682
+        }
+      },
+      {
+        "topicTitle": "Liquids at Rest",
+        "bestMatch": "Liquids at Rest",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Equilibrium of Forces",
+          "score": 0.235
+        }
+      },
+      {
+        "topicTitle": "Pressure",
+        "bestMatch": "Pressure",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Measurements and Units",
+          "score": 0.24
+        }
+      },
+      {
+        "topicTitle": "Temperature and Its Measurement",
+        "bestMatch": "Temperature and its Measurement",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Measurements and Units",
+          "score": 0.711
+        }
+      },
+      {
+        "topicTitle": "Quantity of Heat",
+        "bestMatch": "Quantity of Heat",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Energy Quantization",
+          "score": 0.438
+        }
+      },
+      {
+        "topicTitle": "Change of State",
+        "bestMatch": "Change of State",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Quantity of Heat",
+          "score": 0.345
+        }
+      },
+      {
+        "topicTitle": "Thermal Expansion",
+        "bestMatch": "Thermal Expansion",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Heat Transfer",
+          "score": 0.286
+        }
+      },
+      {
+        "topicTitle": "Kinetic Theory of Matter",
+        "bestMatch": "Kinetic Theory of Matter",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Quantity of Heat",
+          "score": 0.368
+        }
+      },
+      {
+        "topicTitle": "Gas Laws",
+        "bestMatch": "Gas Laws",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Elasticity",
+          "score": 0.25
+        }
+      },
+      {
+        "topicTitle": "Propagation of Sound Waves",
+        "bestMatch": "Propagation of Sound Waves",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Dispersion of Light and Colours",
+          "score": 0.333
+        }
+      },
+      {
+        "topicTitle": "Waves",
+        "bestMatch": "Waves",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Propagation of Sound Waves",
+          "score": 0.276
+        }
+      },
+      {
+        "topicTitle": "Light Energy",
+        "bestMatch": "Light Energy",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Work, Energy and Power",
+          "score": 0.4
+        }
+      },
+      {
+        "topicTitle": "Reflection of Light",
+        "bestMatch": "Reflection of Light",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Refraction of Light",
+          "score": 0.833
+        }
+      },
+      {
+        "topicTitle": "Refraction of Light",
+        "bestMatch": "Refraction of Light",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Reflection of Light",
+          "score": 0.833
+        }
+      },
+      {
+        "topicTitle": "Dispersion of Light and Colours",
+        "bestMatch": "Dispersion of Light and Colours",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Reflection of Light",
+          "score": 0.468
+        }
+      },
+      {
+        "topicTitle": "Optical Instruments",
+        "bestMatch": "Optical Instruments",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electrical Measuring Instruments",
+          "score": 0.667
+        }
+      },
+      {
+        "topicTitle": "Electrostatics",
+        "bestMatch": "Electrostatics",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electric Cells",
+          "score": 0.48
+        }
+      },
+      {
+        "topicTitle": "Current Electricity",
+        "bestMatch": "Current Electricity",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electric Cells",
+          "score": 0.467
+        }
+      },
+      {
+        "topicTitle": "Electrical Energy and Power",
+        "bestMatch": "Electrical Energy and Power",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Work, Energy and Power",
+          "score": 0.682
+        }
+      },
+      {
+        "topicTitle": "Electric Cells",
+        "bestMatch": "Electric Cells",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electrostatics",
+          "score": 0.48
+        }
+      },
+      {
+        "topicTitle": "Electrical Measuring Instruments",
+        "bestMatch": "Electrical Measuring Instruments",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Optical Instruments",
+          "score": 0.667
+        }
+      },
+      {
+        "topicTitle": "Capacitors",
+        "bestMatch": "Capacitors",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Scalars and Vectors",
+          "score": 0.308
+        }
+      },
+      {
+        "topicTitle": "Magnetic Field",
+        "bestMatch": "Magnetic Field",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electromagnetic Induction",
+          "score": 0.514
+        }
+      },
+      {
+        "topicTitle": "Electromagnetic Induction",
+        "bestMatch": "Electromagnetic Induction",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Magnetic Field",
+          "score": 0.514
+        }
+      },
+      {
+        "topicTitle": "Alternating Current",
+        "bestMatch": "Alternating Current",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Current Electricity",
+          "score": 0.333
+        }
+      },
+      {
+        "topicTitle": "Semiconductors",
+        "bestMatch": "Semiconductors",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Electromagnetic Induction",
+          "score": 0.343
+        }
+      },
+      {
+        "topicTitle": "Energy Quantization",
+        "bestMatch": "Energy Quantization",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Quantity of Heat",
+          "score": 0.438
+        }
+      },
+      {
+        "topicTitle": "Elementary Modern Physics",
+        "bestMatch": "Elementary Modern Physics",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Nuclear Physics",
+          "score": 0.474
+        }
+      },
+      {
+        "topicTitle": "Nuclear Physics",
+        "bestMatch": "Nuclear Physics",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Elementary Modern Physics",
+          "score": 0.474
+        }
+      },
+      {
+        "topicTitle": "Heat Transfer",
+        "bestMatch": "Heat Transfer",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Quantity of Heat",
+          "score": 0.296
+        }
+      }
+    ],
+    "unclaimedDbTopics": [
+      "Vapours"
+    ],
+    "collisions": []
+  },
+  "Biology": {
+    "rows": [
+      {
+        "topicTitle": "Living organisms",
+        "bestMatch": "Living organisms",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Evolution among organisms",
+          "score": 0.579
+        }
+      },
+      {
+        "topicTitle": "Structural/functional and behavioural adaptations of organisms",
+        "bestMatch": "Structural/functional and behavioural adaptations of organisms",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Internal structure of plants and animals",
+          "score": 0.469
+        }
+      },
+      {
+        "topicTitle": "Natural habitats",
+        "bestMatch": "Natural habitats",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Structural/functional and behavioural adaptations of organisms",
+          "score": 0.295
+        }
+      },
+      {
+        "topicTitle": "Local (Nigerian) biomes",
+        "bestMatch": "Local (Nigerian) biomes",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Variation in population",
+          "score": 0.216
+        }
+      },
+      {
+        "topicTitle": "The ecology of populations",
+        "bestMatch": "The ecology of populations",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Variation in population",
+          "score": 0.476
+        }
+      },
+      {
+        "topicTitle": "Factors affecting the distribution of organisms",
+        "bestMatch": "Factors affecting the distribution of organisms",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Evolution among organisms",
+          "score": 0.531
+        }
+      },
+      {
+        "topicTitle": "Symbiotic interactions of plants and animals",
+        "bestMatch": "Symbiotic interactions of plants and animals",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Internal structure of plants and animals",
+          "score": 0.629
+        }
+      },
+      {
+        "topicTitle": "Internal structure of plants and animals",
+        "bestMatch": "Internal structure of plants and animals",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Symbiotic interactions of plants and animals",
+          "score": 0.629
+        }
+      },
+      {
+        "topicTitle": "Nutrition",
+        "bestMatch": "Nutrition",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Excretion",
+          "score": 0.375
+        }
+      },
+      {
+        "topicTitle": "Transport",
+        "bestMatch": "Transport",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Support and movement",
+          "score": 0.296
+        }
+      },
+      {
+        "topicTitle": "Respiration",
+        "bestMatch": "Respiration",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Excretion",
+          "score": 0.444
+        }
+      },
+      {
+        "topicTitle": "Excretion",
+        "bestMatch": "Excretion",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Respiration",
+          "score": 0.444
+        }
+      },
+      {
+        "topicTitle": "Support and movement",
+        "bestMatch": "Support and movement",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Humans and environment",
+          "score": 0.368
+        }
+      },
+      {
+        "topicTitle": "Co-ordination and control",
+        "bestMatch": "Co-ordination and control",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Evolution among organisms",
+          "score": 0.4
+        }
+      },
+      {
+        "topicTitle": "Growth",
+        "bestMatch": "Growth",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Reproduction",
+          "score": 0.125
+        }
+      },
+      {
+        "topicTitle": "Reproduction",
+        "bestMatch": "Reproduction",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Excretion",
+          "score": 0.421
+        }
+      },
+      {
+        "topicTitle": "Variation in population",
+        "bestMatch": "Variation in population",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "The ecology of populations",
+          "score": 0.476
+        }
+      },
+      {
+        "topicTitle": "Heredity",
+        "bestMatch": "Heredity",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Excretion",
+          "score": 0.133
+        }
+      },
+      {
+        "topicTitle": "Evolution among organisms",
+        "bestMatch": "Evolution among organisms",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Living organisms",
+          "score": 0.579
+        }
+      },
+      {
+        "topicTitle": "Theories of evolution",
+        "bestMatch": "Theories of evolution",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Evidence of evolution",
+          "score": 0.615
+        }
+      },
+      {
+        "topicTitle": "Evidence of evolution",
+        "bestMatch": "Evidence of evolution",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Theories of evolution",
+          "score": 0.615
+        }
+      },
+      {
+        "topicTitle": "Humans and environment",
+        "bestMatch": "Humans and environment",
+        "score": 1,
+        "confidence": "HIGH",
+        "runnerUp": {
+          "dbTopic": "Support and movement",
+          "score": 0.368
+        }
+      }
+    ],
+    "unclaimedDbTopics": [
+      "Soil"
+    ],
+    "collisions": []
+  }
+}

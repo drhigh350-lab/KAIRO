@@ -23,9 +23,10 @@
 
 import { RetentionState, SessionConstants, ErrorTag, DashboardConstants } from "../utils/constants.js";
 import { clamp, seededShuffle, daysBetween, isExamProximity } from "../utils/helpers.js";
+import { EMPTY_PLANNER_BRIDGE } from "./PlannerBridge.js";
 
 export class RecommendationEngine {
-  constructor({ knowledgeGraph, studentProfile, decayModel, examDate = null, scheduler = null }) {
+  constructor({ knowledgeGraph, studentProfile, decayModel, examDate = null, scheduler = null, plannerBridge = null }) {
     this.graph = knowledgeGraph;
     this.profile = studentProfile;
     this.decayModel = decayModel;
@@ -35,6 +36,10 @@ export class RecommendationEngine {
     // existing callers/tests that construct this class without one don't
     // break.
     this.scheduler = scheduler;
+    // The Planner Handshake — see PlannerBridge.js. Defaults to a no-op
+    // bridge (every lookup returns 'none') so every existing caller/test
+    // that constructs this class without one behaves exactly as before.
+    this.plannerBridge = plannerBridge || EMPTY_PLANNER_BRIDGE;
     this.examDate = examDate;
     this.sessionQueue = [];        // ordered list of concept IDs for this session
     this.sessionHistory = [];      // concepts already covered this session
@@ -73,8 +78,22 @@ export class RecommendationEngine {
    *    (survived one real forgetting-and-recovery cycle already) is at
    *    least as worth pressure-testing as a merely-Held one — now both
    *    qualify.
+   *
+   * Also consults the Planner Handshake (this.plannerBridge — see
+   * PlannerBridge.js): a concept whose mapped Study Planner topic was
+   * JUST verified/completed gets zeroed out for the quarantine window
+   * regardless of its own retentionState, so the daily recommendation
+   * doesn't immediately nag about something the student just confirmed
+   * they've got; a concept whose mapped topic is a due/unresolved
+   * critical gap gets an additive boost. A concept with no reviewed
+   * mapping (Mathematics/Use of English today, or any not-yet-reviewed
+   * topic) is completely unaffected — see PlannerBridge's own doc comment
+   * for why that's a deliberate no-op, not a gap.
    */
   _conceptUrgencyScore(concept) {
+    const plannerSignal = this.plannerBridge.getSignal(concept.subject, concept.topic, SessionConstants.QUESTION_REQUEUE_COOLDOWN_MS);
+    if (plannerSignal.signal === 'recently_completed') return 0;
+
     let score = 0;
 
     if (concept.retentionState === RetentionState.FADING) {
@@ -91,6 +110,10 @@ export class RecommendationEngine {
         (concept.retentionState === RetentionState.HELD || concept.retentionState === RetentionState.REINFORCED) &&
         concept.decayEstimate < 0.7) {
       score += 200;
+    }
+
+    if (plannerSignal.signal === 'due_critical') {
+      score += DashboardConstants.PLANNER_DUE_CRITICAL_BOOST;
     }
 
     return score;

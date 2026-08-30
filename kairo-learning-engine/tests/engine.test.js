@@ -9,6 +9,7 @@ import { RetentionState, ErrorTag, StreakConstants, KairoPointsAwards, Dashboard
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
 import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
 import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
+import { PlannerBridge } from "../src/engine/PlannerBridge.js";
 import { EliteScore } from "../src/engine/EliteScore.js";
 
 let passCount = 0;
@@ -946,6 +947,84 @@ test('getQuestionForConcept({enforceVolumeLock}): a failed question stays locked
   }
   const unlockedNow = engine._questionCooldownUntil('hl_q1', concept, { enforceVolumeLock: true });
   assert(unlockedNow <= Date.now(), 'Once both the time lock and the topic-volume lock are satisfied, the failed question should unlock');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PLANNER HANDSHAKE — PlannerBridge
+// ═══════════════════════════════════════════════════════════════
+
+test('PlannerBridge.getSignal(): no mapping at all (Mathematics/Use of English today) always returns none', () => {
+  const bridge = new PlannerBridge([], { completed_topic_keys: [], topic_progress: {} });
+  assertEqual(bridge.getSignal('Mathematics', 'Indices and Logarithms', 86400000).signal, 'none',
+    'An engine topic with no reviewed planner_topic_map row must never guess a signal');
+});
+
+test('PlannerBridge.getSignal(): due_critical fires for an unresolved critical gap, stripping the real stageOrder-bearing topicKey correctly', () => {
+  const mapRows = [{ subject_slug: 'chemistry', topic_title: 'Chemical Equilibrium', engine_subject: 'Chemistry', engine_topics: ['Chemical equilibria'] }];
+  // Real shape: plannerEngine.ts's topicKey() = `${subjectSlug}::${stageOrder}::${topicTitle}`.
+  const plannerState = { completed_topic_keys: [], topic_progress: { 'chemistry::3::Chemical Equilibrium': { tier: 'critical', criticalGap: true, resurfaceDates: [], lastAttemptedAt: new Date().toISOString() } } };
+  const bridge = new PlannerBridge(mapRows, plannerState);
+
+  const signal = bridge.getSignal('Chemistry', 'Chemical equilibria', 86400000);
+  assertEqual(signal.signal, 'due_critical', 'An unresolved critical gap on the mapped Planner topic should surface as due_critical');
+});
+
+test('PlannerBridge.getSignal(): due_critical also fires for a plain resurface date that has arrived (not just a critical gap)', () => {
+  const mapRows = [{ subject_slug: 'physics', topic_title: 'Kinetic Theory & Gas Laws', engine_subject: 'Physics', engine_topics: ['Kinetic Theory of Matter', 'Gas Laws'] }];
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const plannerState = { completed_topic_keys: [], topic_progress: { 'physics::2::Kinetic Theory & Gas Laws': { tier: 'forming', criticalGap: false, resurfaceDates: [yesterday], lastAttemptedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() } } };
+  const bridge = new PlannerBridge(mapRows, plannerState);
+
+  assertEqual(bridge.getSignal('Physics', 'Gas Laws', 86400000).signal, 'due_critical',
+    'One Planner topic mapping to multiple engine topics (the genuine one-to-many case) should surface the signal on every mapped engine topic');
+});
+
+test('PlannerBridge.getSignal(): recently_completed fires within the quarantine window, but a stale (old) completion falls through to whatever is actually due instead', () => {
+  const mapRows = [{ subject_slug: 'biology', topic_title: 'Nutrition', engine_subject: 'Biology', engine_topics: ['Nutrition'] }];
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const freshState = { completed_topic_keys: ['biology::1::Nutrition'], topic_progress: { 'biology::1::Nutrition': { tier: 'mastery', criticalGap: false, resurfaceDates: [], lastAttemptedAt: oneHourAgo } } };
+  const freshBridge = new PlannerBridge(mapRows, freshState);
+  assertEqual(freshBridge.getSignal('Biology', 'Nutrition', 86400000).signal, 'recently_completed',
+    'A completion within the 24h window should quarantine the topic');
+
+  const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const staleState = { completed_topic_keys: ['biology::1::Nutrition'], topic_progress: { 'biology::1::Nutrition': { tier: 'forming', criticalGap: false, resurfaceDates: [todayIso], lastAttemptedAt: longAgo } } };
+  const staleBridge = new PlannerBridge(mapRows, staleState);
+  assertEqual(staleBridge.getSignal('Biology', 'Nutrition', 86400000).signal, 'due_critical',
+    'A completion from a month ago is not "recently completed" — a genuinely due resurface since then should still surface');
+});
+
+test('RecommendationEngine._conceptUrgencyScore(): Planner Handshake zeroes a just-completed concept regardless of Fading, and boosts a due-critical one', () => {
+  const graph = new KnowledgeGraph();
+  const justVerified = new ConceptNode({ id: 'ph_verified', name: 'Titration', subject: 'Chemistry', topic: 'Acids, bases and salts' });
+  justVerified.retentionState = 'fading';
+  justVerified.decayEstimate = 0.1; // badly forgotten by the engine's own data
+  graph.addConcept(justVerified);
+  const dueCritical = new ConceptNode({ id: 'ph_critical', name: 'Neutralisation', subject: 'Chemistry', topic: 'Energy changes' });
+  dueCritical.retentionState = 'held'; // otherwise unremarkable to the engine
+  dueCritical.decayEstimate = 0.9;
+  graph.addConcept(dueCritical);
+
+  const mapRows = [
+    { subject_slug: 'chemistry', topic_title: 'Acids, Bases & Salts', engine_subject: 'Chemistry', engine_topics: ['Acids, bases and salts'] },
+    { subject_slug: 'chemistry', topic_title: 'Energy Changes', engine_subject: 'Chemistry', engine_topics: ['Energy changes'] }
+  ];
+  const plannerState = {
+    completed_topic_keys: ['chemistry::9::Acids, Bases & Salts'],
+    topic_progress: {
+      'chemistry::9::Acids, Bases & Salts': { tier: 'mastery', criticalGap: false, resurfaceDates: [], lastAttemptedAt: new Date().toISOString() },
+      'chemistry::12::Energy Changes': { tier: 'critical', criticalGap: true, resurfaceDates: [], lastAttemptedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() }
+    }
+  };
+  const bridge = new PlannerBridge(mapRows, plannerState);
+  const profile = new StudentProfile({ studentId: 'planner_urgency_student', name: 'S', targetSubjects: ['Chemistry'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null, plannerBridge: bridge });
+
+  assertEqual(rec._conceptUrgencyScore(justVerified), 0,
+    'A badly-Fading concept whose Planner topic was just verified should be zeroed out for the quarantine window, not ranked urgent');
+  assert(rec._conceptUrgencyScore(dueCritical) >= DashboardConstants.PLANNER_DUE_CRITICAL_BOOST,
+    'An otherwise-unremarkable Held concept whose Planner topic is an unresolved critical gap should get the Planner boost');
 });
 
 // ═══════════════════════════════════════════════════════════════

@@ -14,6 +14,7 @@ import { KnowledgeGraph } from "./core/KnowledgeGraph.js";
 import { ConceptNode } from "./core/ConceptNode.js";
 import { DecayModel } from "./core/DecayModel.js";
 import { RecommendationEngine } from "./engine/RecommendationEngine.js";
+import { PlannerBridge, EMPTY_PLANNER_BRIDGE } from "./engine/PlannerBridge.js";
 import { ErrorPatternClassifier } from "./engine/ErrorPatternClassifier.js";
 import { EliteScore } from "./engine/EliteScore.js";
 import { AdaptiveDifficulty } from "./engine/AdaptiveDifficulty.js";
@@ -124,6 +125,13 @@ export class KairoEngine {
     // each connect, same as bookmarks.
     this.mistakePatches = new Map();
 
+    // Planner Handshake — see PlannerBridge.js. Defaults to a real no-op
+    // (every lookup returns 'none') until loadPlannerHandshakeData() has
+    // actually run, so every session-building path that reads
+    // this.plannerBridge works identically whether or not the Handshake
+    // has been loaded — never a null check required at the call site.
+    this.plannerBridge = EMPTY_PLANNER_BRIDGE;
+
     // Hydration state — a caller gating access on auth/onboarding status
     // (e.g. a route guard) needs a safe thing to await: `ready` stays
     // false until init() has actually read IndexedDB, and _initPromise
@@ -162,6 +170,13 @@ export class KairoEngine {
     this.levelSystem = new LevelSystem(this.profile);
     this.badgeSystem = new BadgeSystem(this.profile);
     this.settings = new ProfileSettings(this);
+    // Not profile-bound in the constructor sense (it's keyed by
+    // studentId/Supabase state, not a reference to the profile object
+    // itself), but a wiped/replaced profile must never keep serving
+    // another account's Planner data — reset to empty and let the next
+    // real loadPlannerHandshakeData() call repopulate it for whoever's
+    // profile this now is.
+    this.plannerBridge = EMPTY_PLANNER_BRIDGE;
   }
 
   /**
@@ -765,7 +780,8 @@ export class KairoEngine {
       studentProfile: this.profile,
       decayModel: this.decayModel,
       examDate: this.profile.examDate,
-      scheduler: this.scheduler
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     // this.difficulty is a single instance that lives for the whole profile
     // (see _rebuildProfileBoundSubsystems()), not recreated per session —
@@ -826,7 +842,8 @@ export class KairoEngine {
       studentProfile: this.profile,
       decayModel: this.decayModel,
       examDate: this.profile.examDate,
-      scheduler: this.scheduler
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     const plan = preview.buildSessionPlan();
     const topConceptId = plan[0] || null;
@@ -858,7 +875,8 @@ export class KairoEngine {
       studentProfile: this.profile,
       decayModel: this.decayModel,
       examDate: this.profile.examDate,
-      scheduler: this.scheduler
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     const ranked = preview.buildRankedQueue(queueCount * questionsPerQueue);
 
@@ -893,6 +911,33 @@ export class KairoEngine {
   }
 
   /**
+   * Fetches and caches the Planner Handshake's two inputs (the reviewed
+   * subjectSlug/topicTitle map, and this student's real Planner progress)
+   * and builds this.plannerBridge from them. Explicit, not automatic on
+   * every session start — same "call it when you want to warm this up"
+   * pattern as prefetchRecommendationQueues(), so a student who's never
+   * opened the Planner (or is offline) never pays for a network round
+   * trip nothing will use. Best-effort: any failure leaves
+   * this.plannerBridge exactly as it was (EMPTY_PLANNER_BRIDGE on a first
+   * call), never throws into a caller building a real session.
+   */
+  async loadPlannerHandshakeData() {
+    if (!this.sync.adapter) return;
+    try {
+      const [mapRows, plannerState] = await Promise.all([
+        this.sync.adapter.fetchPlannerTopicMap(),
+        this.sync.adapter.fetchPlannerState(this.profile.studentId)
+      ]);
+      this.plannerBridge = new PlannerBridge(mapRows, plannerState);
+    } catch {
+      // Offline, not yet signed in, or the fetch failed — the existing
+      // bridge (empty, or whatever was last successfully loaded) is the
+      // honest fallback, same philosophy as every other best-effort
+      // enrichment in this engine.
+    }
+  }
+
+  /**
    * The Kairo V1 2-Option Dashboard: resolves RecommendationEngine's
    * Primary/Secondary session-type picks into real, ready-to-render
    * payloads — question objects already attached (capped to a reasonable
@@ -914,7 +959,8 @@ export class KairoEngine {
       studentProfile: this.profile,
       decayModel: this.decayModel,
       examDate: this.profile.examDate,
-      scheduler: this.scheduler
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     const { primary, secondary } = preview.getDashboardOptions();
 
@@ -959,7 +1005,8 @@ export class KairoEngine {
       studentProfile: this.profile,
       decayModel: this.decayModel,
       examDate: this.profile.examDate,
-      scheduler: this.scheduler
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     rec.recordSessionOutcome({ type, subject, accuracy });
   }
@@ -983,7 +1030,8 @@ export class KairoEngine {
       studentProfile: this.profile,
       decayModel: this.decayModel,
       examDate: this.profile.examDate,
-      scheduler: this.scheduler
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     const thresholdCrossed = rec.recordSprintDodged(subject);
     return {
