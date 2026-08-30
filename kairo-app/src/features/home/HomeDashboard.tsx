@@ -163,6 +163,17 @@ export function HomeDashboard() {
     setAvoidanceIntervention(null);
     navigate('/practice', { state: { entry: 'dashboard', dashboardOption: target } });
   }
+
+  // Explicit dismissal, not a casual one: unlike a backdrop click or
+  // Escape (which the shared Modal component allows and which this
+  // overlay deliberately doesn't), tapping "Not now" is its own conscious
+  // acknowledgment of the message — it just declines the action instead of
+  // taking it. A fully trapped modal with zero way out is a real
+  // accessibility/App-Store-review problem, not just a UX nicety, so this
+  // stays even though the intervention is meant to be direct.
+  function handleInterventionDismiss() {
+    setAvoidanceIntervention(null);
+  }
   const hasTodayProgress = todayProgress.questionsToday > 0;
   // Goal-completion %, not accuracy — the ring used to show accuracyPct
   // (e.g. "90%" from one lucky question) inside a shape that visually reads
@@ -339,12 +350,14 @@ export function HomeDashboard() {
 
       {/*
         Kai's Avoidance Tone intervention — deliberately NOT the shared
-        Modal component (which closes on backdrop click and Escape). This
-        is meant to be genuinely blocking: the only way out is the
-        acknowledgment button, which routes straight into the Focused
-        Sprint the message names. No X, no backdrop dismiss, on purpose —
-        this is the one place in the app that isn't supposed to be easy
-        to swipe past.
+        Modal component (which closes on backdrop click and Escape, both
+        casual, half-conscious dismissals that would undercut an
+        intentionally direct message). No X, no backdrop dismiss, no
+        Escape key. The only two ways out are both explicit, deliberate
+        taps: "Let's do it" (starts the Sprint the message names) or "Not
+        now" (a real, if de-emphasized, decline) — never a fully trapped
+        modal with zero way out, which is a genuine accessibility/App-
+        Store-review problem, not just a UX nicety.
       */}
       {avoidanceIntervention && (
         <div role="presentation" style={{ position: 'fixed', inset: 0, background: 'rgba(11,23,32,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
@@ -352,6 +365,12 @@ export function HomeDashboard() {
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)', marginBottom: 10 }}>From Kai</div>
             <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6, marginBottom: 20 }}>{avoidanceIntervention.text}</div>
             <Button variant="darkAccent" size="lg" fullWidth onClick={handleInterventionAcknowledge}>Let's do it</Button>
+            <button type="button" onClick={handleInterventionDismiss} style={{
+              marginTop: 14, width: '100%', minHeight: 'var(--touch-min)', background: 'none', border: 'none',
+              color: 'var(--dark-text-faint)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              Not now
+            </button>
           </div>
         </div>
       )}

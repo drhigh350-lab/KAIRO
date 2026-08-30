@@ -117,6 +117,14 @@ export function PracticeFlow() {
   // breaking reshuffles call to call, so a fresh recompute here could
   // silently hand back a different topic than the one actually shown.
   const dashboardOptionRef = useRef((location.state as { dashboardOption?: DashboardOption | null } | null)?.dashboardOption ?? null);
+  // The small slice of dashboardOptionRef actually needed at COMPLETION
+  // time (reportDashboardSessionOutcome only wants type+subject, not the
+  // full conceptIds/questions/reason payload) — tracked separately so
+  // resumeSession() can restore it from the persisted snapshot after a
+  // hard refresh, without needing to reconstruct a fake full DashboardOption.
+  const dashboardOutcomeMetaRef = useRef<{ type: string; subject: string | null } | null>(
+    dashboardOptionRef.current ? { type: dashboardOptionRef.current.type, subject: dashboardOptionRef.current.subject } : null
+  );
   // Planner's Verification Session (Batch 2) — the exact subject/topic to
   // bypass every picker for, and the Planner topic key its accuracy result
   // reports back to (Batch 3's tiered SRS). Read once via ref, same
@@ -253,7 +261,8 @@ export function PracticeFlow() {
         } else {
           setEngineQuestions(questions);
           const subj = subjects.find((s) => s.label === option.subject) ?? subjects[0];
-          persistFreshSnapshot('dashboard', subj, option.topic ?? null, null, 'adaptive', questions);
+          persistFreshSnapshot('dashboard', subj, option.topic ?? null, null, 'adaptive', questions,
+            { dashboardMeta: { type: option.type, subject: option.subject } });
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
@@ -408,7 +417,8 @@ export function PracticeFlow() {
           setEngineLoadError("Kairo couldn't find any questions for this topic yet.");
         } else {
           setEngineQuestions(questions);
-          persistFreshSnapshot(entryFlow, { key: subjectLabel, label: subjectLabel }, topicName, subtopicName ?? null, difficultyOverride ?? difficulty ?? null, questions);
+          persistFreshSnapshot(entryFlow, { key: subjectLabel, label: subjectLabel }, topicName, subtopicName ?? null, difficultyOverride ?? difficulty ?? null, questions,
+            isVerification ? { plannerTopicKey: plannerTopicKeyRef.current } : undefined);
         }
       })
       .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
@@ -429,6 +439,13 @@ export function PracticeFlow() {
     setResults(restoredResults);
     setQIndex(snapshot.qIndex);
     setScreen('practiceQuestion');
+    // Restores what a hard refresh would otherwise have wiped from the
+    // router-state-only refs above — see PracticeSessionSnapshot's own
+    // doc comment on plannerTopicKey/dashboardMeta for why this matters:
+    // without it, recordVerificationResult()/reportDashboardSessionOutcome()
+    // would silently no-op on a resumed session's completion.
+    if (snapshot.plannerTopicKey) plannerTopicKeyRef.current = snapshot.plannerTopicKey;
+    if (snapshot.dashboardMeta) dashboardOutcomeMetaRef.current = snapshot.dashboardMeta;
     resumePracticeQuestions(snapshot.loadSubjectLabel, snapshot.questionIds)
       .then((questions) => {
         if (questions.length === 0 || snapshot.qIndex >= questions.length) {
@@ -450,7 +467,7 @@ export function PracticeFlow() {
    * maintains, at qIndex 0 with no results yet, right when the questions
    * a session will actually run are first known.
    */
-  function persistFreshSnapshot(flow: string, subj: SubjectLike, topicValue: string | null, subtopicValue: string | null, difficultyValue: string | null, questions: EngineFlatQuestion[]) {
+  function persistFreshSnapshot(flow: string, subj: SubjectLike, topicValue: string | null, subtopicValue: string | null, difficultyValue: string | null, questions: EngineFlatQuestion[], extra?: { plannerTopicKey?: string | null; dashboardMeta?: { type: string; subject: string | null } | null }) {
     saveSessionSnapshot(getEngine()?.profile?.studentId, {
       kind: 'practice',
       entryFlow: flow,
@@ -464,6 +481,8 @@ export function PracticeFlow() {
       qIndex: 0,
       resultsJson: '[]',
       savedAt: Date.now(),
+      plannerTopicKey: extra?.plannerTopicKey ?? null,
+      dashboardMeta: extra?.dashboardMeta ?? null,
     });
   }
 
@@ -672,13 +691,13 @@ export function PracticeFlow() {
       // Kairo V1 Dashboard's Anti-Fatigue Circuit Breaker — real completed-
       // session accuracy (0-1, not a percentage) feeds RecommendationEngine's
       // FRUSTRATION_ACCURACY_THRESHOLD check for the NEXT dashboard load.
-      // dashboardOptionRef (from router state, read once at mount) is the
-      // same "doesn't survive a hard refresh mid-session" limitation
-      // plannerTopicKeyRef above already has for Verification Sessions —
-      // best-effort, matching that existing precedent rather than a new gap.
-      if (entryFlow === 'dashboard' && dashboardOptionRef.current) {
+      // dashboardOutcomeMetaRef survives a hard refresh mid-session (see
+      // resumeSession() and PracticeSessionSnapshot.dashboardMeta) — this
+      // no longer silently no-ops the way it would reading straight off
+      // router state.
+      if (entryFlow === 'dashboard' && dashboardOutcomeMetaRef.current) {
         const accuracy = newResults.length ? newResults.filter((r) => r.correct).length / newResults.length : 0;
-        reportDashboardSessionOutcome(dashboardOptionRef.current.type, dashboardOptionRef.current.subject, accuracy);
+        reportDashboardSessionOutcome(dashboardOutcomeMetaRef.current.type, dashboardOutcomeMetaRef.current.subject, accuracy);
       }
       if (kairo) {
         // endSession() itself no longer waits on IndexedDB/Supabase (that

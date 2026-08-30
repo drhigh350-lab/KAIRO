@@ -26,6 +26,17 @@ export interface PracticeSessionSnapshot {
   qIndex: number;
   resultsJson: string;
   savedAt: number;
+  /**
+   * Verification Session's Planner topic key (Batch 3's tiered SRS) and/or
+   * the Kairo V1 Dashboard's session type/subject (the Anti-Fatigue Circuit
+   * Breaker's input) — both previously lived only in a React ref seeded
+   * from router state at mount, which a hard refresh mid-session loses
+   * entirely (router state doesn't survive a reload), silently skipping
+   * recordVerificationResult()/reportDashboardSessionOutcome() on
+   * completion. Persisted here so resumeSession() can restore them.
+   */
+  plannerTopicKey?: string | null;
+  dashboardMeta?: { type: string; subject: string | null } | null;
 }
 
 /**
