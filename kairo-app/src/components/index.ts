@@ -13,6 +13,7 @@ export * from './feedback/ScoreBadge';
 export * from './feedback/StreakBadge';
 export * from './feedback/Toast';
 
+export * from './kairo/AvoidanceInterventionModal';
 export * from './kairo/KaiMessage';
 export * from './kairo/MissionCard';
 export * from './kairo/QuestionCard';

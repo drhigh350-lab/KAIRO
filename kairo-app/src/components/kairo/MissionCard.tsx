@@ -1,3 +1,10 @@
+import type { CSSProperties } from 'react';
+
+export interface MissionCardSecondaryOption {
+  label: string;
+  onStart: () => void;
+}
+
 export interface MissionCardProps {
   eyebrow?: string;
   badge?: string;
@@ -8,9 +15,27 @@ export interface MissionCardProps {
   progress?: number;
   ctaLabel?: string;
   onStart?: () => void;
+  /** Kairo V1 2-Option Dashboard's Secondary option — a ghost/outline CTA under the solid Primary one. Absent entirely (not just unclicked) when RecommendationEngine had nothing eligible to offer as Secondary. */
+  secondary?: MissionCardSecondaryOption;
 }
 
-export function MissionCard({ eyebrow = "TODAY'S MISSION", badge, title, reason, duration, chips, progress, ctaLabel = 'Start Mission', onStart }: MissionCardProps) {
+// Truncation guardrail (per the Mentor Copy Generator spec): real UTME
+// topic names can be long (e.g. "Separation of mixtures and purification
+// of chemical substances"), and a button is a fixed-width pill — this
+// keeps the label to one line with an ellipsis instead of wrapping or
+// stretching the button. No Tailwind in this codebase (verified — every
+// component here is inline-styled), so this is the plain-CSS equivalent
+// of Tailwind's `truncate`, not an actual utility class. minWidth: 0 is
+// required alongside it: a flex child won't shrink below its content's
+// natural width otherwise, and the ellipsis never gets a chance to apply.
+const truncateStyle: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
+
+/** The Mentor Copy Generator's button strings already end in a literal "→" (part of the exact specified copy) — this button also renders its own SVG arrow icon for plain labels that don't. Auto-detecting avoids a caller having to know which of MissionCard's two arrow mechanisms is in play, and avoids a doubled arrow ("Fix X → →") for generator-driven copy without silently dropping the icon for every other existing caller (e.g. the plain "Start Mission"/"Start Session" labels that have no embedded arrow). */
+function hasEmbeddedArrow(label: string): boolean {
+  return label.trim().endsWith('→');
+}
+
+export function MissionCard({ eyebrow = "TODAY'S MISSION", badge, title, reason, duration, chips, progress, ctaLabel = 'Start Mission', onStart, secondary }: MissionCardProps) {
   return (
     <div style={{
       background: 'linear-gradient(160deg, var(--dark-accent-blue) 0%, var(--dark-accent-blue-deep) 60%, var(--dark-bg-elevated) 100%)',
@@ -45,11 +70,28 @@ export function MissionCard({ eyebrow = "TODAY'S MISSION", badge, title, reason,
       <button onClick={onStart} style={{
         marginTop: 20, width: '100%', minHeight: 'var(--touch-min)', background: 'rgba(255,255,255,0.95)', color: 'var(--dark-accent-blue-deep)',
         border: 'none', borderRadius: 'var(--radius-pill)', fontWeight: 700, fontSize: 'var(--fs-body-lg)', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 16px',
       }}>
-        {ctaLabel}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue-deep)" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+        <span style={truncateStyle}>{ctaLabel}</span>
+        {!hasEmbeddedArrow(ctaLabel) && (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue-deep)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+        )}
       </button>
+      {secondary && (
+        // Ghost/outline, not the shared Button component's variant="ghost"
+        // (that one's tokened for the light theme — --kairo-blue-700 on a
+        // light surface — and would read wrong on this card's dark
+        // gradient). Transparent fill + translucent white border/text
+        // reads as "the other option" without competing with the solid
+        // white Primary CTA above it.
+        <button onClick={secondary.onStart} style={{
+          marginTop: 10, width: '100%', minHeight: 'var(--touch-min)', background: 'transparent', color: '#fff',
+          border: '1.5px solid rgba(255,255,255,0.5)', borderRadius: 'var(--radius-pill)', fontWeight: 600, fontSize: 'var(--fs-body)', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 16px',
+        }}>
+          <span style={truncateStyle}>{secondary.label}</span>
+        </button>
+      )}
     </div>
   );
 }

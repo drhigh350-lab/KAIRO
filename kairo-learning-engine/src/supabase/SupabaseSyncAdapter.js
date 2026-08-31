@@ -18,7 +18,11 @@
  *                              Student Intelligence Model §1 Identity
  *                              fields, added by migration
  *                              add_sjee_comms_learn_and_identity_columns_
- *                              to_students). Keep _profileToRow/
+ *                              to_students; last_frustrated_subject/
+ *                              last_frustrated_at/avoidance_streaks added by
+ *                              add_dashboard_circuit_breaker_columns_to_students
+ *                              for RecommendationEngine's Kairo V1 Dashboard).
+ *                              Keep _profileToRow/
  *                              _rowToProfile and this list in lockstep with
  *                              StudentProfile.toJSON() — a field missing
  *                              from either silently stops reaching Supabase.
@@ -151,6 +155,12 @@ export class SupabaseSyncAdapter {
       streak_longest_momentum: profileData.streakData?.longestMomentum || 0,
       at_risk_triggered_at: profileData.atRiskTriggeredAt ? new Date(profileData.atRiskTriggeredAt).toISOString() : null,
       recovery_session_count: profileData.recoverySessionCount || 0,
+      // Kairo V1 Dashboard — RecommendationEngine's Anti-Fatigue Circuit
+      // Breaker / Avoidance Tracker (see recordSessionOutcome()/
+      // recordSprintDodged()).
+      last_frustrated_subject: profileData.lastFrustratedSubject || null,
+      last_frustrated_at: profileData.lastFrustratedAt ? new Date(profileData.lastFrustratedAt).toISOString() : null,
+      avoidance_streaks: profileData.avoidanceStreaks || {},
       notification_history: profileData.notificationHistory || [],
       completed_challenges: profileData.completedChallenges || [],
       // Kairo Points (formerly "XP") — a strictly additive ledger, distinct
@@ -240,6 +250,9 @@ export class SupabaseSyncAdapter {
       },
       atRiskTriggeredAt: row.at_risk_triggered_at ? new Date(row.at_risk_triggered_at).getTime() : null,
       recoverySessionCount: row.recovery_session_count,
+      lastFrustratedSubject: row.last_frustrated_subject || null,
+      lastFrustratedAt: row.last_frustrated_at ? new Date(row.last_frustrated_at).getTime() : null,
+      avoidanceStreaks: row.avoidance_streaks || {},
       notificationHistory: row.notification_history || [],
       completedChallenges: row.completed_challenges || [],
       kairoPoints: row.kairo_points || 0,
@@ -583,6 +596,38 @@ export class SupabaseSyncAdapter {
     const { data, error } = await query;
     if (error) throw error;
     return (data || []).map(row => this._rowToQuestion(row));
+  }
+
+  /**
+   * The Planner Handshake's static half — every REVIEWED subjectSlug/
+   * topicTitle -> engine subject/topic row (see PlannerBridge.js and
+   * scripts/generate-planner-topic-map-candidates.js). Small (~78 rows for
+   * the sciences today) and rarely changes, so callers fetch this once per
+   * session and cache it, not per lookup. 'candidate' rows are excluded —
+   * a generator's unreviewed proposal must never influence a real
+   * recommendation.
+   */
+  async fetchPlannerTopicMap() {
+    const { data, error } = await this._table('planner_topic_map').select('*').eq('confidence', 'reviewed');
+    if (error) throw error;
+    return data || [];
+  }
+
+  /**
+   * The Planner Handshake's per-student half — one student's real
+   * completed_topic_keys/topic_progress, the same shape
+   * kairo-app/src/lib/planner/plannerApi.ts already upserts into this
+   * table on every Planner save. Null if the student has never used the
+   * Planner (no row yet), which PlannerBridge treats identically to an
+   * empty one.
+   */
+  async fetchPlannerState(studentId) {
+    const { data, error } = await this._table('planner_state')
+      .select('completed_topic_keys, topic_progress')
+      .eq('student_id', studentId)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
   }
 
   /**

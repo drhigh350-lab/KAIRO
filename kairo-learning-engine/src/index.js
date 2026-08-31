@@ -14,6 +14,7 @@ import { KnowledgeGraph } from "./core/KnowledgeGraph.js";
 import { ConceptNode } from "./core/ConceptNode.js";
 import { DecayModel } from "./core/DecayModel.js";
 import { RecommendationEngine } from "./engine/RecommendationEngine.js";
+import { PlannerBridge, EMPTY_PLANNER_BRIDGE } from "./engine/PlannerBridge.js";
 import { ErrorPatternClassifier } from "./engine/ErrorPatternClassifier.js";
 import { EliteScore } from "./engine/EliteScore.js";
 import { AdaptiveDifficulty } from "./engine/AdaptiveDifficulty.js";
@@ -32,7 +33,7 @@ import { WeeklyReflection, MonthlyWrapped } from "./motivation/WeeklyReflection.
 import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
 import { conceptId, shuffleArray, isCalculationQuestion } from "./utils/helpers.js";
-import { KairoPointsAwards, ReviewConstants } from "./utils/constants.js";
+import { KairoPointsAwards, SessionConstants, DashboardConstants } from "./utils/constants.js";
 
 // Practice Modes
 import { RapidFireEngine } from "./practice/RapidFireEngine.js";
@@ -124,6 +125,13 @@ export class KairoEngine {
     // each connect, same as bookmarks.
     this.mistakePatches = new Map();
 
+    // Planner Handshake — see PlannerBridge.js. Defaults to a real no-op
+    // (every lookup returns 'none') until loadPlannerHandshakeData() has
+    // actually run, so every session-building path that reads
+    // this.plannerBridge works identically whether or not the Handshake
+    // has been loaded — never a null check required at the call site.
+    this.plannerBridge = EMPTY_PLANNER_BRIDGE;
+
     // Hydration state — a caller gating access on auth/onboarding status
     // (e.g. a route guard) needs a safe thing to await: `ready` stays
     // false until init() has actually read IndexedDB, and _initPromise
@@ -162,6 +170,13 @@ export class KairoEngine {
     this.levelSystem = new LevelSystem(this.profile);
     this.badgeSystem = new BadgeSystem(this.profile);
     this.settings = new ProfileSettings(this);
+    // Not profile-bound in the constructor sense (it's keyed by
+    // studentId/Supabase state, not a reference to the profile object
+    // itself), but a wiped/replaced profile must never keep serving
+    // another account's Planner data — reset to empty and let the next
+    // real loadPlannerHandshakeData() call repopulate it for whoever's
+    // profile this now is.
+    this.plannerBridge = EMPTY_PLANNER_BRIDGE;
   }
 
   /**
@@ -516,13 +531,31 @@ export class KairoEngine {
    * just ones a student has actively engaged with. Returns 0 (always ripe)
    * for a question that's never been attempted or was last answered correctly.
    */
-  _questionCooldownUntil(questionId, concept) {
+  /**
+   * General-purpose requeue lock for ordinary practice/recommendation
+   * selection — deliberately separate from ReviewModule's own 72h
+   * MISTAKE_COOLDOWN_MS (Spaced Sandbox), which ReviewModule computes
+   * itself from that constant directly and never calls this method for.
+   * Changing SessionConstants.QUESTION_REQUEUE_COOLDOWN_MS here has no
+   * effect on Review's ledger/Smart Patch/Triage Inbox behavior.
+   *
+   * `enforceVolumeLock` adds the Focused Sprint Hybrid Lock: time alone
+   * unlocking a failed question is unreliable for a low-velocity student
+   * who might only answer a few questions every few days, so a Focused
+   * Sprint additionally requires real practice volume in the SAME topic
+   * since the failure before that exact question can resurface. The
+   * volume threshold scales down for a thin topic (adaptive to the real
+   * question bank) rather than a flat number that could never be met.
+   * Returns Infinity (never ripe) when the volume condition isn't met yet,
+   * regardless of how much time has passed.
+   */
+  _questionCooldownUntil(questionId, concept, { enforceVolumeLock = false } = {}) {
     let lastAttempt = null;
     for (const a of concept?.attemptHistory || []) {
       if (a.questionId === questionId && (!lastAttempt || a.timestamp > lastAttempt.timestamp)) lastAttempt = a;
     }
     if (!lastAttempt || lastAttempt.correct) return 0;
-    const natural = lastAttempt.timestamp + ReviewConstants.MISTAKE_COOLDOWN_MS;
+    const natural = lastAttempt.timestamp + SessionConstants.QUESTION_REQUEUE_COOLDOWN_MS;
     const explicit = this.mistakePatches.get(questionId);
     // An "I Understand" ack from *before* this exact wrong attempt (a stale
     // patch left over from an earlier miss on the same question, already
@@ -530,7 +563,21 @@ export class KairoEngine {
     // skip its own cooldown — max() keeps whichever is genuinely later,
     // and an ack made *after* this attempt (the normal case) is naturally
     // later than `natural` anyway, so this never shortens a real ack either.
-    return explicit != null ? Math.max(explicit, natural) : natural;
+    const timeLock = explicit != null ? Math.max(explicit, natural) : natural;
+
+    if (!enforceVolumeLock || !concept) return timeLock;
+
+    const topicPoolSize = Array.from(this.questionGraph.questions.values())
+      .filter(q => q.subject === concept.subject && q.topic === concept.topic).length;
+    const requiredVolume = Math.min(
+      DashboardConstants.FOCUSED_SPRINT_VOLUME_LOCK_CAP,
+      Math.floor(topicPoolSize * DashboardConstants.FOCUSED_SPRINT_VOLUME_LOCK_RATIO)
+    );
+    const practicedSince = Array.from(this.graph.nodes.values())
+      .filter(c => c.subject === concept.subject && c.topic === concept.topic)
+      .reduce((sum, c) => sum + c.attemptHistory.filter(a => a.timestamp > lastAttempt.timestamp).length, 0);
+
+    return practicedSince >= requiredVolume ? timeLock : Infinity;
   }
 
   /**
@@ -540,7 +587,7 @@ export class KairoEngine {
    * _flattenQuestion) so callers get the same {text, options, conceptId, ...}
    * shape regardless of which mode requested it.
    */
-  getQuestionForConcept(cid, { excludeIds = [], maxDifficulty = null, minDifficulty = null } = {}) {
+  getQuestionForConcept(cid, { excludeIds = [], maxDifficulty = null, minDifficulty = null, enforceVolumeLock = false } = {}) {
     let candidates = this.questionGraph.getQuestionsForConcept(cid)
       .filter(q => !excludeIds.includes(q.id));
     // Never let a difficulty window produce an honest "no questions" when
@@ -580,7 +627,7 @@ export class KairoEngine {
     // above, so a concept with only one real question (which happens to be
     // cooling down) still gets *a* question rather than none at all.
     const now = Date.now();
-    const ripe = pool.filter(q => this._questionCooldownUntil(q.id, concept) <= now);
+    const ripe = pool.filter(q => this._questionCooldownUntil(q.id, concept, { enforceVolumeLock }) <= now);
     if (ripe.length > 0) pool = ripe;
 
     // Shuffle rather than a single Math.random() index pick — this pool
@@ -732,7 +779,9 @@ export class KairoEngine {
       knowledgeGraph: this.graph,
       studentProfile: this.profile,
       decayModel: this.decayModel,
-      examDate: this.profile.examDate
+      examDate: this.profile.examDate,
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     // this.difficulty is a single instance that lives for the whole profile
     // (see _rebuildProfileBoundSubsystems()), not recreated per session —
@@ -792,7 +841,9 @@ export class KairoEngine {
       knowledgeGraph: this.graph,
       studentProfile: this.profile,
       decayModel: this.decayModel,
-      examDate: this.profile.examDate
+      examDate: this.profile.examDate,
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     const plan = preview.buildSessionPlan();
     const topConceptId = plan[0] || null;
@@ -823,7 +874,9 @@ export class KairoEngine {
       knowledgeGraph: this.graph,
       studentProfile: this.profile,
       decayModel: this.decayModel,
-      examDate: this.profile.examDate
+      examDate: this.profile.examDate,
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
     });
     const ranked = preview.buildRankedQueue(queueCount * questionsPerQueue);
 
@@ -855,6 +908,143 @@ export class KairoEngine {
     for (const q of queues) await this.store.savePrefetchedQueue(q);
 
     return { queued: queues.length };
+  }
+
+  /**
+   * Fetches and caches the Planner Handshake's two inputs (the reviewed
+   * subjectSlug/topicTitle map, and this student's real Planner progress)
+   * and builds this.plannerBridge from them. Explicit, not automatic on
+   * every session start — same "call it when you want to warm this up"
+   * pattern as prefetchRecommendationQueues(), so a student who's never
+   * opened the Planner (or is offline) never pays for a network round
+   * trip nothing will use. Best-effort: any failure leaves
+   * this.plannerBridge exactly as it was (EMPTY_PLANNER_BRIDGE on a first
+   * call), never throws into a caller building a real session.
+   */
+  async loadPlannerHandshakeData() {
+    if (!this.sync.adapter) return;
+    try {
+      const [mapRows, plannerState] = await Promise.all([
+        this.sync.adapter.fetchPlannerTopicMap(),
+        this.sync.adapter.fetchPlannerState(this.profile.studentId)
+      ]);
+      this.plannerBridge = new PlannerBridge(mapRows, plannerState);
+    } catch {
+      // Offline, not yet signed in, or the fetch failed — the existing
+      // bridge (empty, or whatever was last successfully loaded) is the
+      // honest fallback, same philosophy as every other best-effort
+      // enrichment in this engine.
+    }
+  }
+
+  /**
+   * The Kairo V1 2-Option Dashboard: resolves RecommendationEngine's
+   * Primary/Secondary session-type picks into real, ready-to-render
+   * payloads — question objects already attached (capped to a reasonable
+   * preview length, not a full session), not just concept IDs. Same
+   * throwaway-RecommendationEngine pattern as getTodayFocus(): never
+   * touches this.currentSession/this.recommendation, safe to call whether
+   * or not a real session is in progress.
+   *
+   * A Focused Sprint's questions are fetched with enforceVolumeLock: true
+   * (the Hybrid Lock — a previously-failed question needs both the 24h
+   * time lock AND real practice volume in-topic since the failure before
+   * it can resurface); every other type uses the plain 24h time lock,
+   * same as ordinary Practice.
+   */
+  getDashboardOptions({ previewLength = 10 } = {}) {
+    this.profile.computeMacroState(this.graph);
+    const preview = new RecommendationEngine({
+      knowledgeGraph: this.graph,
+      studentProfile: this.profile,
+      decayModel: this.decayModel,
+      examDate: this.profile.examDate,
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
+    });
+    const { primary, secondary } = preview.getDashboardOptions();
+
+    const resolve = (option) => {
+      if (!option) return null;
+      const ordered = [...option.conceptIds, ...(option.overflowConceptIds || [])];
+      const questions = [];
+      const seenIds = [];
+      const enforceVolumeLock = option.type === 'focused_sprint';
+      for (let i = 0; questions.length < previewLength && i < ordered.length; i++) {
+        const q = this.getQuestionForConcept(ordered[i], { excludeIds: seenIds, enforceVolumeLock });
+        if (q) { questions.push(q); seenIds.push(q.id); }
+      }
+      return {
+        type: option.type,
+        subject: option.subject || null,
+        topic: option.topic || null,
+        reason: option.reason,
+        conceptIds: option.conceptIds,
+        // Exposed so a caller starting a REAL session (not just rendering
+        // the dashboard card) can build a full, macro-state-length-capped
+        // queue by cycling into overflow once the primary topic's own
+        // concepts run out — this preview only ever resolves up to
+        // `previewLength` real questions, deliberately short of a full
+        // session.
+        overflowConceptIds: option.overflowConceptIds || [],
+        questions
+      };
+    };
+
+    return {
+      macroState: this.profile.macroState,
+      primary: resolve(primary),
+      secondary: resolve(secondary)
+    };
+  }
+
+  /**
+   * Report how a Focused Sprint/Frontier Push session actually went — the
+   * Anti-Fatigue Circuit Breaker's input. UTME Mix is intentionally not
+   * reported here (RecommendationEngine.recordSessionOutcome() ignores it
+   * anyway): it mixes subjects, so a rough round can't fairly indict one
+   * of them. Persist this.profile afterward (same as any other
+   * profile-mutating call) so the Circuit Breaker survives a reload.
+   */
+  recordDashboardSessionOutcome({ type, subject, accuracy }) {
+    const rec = new RecommendationEngine({
+      knowledgeGraph: this.graph,
+      studentProfile: this.profile,
+      decayModel: this.decayModel,
+      examDate: this.profile.examDate,
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
+    });
+    rec.recordSessionOutcome({ type, subject, accuracy });
+  }
+
+  /**
+   * Report that the student picked the Secondary option over a Focused
+   * Sprint offered for `subject` — the Avoidance Tracker.
+   * RecommendationEngine.recordSprintDodged() only reports the pattern
+   * (a plain boolean, no tone) and stays bound by
+   * KaiRules.NEVER_GUILT_BASED_REENGAGEMENT; generating the actual message
+   * is this engine's job, not RecommendationEngine's, since KaiBehavior
+   * (this.kai) is where the product owner's explicit, narrowly-scoped
+   * exception to that rule lives (KaiBehavior.proactiveMessage()'s
+   * 'avoidance_intervention' case — see its own comment for the
+   * authorization). kaiMessage is null unless the dodge streak just
+   * crossed DashboardConstants.AVOIDANCE_STREAK_THRESHOLD.
+   */
+  recordSprintDodged(subject) {
+    const rec = new RecommendationEngine({
+      knowledgeGraph: this.graph,
+      studentProfile: this.profile,
+      decayModel: this.decayModel,
+      examDate: this.profile.examDate,
+      scheduler: this.scheduler,
+      plannerBridge: this.plannerBridge
+    });
+    const thresholdCrossed = rec.recordSprintDodged(subject);
+    return {
+      thresholdCrossed,
+      kaiMessage: thresholdCrossed ? this.kai.proactiveMessage('avoidance_intervention', { subject }) : null
+    };
   }
 
   /**

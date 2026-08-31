@@ -5,10 +5,11 @@
 
 import { KairoEngine, Question, LearnModule, SupabaseSyncAdapter, CBTExamMode, KnowledgeGraph, ConceptNode, DecayModel, LevelSystem, BadgeSystem, getPrestigeTier, PrestigeTiers } from "../src/index.js";
 import { StudentProfile } from "../src/student/StudentProfile.js";
-import { RetentionState, ErrorTag, StreakConstants, KairoPointsAwards } from "../src/utils/constants.js";
+import { RetentionState, ErrorTag, StreakConstants, KairoPointsAwards, DashboardConstants } from "../src/utils/constants.js";
 import { isPrimaryConceptLink } from "../src/utils/helpers.js";
 import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
 import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
+import { PlannerBridge } from "../src/engine/PlannerBridge.js";
 import { EliteScore } from "../src/engine/EliteScore.js";
 
 let passCount = 0;
@@ -711,6 +712,331 @@ test('RecommendationEngine.buildSessionPlan() hard-filters out concepts from non
 
   assert(plan.includes('guardrail_enrolled'), 'Enrolled-subject concept should be eligible for the recommendation queue');
   assert(!plan.includes('guardrail_not_enrolled'), 'A concept from a subject the student is not enrolled in must never surface in the daily recommendation');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// KAIRO V1 DASHBOARD — THREE SESSION TYPES + CIRCUIT BREAKER
+// ═══════════════════════════════════════════════════════════════
+
+test('buildFocusedSprint(): a brand-new student with only Forming concepts (real onboarding shape — a concept can only become Forming on its first attempt, never Fading) still gets an eligible Sprint', () => {
+  const graph = new KnowledgeGraph();
+  const forming = new ConceptNode({ id: 'sprint_forming', name: 'Balancing Equations', subject: 'Chemistry', topic: 'Stoichiometry' });
+  forming.retentionState = 'forming';
+  graph.addConcept(forming);
+  const profile = new StudentProfile({ studentId: 'sprint_new', name: 'S', targetSubjects: ['Chemistry'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  const sprint = rec.buildFocusedSprint();
+  assert(sprint.eligible, 'A Forming-only graph should still produce an eligible Focused Sprint, not require Fading');
+  assertEqual(sprint.topic, 'Stoichiometry', 'Sprint should target the Forming topic');
+});
+
+test('buildFocusedSprint(): a topic with a Fading concept outranks a topic that is only Forming', () => {
+  const graph = new KnowledgeGraph();
+  const fading = new ConceptNode({ id: 'sprint_fading', name: 'Titration', subject: 'Chemistry', topic: 'Acids and Bases' });
+  fading.retentionState = 'fading';
+  fading.decayEstimate = 0.3;
+  graph.addConcept(fading);
+  const forming = new ConceptNode({ id: 'sprint_forming2', name: 'Balancing Equations', subject: 'Chemistry', topic: 'Stoichiometry' });
+  forming.retentionState = 'forming';
+  graph.addConcept(forming);
+  const profile = new StudentProfile({ studentId: 'sprint_pick', name: 'S', targetSubjects: ['Chemistry'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  const sprint = rec.buildFocusedSprint();
+  assertEqual(sprint.topic, 'Acids and Bases', 'A Fading topic should always outrank a Forming-only topic for the Sprint slot');
+});
+
+test('_conceptUrgencyScore(): a MORE-forgotten Fading concept outranks a LESS-forgotten one (fixed tiebreaker — was previously inverted)', () => {
+  const graph = new KnowledgeGraph();
+  const badlyForgotten = new ConceptNode({ id: 'urgency_bad', name: 'Opportunity Cost', subject: 'Economics', topic: 'Basic Concepts' });
+  badlyForgotten.retentionState = 'fading';
+  badlyForgotten.decayEstimate = 0.1; // almost completely forgotten
+  const barelyForgotten = new ConceptNode({ id: 'urgency_barely', name: 'Elasticity of Demand', subject: 'Economics', topic: 'Basic Concepts' });
+  barelyForgotten.retentionState = 'fading';
+  barelyForgotten.decayEstimate = 0.9; // barely forgotten
+  graph.addConcept(badlyForgotten);
+  graph.addConcept(barelyForgotten);
+  const profile = new StudentProfile({ studentId: 'urgency_student', name: 'S', targetSubjects: ['Economics'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  assert(rec._conceptUrgencyScore(badlyForgotten) > rec._conceptUrgencyScore(barelyForgotten),
+    'The more-forgotten Fading concept must score higher than the less-forgotten one');
+});
+
+test('_conceptUrgencyScore(): exam-proximity pressure-test boost applies to Reinforced too, not just Held (fixed asymmetry)', () => {
+  const soonExam = Date.now() + 20 * 24 * 60 * 60 * 1000;
+  const graph = new KnowledgeGraph();
+  const reinforced = new ConceptNode({ id: 'urgency_reinforced', name: 'Supply and Demand', subject: 'Economics', topic: 'Market Forces' });
+  reinforced.retentionState = 'reinforced';
+  reinforced.decayEstimate = 0.5;
+  graph.addConcept(reinforced);
+  const profile = new StudentProfile({ studentId: 'urgency_exam', name: 'S', targetSubjects: ['Economics'], examDate: soonExam });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: soonExam });
+
+  assert(rec._conceptUrgencyScore(reinforced) >= 200, 'A Reinforced concept close to exam should receive the pressure-test boost, previously Held-only');
+});
+
+test('buildFrontierPush(): only surfaces genuinely Unseen concepts, never something already in progress', () => {
+  const graph = new KnowledgeGraph();
+  graph.addConcept(new ConceptNode({ id: 'frontier_unseen', name: 'Federalism', subject: 'Government', topic: 'Systems of Government' }));
+  const inProgress = new ConceptNode({ id: 'frontier_forming', name: 'Fundamental Rights', subject: 'Government', topic: 'Constitution' });
+  inProgress.retentionState = 'forming';
+  graph.addConcept(inProgress);
+  const profile = new StudentProfile({ studentId: 'frontier_student', name: 'S', targetSubjects: ['Government'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  const frontier = rec.buildFrontierPush();
+  assert(frontier.eligible, 'An Unseen topic should make Frontier Push eligible');
+  assert(frontier.conceptIds.includes('frontier_unseen'), 'Frontier Push should include the Unseen concept');
+  assert(!frontier.conceptIds.includes('frontier_forming'), 'Frontier Push must never include a concept already in progress');
+});
+
+test('buildUtmeMix(): ineligible without critical mass or peak_readiness; eligible once macroState is peak_readiness regardless of ratio', () => {
+  const graph = new KnowledgeGraph();
+  const held = new ConceptNode({ id: 'mix_held', name: 'Photosynthesis', subject: 'Biology', topic: 'Plant Nutrition' });
+  held.retentionState = 'held';
+  graph.addConcept(held);
+  const profile = new StudentProfile({ studentId: 'mix_student', name: 'S', targetSubjects: ['Biology'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  assert(!rec.buildUtmeMix().eligible, 'One touched concept is nowhere near critical mass and macroState is not peak_readiness — UTME Mix should not be offered yet');
+
+  profile.macroState = 'peak_readiness';
+  assert(rec.buildUtmeMix().eligible, 'peak_readiness should make UTME Mix eligible regardless of Held ratio — pressure-testing everything matters this close to the exam');
+});
+
+test('buildUtmeMix(): genuinely interleaves across subjects rather than sorting one subject to the front', () => {
+  const graph = new KnowledgeGraph();
+  const now = Date.now();
+  for (let i = 0; i < 6; i++) {
+    const c = new ConceptNode({ id: `mix_bio_${i}`, name: `Biology Concept ${i}`, subject: 'Biology', topic: 'Genetics' });
+    c.retentionState = 'held';
+    c.nextReviewEstimate = now - 1000; // due
+    graph.addConcept(c);
+  }
+  const physicsOne = new ConceptNode({ id: 'mix_phys_0', name: "Ohm's Law", subject: 'Physics', topic: 'Electricity' });
+  physicsOne.retentionState = 'reinforced';
+  physicsOne.nextReviewEstimate = now - 1000;
+  graph.addConcept(physicsOne);
+
+  const profile = new StudentProfile({ studentId: 'mix_interleave', name: 'S', targetSubjects: ['Biology', 'Physics'] });
+  profile.macroState = 'peak_readiness';
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  const mix = rec.buildUtmeMix();
+  assert(mix.eligible, 'Should be eligible under peak_readiness');
+  const firstPhysicsIndex = mix.conceptIds.indexOf('mix_phys_0');
+  assert(firstPhysicsIndex >= 0 && firstPhysicsIndex <= 1,
+    'The lone Physics concept should surface within the first couple of slots, not buried after all six Biology concepts — a genuine cross-subject mix, not a single-subject sort');
+});
+
+test('getDashboardOptions(): the Circuit Breaker pivots Focused Sprint to a different subject, but still offers the blocked subject via a type with no alternative', () => {
+  const graph = new KnowledgeGraph();
+  const physicsFading = new ConceptNode({ id: 'cb_physics_fading', name: 'Projectile Motion', subject: 'Physics', topic: 'Mechanics' });
+  physicsFading.retentionState = 'fading';
+  physicsFading.decayEstimate = 0.3;
+  graph.addConcept(physicsFading);
+  // Physics is the ONLY subject with an Unseen concept, so Frontier Push
+  // has nowhere else to pivot to when Physics is blocked.
+  graph.addConcept(new ConceptNode({ id: 'cb_physics_unseen', name: 'Thermodynamics Basics', subject: 'Physics', topic: 'Heat' }));
+  const chemistryForming = new ConceptNode({ id: 'cb_chem_forming', name: 'Mole Concept', subject: 'Chemistry', topic: 'Stoichiometry' });
+  chemistryForming.retentionState = 'forming';
+  graph.addConcept(chemistryForming);
+
+  const profile = new StudentProfile({ studentId: 'cb_student', name: 'S', targetSubjects: ['Physics', 'Chemistry'] });
+  profile.lastFrustratedSubject = 'Physics';
+  profile.lastFrustratedAt = Date.now();
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  const { primary, secondary } = rec.getDashboardOptions();
+  assertEqual(primary.type, 'focused_sprint', 'Focused Sprint should still take Primary...');
+  assertEqual(primary.subject, 'Chemistry', '...but pivoted to Chemistry since Physics just frustrated the student, per the spec\'s own "pivot to a Chemistry or Biology Sprint" example');
+  assert(secondary && secondary.subject === 'Physics', 'Physics should still surface as Secondary via Frontier Push, since Frontier has no other subject to pivot to');
+  assertEqual(secondary.type, 'frontier_push', 'The Secondary offering should be the Frontier Push, not a second Sprint');
+});
+
+test('getDashboardOptions(): never returns an empty dashboard when the student has any enrolled concept at all', () => {
+  const graph = new KnowledgeGraph();
+  const held = new ConceptNode({ id: 'fallback_held', name: 'Cell Division', subject: 'Biology', topic: 'Cell Biology' });
+  held.retentionState = 'held';
+  graph.addConcept(held);
+  const profile = new StudentProfile({ studentId: 'fallback_student', name: 'S', targetSubjects: ['Biology'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  const { primary } = rec.getDashboardOptions();
+  assert(primary !== null, 'A student with only comfortably-Held concepts and no critical mass yet must still get a real Primary option, never an empty dashboard');
+  assert(primary.conceptIds.includes('fallback_held'), 'The fallback should surface the concept that actually exists');
+});
+
+test("recordSessionOutcome()/recordSprintDodged(): Circuit Breaker sets and clears correctly, Avoidance Tracker crosses its threshold and resets on completion", () => {
+  const graph = new KnowledgeGraph();
+  const profile = new StudentProfile({ studentId: 'avoid_student', name: 'S', targetSubjects: ['Mathematics'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  rec.recordSessionOutcome({ type: 'focused_sprint', subject: 'Mathematics', accuracy: 0.3 });
+  assertEqual(profile.lastFrustratedSubject, 'Mathematics', 'A sub-threshold accuracy should set the Circuit Breaker for that subject');
+
+  rec.recordSessionOutcome({ type: 'focused_sprint', subject: 'Mathematics', accuracy: 0.8 });
+  assertEqual(profile.lastFrustratedSubject, null, 'A later strong session in the same subject should clear the Circuit Breaker');
+
+  for (let i = 1; i < DashboardConstants.AVOIDANCE_STREAK_THRESHOLD; i++) {
+    assert(!rec.recordSprintDodged('Mathematics'), `Dodge #${i} should not yet cross the avoidance threshold`);
+  }
+  assert(rec.recordSprintDodged('Mathematics'), `Dodge #${DashboardConstants.AVOIDANCE_STREAK_THRESHOLD} should cross AVOIDANCE_STREAK_THRESHOLD`);
+
+  rec.recordSessionOutcome({ type: 'focused_sprint', subject: 'Mathematics', accuracy: 1.0 });
+  assertEqual(profile.avoidanceStreaks['Mathematics'], 0, "Actually completing the subject's Sprint should reset its avoidance streak");
+});
+
+test("KairoEngine.recordSprintDodged(): stays silent until the avoidance streak crosses threshold, then returns Kai's explicitly-authorized direct-tone message", () => {
+  const engine = new KairoEngine({ studentId: 'avoidance_kai_student', name: 'S', targetSubjects: ['Physics'] });
+
+  for (let i = 1; i < DashboardConstants.AVOIDANCE_STREAK_THRESHOLD; i++) {
+    const result = engine.recordSprintDodged('Physics');
+    assertEqual(result.thresholdCrossed, false, `Dodge #${i} should not cross the threshold`);
+    assertEqual(result.kaiMessage, null, `No Kai message should be generated before the threshold is crossed`);
+  }
+
+  const final = engine.recordSprintDodged('Physics');
+  assertEqual(final.thresholdCrossed, true, 'The final dodge should cross AVOIDANCE_STREAK_THRESHOLD');
+  assert(final.kaiMessage !== null, 'Crossing the threshold should produce a real Kai message');
+  assertEqual(final.kaiMessage.text, "Look, you've avoided Physics all week. The UTME won't let you skip it. Give me 5 minutes to help you fix this.",
+    'The message must be the exact, product-owner-authorized copy, with the real subject interpolated');
+});
+
+test('_sessionLengthCap()/shouldEndSession(): at_risk gets the same gentle treatment as wavering/recovering (was previously falling through to the 15-question default)', () => {
+  const graph = new KnowledgeGraph();
+  const profile = new StudentProfile({ studentId: 'at_risk_student', name: 'S', targetSubjects: ['Biology'] });
+  profile.macroState = 'at_risk';
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null });
+
+  assertEqual(rec._sessionLengthCap(), 5, 'at_risk should get the same 5-question gentle cap as wavering/recovering, not the 15-question default');
+
+  rec.sessionQueue = ['x']; // non-empty, so only the gentle-limit branch can trigger "end"
+  rec.sessionHistory = new Array(8).fill('y');
+  assertEqual(rec.shouldEndSession().end, true, 'at_risk should also trigger the gentle 8-question early-end, matching wavering/recovering');
+});
+
+test('getQuestionForConcept({enforceVolumeLock}): a failed question stays locked until BOTH the 24h time lock and the topic-volume lock clear', () => {
+  const engine = new KairoEngine({ studentId: 'hybrid_lock_student', name: 'S', targetSubjects: ['Physics'] });
+  const conceptId = engine.addConcept({ name: 'Vectors', subject: 'Physics', topic: 'Kinematics' });
+
+  // 6 real questions in the topic -> volume lock = min(30, floor(6 * 0.5)) = 3.
+  for (let i = 1; i <= 6; i++) {
+    engine.questionGraph.addQuestion(new Question({
+      id: `hl_q${i}`, subject: 'Physics', topic: 'Kinematics', stem: `Question ${i}`,
+      conceptsTested: [{ conceptId, weight: 1 }],
+      options: [{ label: 'A', text: 'A', isCorrect: true }], correctOption: 'A', lifecycleState: 'live'
+    }));
+  }
+
+  const concept = engine.graph.getConcept(conceptId);
+  const failTime = Date.now() - 25 * 60 * 60 * 1000; // 25h ago — the time lock alone is already satisfied
+  concept.attemptHistory.push({ conceptId, questionId: 'hl_q1', correct: false, timestamp: failTime, responseTimeMs: 4000 });
+
+  const lockedUntil = engine._questionCooldownUntil('hl_q1', concept, { enforceVolumeLock: true });
+  assert(lockedUntil > Date.now(), 'Past the 24h time lock but with zero practice volume since the failure, the question must still be locked');
+
+  const withoutVolumeLock = engine._questionCooldownUntil('hl_q1', concept, { enforceVolumeLock: false });
+  assert(withoutVolumeLock <= Date.now(), 'The plain (non-Sprint) time-only lock should already be satisfied at 25h, confirming the volume lock above is what is actually holding it back');
+
+  // 3 more real attempts in the same topic since the failure — satisfies the volume lock.
+  for (let i = 0; i < 3; i++) {
+    concept.attemptHistory.push({ conceptId, questionId: `hl_q${i + 2}`, correct: true, timestamp: failTime + 1000 * (i + 1), responseTimeMs: 4000 });
+  }
+  const unlockedNow = engine._questionCooldownUntil('hl_q1', concept, { enforceVolumeLock: true });
+  assert(unlockedNow <= Date.now(), 'Once both the time lock and the topic-volume lock are satisfied, the failed question should unlock');
+});
+
+test('KairoEngine.getDashboardOptions(): exposes overflowConceptIds so a real session can be built beyond the preview length', () => {
+  const engine = new KairoEngine({ studentId: 'dashboard_overflow_student', name: 'S', targetSubjects: ['Chemistry'] });
+  const fadingId = engine.addConcept({ name: 'Titration', subject: 'Chemistry', topic: 'Acids, bases and salts' });
+  engine.graph.getConcept(fadingId).retentionState = 'fading';
+  const otherFadingId = engine.addConcept({ name: 'pH Scale', subject: 'Chemistry', topic: 'Water' });
+  engine.graph.getConcept(otherFadingId).retentionState = 'fading';
+
+  const { primary } = engine.getDashboardOptions();
+  assert(primary !== null, 'A student with Fading concepts should get a real Primary Focused Sprint option');
+  assert(Array.isArray(primary.overflowConceptIds), 'overflowConceptIds must be present on the resolved dashboard option, not just used internally');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PLANNER HANDSHAKE — PlannerBridge
+// ═══════════════════════════════════════════════════════════════
+
+test('PlannerBridge.getSignal(): no mapping at all (Mathematics/Use of English today) always returns none', () => {
+  const bridge = new PlannerBridge([], { completed_topic_keys: [], topic_progress: {} });
+  assertEqual(bridge.getSignal('Mathematics', 'Indices and Logarithms', 86400000).signal, 'none',
+    'An engine topic with no reviewed planner_topic_map row must never guess a signal');
+});
+
+test('PlannerBridge.getSignal(): due_critical fires for an unresolved critical gap, stripping the real stageOrder-bearing topicKey correctly', () => {
+  const mapRows = [{ subject_slug: 'chemistry', topic_title: 'Chemical Equilibrium', engine_subject: 'Chemistry', engine_topics: ['Chemical equilibria'] }];
+  // Real shape: plannerEngine.ts's topicKey() = `${subjectSlug}::${stageOrder}::${topicTitle}`.
+  const plannerState = { completed_topic_keys: [], topic_progress: { 'chemistry::3::Chemical Equilibrium': { tier: 'critical', criticalGap: true, resurfaceDates: [], lastAttemptedAt: new Date().toISOString() } } };
+  const bridge = new PlannerBridge(mapRows, plannerState);
+
+  const signal = bridge.getSignal('Chemistry', 'Chemical equilibria', 86400000);
+  assertEqual(signal.signal, 'due_critical', 'An unresolved critical gap on the mapped Planner topic should surface as due_critical');
+});
+
+test('PlannerBridge.getSignal(): due_critical also fires for a plain resurface date that has arrived (not just a critical gap)', () => {
+  const mapRows = [{ subject_slug: 'physics', topic_title: 'Kinetic Theory & Gas Laws', engine_subject: 'Physics', engine_topics: ['Kinetic Theory of Matter', 'Gas Laws'] }];
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const plannerState = { completed_topic_keys: [], topic_progress: { 'physics::2::Kinetic Theory & Gas Laws': { tier: 'forming', criticalGap: false, resurfaceDates: [yesterday], lastAttemptedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() } } };
+  const bridge = new PlannerBridge(mapRows, plannerState);
+
+  assertEqual(bridge.getSignal('Physics', 'Gas Laws', 86400000).signal, 'due_critical',
+    'One Planner topic mapping to multiple engine topics (the genuine one-to-many case) should surface the signal on every mapped engine topic');
+});
+
+test('PlannerBridge.getSignal(): recently_completed fires within the quarantine window, but a stale (old) completion falls through to whatever is actually due instead', () => {
+  const mapRows = [{ subject_slug: 'biology', topic_title: 'Nutrition', engine_subject: 'Biology', engine_topics: ['Nutrition'] }];
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const freshState = { completed_topic_keys: ['biology::1::Nutrition'], topic_progress: { 'biology::1::Nutrition': { tier: 'mastery', criticalGap: false, resurfaceDates: [], lastAttemptedAt: oneHourAgo } } };
+  const freshBridge = new PlannerBridge(mapRows, freshState);
+  assertEqual(freshBridge.getSignal('Biology', 'Nutrition', 86400000).signal, 'recently_completed',
+    'A completion within the 24h window should quarantine the topic');
+
+  const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const staleState = { completed_topic_keys: ['biology::1::Nutrition'], topic_progress: { 'biology::1::Nutrition': { tier: 'forming', criticalGap: false, resurfaceDates: [todayIso], lastAttemptedAt: longAgo } } };
+  const staleBridge = new PlannerBridge(mapRows, staleState);
+  assertEqual(staleBridge.getSignal('Biology', 'Nutrition', 86400000).signal, 'due_critical',
+    'A completion from a month ago is not "recently completed" — a genuinely due resurface since then should still surface');
+});
+
+test('RecommendationEngine._conceptUrgencyScore(): Planner Handshake zeroes a just-completed concept regardless of Fading, and boosts a due-critical one', () => {
+  const graph = new KnowledgeGraph();
+  const justVerified = new ConceptNode({ id: 'ph_verified', name: 'Titration', subject: 'Chemistry', topic: 'Acids, bases and salts' });
+  justVerified.retentionState = 'fading';
+  justVerified.decayEstimate = 0.1; // badly forgotten by the engine's own data
+  graph.addConcept(justVerified);
+  const dueCritical = new ConceptNode({ id: 'ph_critical', name: 'Neutralisation', subject: 'Chemistry', topic: 'Energy changes' });
+  dueCritical.retentionState = 'held'; // otherwise unremarkable to the engine
+  dueCritical.decayEstimate = 0.9;
+  graph.addConcept(dueCritical);
+
+  const mapRows = [
+    { subject_slug: 'chemistry', topic_title: 'Acids, Bases & Salts', engine_subject: 'Chemistry', engine_topics: ['Acids, bases and salts'] },
+    { subject_slug: 'chemistry', topic_title: 'Energy Changes', engine_subject: 'Chemistry', engine_topics: ['Energy changes'] }
+  ];
+  const plannerState = {
+    completed_topic_keys: ['chemistry::9::Acids, Bases & Salts'],
+    topic_progress: {
+      'chemistry::9::Acids, Bases & Salts': { tier: 'mastery', criticalGap: false, resurfaceDates: [], lastAttemptedAt: new Date().toISOString() },
+      'chemistry::12::Energy Changes': { tier: 'critical', criticalGap: true, resurfaceDates: [], lastAttemptedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() }
+    }
+  };
+  const bridge = new PlannerBridge(mapRows, plannerState);
+  const profile = new StudentProfile({ studentId: 'planner_urgency_student', name: 'S', targetSubjects: ['Chemistry'] });
+  const rec = new RecommendationEngine({ knowledgeGraph: graph, studentProfile: profile, decayModel: null, examDate: null, plannerBridge: bridge });
+
+  assertEqual(rec._conceptUrgencyScore(justVerified), 0,
+    'A badly-Fading concept whose Planner topic was just verified should be zeroed out for the quarantine window, not ranked urgent');
+  assert(rec._conceptUrgencyScore(dueCritical) >= DashboardConstants.PLANNER_DUE_CRITICAL_BOOST,
+    'An otherwise-unremarkable Held concept whose Planner topic is an unresolved critical gap should get the Planner boost');
 });
 
 // ═══════════════════════════════════════════════════════════════

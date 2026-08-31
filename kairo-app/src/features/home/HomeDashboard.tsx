@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
+import { MissionCard, Card, KairoWordmark, Input, Button, AvoidanceInterventionModal } from '../../components';
 import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus } from '../../lib/kairoEngine';
-import { getPinnedTodayFocus } from '../../lib/dailyRecommendation';
+import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus, reportSprintDodged, type DashboardOption } from '../../lib/kairoEngine';
+import { getPinnedDashboardOptions } from '../../lib/dailyRecommendation';
+import { generateMentorCopy } from '../../lib/mentorCopyGenerator';
+import { AVOIDANCE_STREAK_THRESHOLD } from '../../lib/dashboardDisplayConstants';
 import { InstallAppBanner } from './InstallAppBanner';
 
 interface EarnedBadge { id: string; name: string; desc: string }
@@ -25,6 +27,7 @@ function greeting(): string {
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
 
 /** Batch 5's Gamification HUD — replaces the old avatar/profile-nav button in the header (Profile is a bottom-nav tab now, so that link was redundant) with the one number that actually reflects standing: lifetime Kairo Points. Sits directly above FlameIndicator, same spot the avatar used to occupy. */
 function GamificationHud({ points }: { points: number }) {
@@ -90,7 +93,6 @@ export function HomeDashboard() {
     subjects: routerState?.subjects?.length ? routerState.subjects : (profile?.targetSubjects ?? []),
   };
   const firstName = (data.name || '').split(' ')[0] || 'there';
-  const subjects = data.subjects ?? [];
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
   // Genuinely the most recently earned badge — badges are appended to
   // profile.badges in earn order (BadgeSystem.checkAndAward()), so the
@@ -104,11 +106,71 @@ export function HomeDashboard() {
   // number where "what did I just earn" is the more useful question.
   const insights = getInsightsSummary();
   const streakStatus = getStreakStatus();
-  // The engine's own real reasoning for today's recommended concept —
-  // replaces a static sentence that used to be identical for every student
-  // regardless of macro-state, decay urgency, or exam proximity. Pinned
-  // for the day (Batch 3's persistent-queue rule) — see dailyRecommendation.ts.
-  const todayFocus = getPinnedTodayFocus();
+  // The Kairo V1 2-Option Dashboard: Primary (a solid CTA, usually the most
+  // urgent Focused Sprint) + Secondary (a ghost CTA, usually Frontier Push
+  // or UTME Mix) from RecommendationEngine.getDashboardOptions(). Pinned
+  // for the day (same persistent-queue rule as the old single-focus pin) —
+  // see dailyRecommendation.ts.
+  const dashboardOptions = getPinnedDashboardOptions();
+  const primaryOption = dashboardOptions?.primary ?? null;
+  const secondaryOption = dashboardOptions?.secondary ?? null;
+  // Whether the Avoidance Tracker's threshold is CURRENTLY crossed for the
+  // subject actually being offered as Primary right now — read straight
+  // off the live profile (already exposed here for kairoPoints/badges/etc.
+  // above), not just the one-time modal-trigger moment. This is what keeps
+  // the Mentor Copy Generator's Avoidance framing showing on the card
+  // itself even after the modal's been acted on, per the "keep both"
+  // decision: the modal is the one-time interruption, this is the
+  // persistent reminder until the student actually does that subject's
+  // Sprint (which resets avoidanceStreaks[subject] to 0).
+  const avoidanceActive = !!(
+    primaryOption?.type === 'focused_sprint' &&
+    primaryOption.subject &&
+    (profile?.avoidanceStreaks?.[primaryOption.subject] ?? 0) >= AVOIDANCE_STREAK_THRESHOLD
+  );
+  const mentorCopy = generateMentorCopy(primaryOption, secondaryOption, avoidanceActive);
+  // Kai's Avoidance Tone intervention (explicit, narrow product-owner
+  // exception to NEVER_GUILT_BASED_REENGAGEMENT) — set only once
+  // reportSprintDodged() confirms the 3-dodge threshold actually crossed.
+  const [avoidanceIntervention, setAvoidanceIntervention] = useState<{ text: string; targetOption: DashboardOption } | null>(null);
+
+  function handlePrimaryStart() {
+    navigate('/practice', { state: { entry: 'dashboard', dashboardOption: primaryOption } });
+  }
+
+  function handleSecondaryStart() {
+    if (!secondaryOption) return;
+    // Dodging specifically means: a Focused Sprint was the Primary offer
+    // and the student picked Secondary instead — not any Secondary tap in
+    // general (e.g. choosing Secondary when Primary was already a Frontier
+    // Push/UTME Mix isn't avoiding anything).
+    if (primaryOption?.type === 'focused_sprint' && primaryOption.subject) {
+      const { thresholdCrossed, kaiMessage } = reportSprintDodged(primaryOption.subject);
+      if (thresholdCrossed && kaiMessage) {
+        setAvoidanceIntervention({ text: kaiMessage.text, targetOption: primaryOption });
+        return; // Block navigation — the intervention IS the next screen.
+      }
+    }
+    navigate('/practice', { state: { entry: 'dashboard', dashboardOption: secondaryOption } });
+  }
+
+  function handleInterventionAcknowledge() {
+    if (!avoidanceIntervention) return;
+    const target = avoidanceIntervention.targetOption;
+    setAvoidanceIntervention(null);
+    navigate('/practice', { state: { entry: 'dashboard', dashboardOption: target } });
+  }
+
+  // Explicit dismissal, not a casual one: unlike a backdrop click or
+  // Escape (which the shared Modal component allows and which this
+  // overlay deliberately doesn't), tapping "Not now" is its own conscious
+  // acknowledgment of the message — it just declines the action instead of
+  // taking it. A fully trapped modal with zero way out is a real
+  // accessibility/App-Store-review problem, not just a UX nicety, so this
+  // stays even though the intervention is meant to be direct.
+  function handleInterventionDismiss() {
+    setAvoidanceIntervention(null);
+  }
   const hasTodayProgress = todayProgress.questionsToday > 0;
   // Goal-completion %, not accuracy — the ring used to show accuracyPct
   // (e.g. "90%" from one lucky question) inside a shape that visually reads
@@ -176,14 +238,12 @@ export function HomeDashboard() {
         <div className="desktop-main">
           <MissionCard
             badge="Recommended Next Step"
-            title="Start Practising"
-            reason={
-              todayFocus?.reason
-                ?? `Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`
-            }
+            title={mentorCopy.title}
+            reason={mentorCopy.body}
             chips={['≈5 min', 'Adaptive']}
-            ctaLabel="Start Session"
-            onStart={() => navigate('/practice', { state: { entry: 'suggested', anchorConceptId: todayFocus?.conceptId ?? null } })}
+            ctaLabel={mentorCopy.primary_button}
+            onStart={primaryOption ? handlePrimaryStart : () => navigate('/practice', { state: { entry: 'suggested' } })}
+            secondary={secondaryOption && mentorCopy.secondary_button ? { label: mentorCopy.secondary_button, onStart: handleSecondaryStart } : undefined}
           />
 
           <div>
@@ -281,6 +341,14 @@ export function HomeDashboard() {
           )}
         </div>
       </div>
+
+      {avoidanceIntervention && (
+        <AvoidanceInterventionModal
+          text={avoidanceIntervention.text}
+          onAcknowledge={handleInterventionAcknowledge}
+          onDismiss={handleInterventionDismiss}
+        />
+      )}
 
       {showGoalModal && (
         <Modal onClose={() => setShowGoalModal(false)} tone="dark">

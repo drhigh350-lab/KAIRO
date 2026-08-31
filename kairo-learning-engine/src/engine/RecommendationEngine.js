@@ -1,20 +1,45 @@
 /**
  * Kairo — RecommendationEngine
  * The brain that decides: "What is the next best thing this student should do right now?"
- * 
+ *
+ * Kairo V1 architecture (replaces the old flat point-scorer that ranked
+ * every concept into one top-N list): sessions are never a forced mix.
+ * Each session is 100% one of three types —
+ *
+ *   Focused Sprint  (Targeted Gaps)   — one struggling topic, deep practice
+ *   Frontier Push   (Breadth)         — one never-seen topic, syllabus progress
+ *   UTME Mix        (Spaced Retrieval)— the only type that mixes subjects
+ *
+ * getDashboardOptions() decides which TWO of the three to actually offer
+ * (Primary + Secondary) — variety lives at the dashboard-selection level,
+ * not inside any single session.
+ *
  * Operates at two levels:
- *   1. Session-level: builds a prioritized queue when a student opens Kairo.
- *   2. Question-level: re-evaluates after EVERY answer and can interrupt the queue.
+ *   1. Session-level: the three generators above + getDashboardOptions().
+ *   2. Question-level: processAnswer() re-evaluates after EVERY answer and
+ *      can interrupt the queue (prerequisite reroute, fatigue pullback,
+ *      guessed-answer diagnostic) — unchanged by the V1 rewrite.
  */
 
-import { RetentionState, SessionConstants, ErrorTag } from "../utils/constants.js";
+import { RetentionState, SessionConstants, ErrorTag, DashboardConstants } from "../utils/constants.js";
 import { clamp, seededShuffle, daysBetween, isExamProximity } from "../utils/helpers.js";
+import { EMPTY_PLANNER_BRIDGE } from "./PlannerBridge.js";
 
 export class RecommendationEngine {
-  constructor({ knowledgeGraph, studentProfile, decayModel, examDate = null }) {
+  constructor({ knowledgeGraph, studentProfile, decayModel, examDate = null, scheduler = null, plannerBridge = null }) {
     this.graph = knowledgeGraph;
     this.profile = studentProfile;
     this.decayModel = decayModel;
+    // Optional: a RevisionScheduler instance, used by buildUtmeMix() to
+    // find concepts genuinely due for review (nextReviewEstimate elapsed).
+    // Falls back to an equivalent inline check when not provided, so
+    // existing callers/tests that construct this class without one don't
+    // break.
+    this.scheduler = scheduler;
+    // The Planner Handshake — see PlannerBridge.js. Defaults to a no-op
+    // bridge (every lookup returns 'none') so every existing caller/test
+    // that constructs this class without one behaves exactly as before.
+    this.plannerBridge = plannerBridge || EMPTY_PLANNER_BRIDGE;
     this.examDate = examDate;
     this.sessionQueue = [];        // ordered list of concept IDs for this session
     this.sessionHistory = [];      // concepts already covered this session
@@ -23,128 +48,466 @@ export class RecommendationEngine {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // SESSION-LEVEL: Build the plan when student opens Kairo
+  // SHARED HELPERS
   // ═══════════════════════════════════════════════════════════════
 
-  buildSessionPlan() {
-    // Respect macro-state session length cap
-    this.sessionQueue = this.buildRankedQueue(this._sessionLengthCap());
-    this.sessionHistory = [];
-    this.fatigueCounter = 0;
-    this.interruptionBuffer = [];
-
-    return this.sessionQueue.slice(); // return copy
-  }
-
   /**
-   * The same subject-guardrailed priority ranking + revision/fresh
-   * interleave buildSessionPlan() uses, but capped to an explicit length
-   * instead of the macro-state session-length cap, and without touching
-   * this instance's live sessionQueue/sessionHistory/interruptionBuffer —
-   * a pure "what would Kairo recommend" read. Used to pre-build several
-   * sessions' worth of queue at once (offline pre-fetch), where the
-   * caller needs far more than one macro-state-capped session's length
-   * and must never disturb whatever real session is actually in progress
-   * on this same engine.
+   * Hard subject guardrail: a concept outside the student's own enrolled
+   * subjects must never surface in a recommendation, even if it happens
+   * to be loaded into this.graph (e.g. from a CBT session that covers
+   * subjects beyond what the student is actually taking).
    */
-  buildRankedQueue(maxLen) {
-    // Hard subject guardrail: a concept outside the student's own enrolled
-    // subjects must never surface in the daily recommendation, even if it
-    // happens to be loaded into this.graph (e.g. from a CBT session that
-    // covers subjects beyond what the student is actually taking).
+  _enrolledConcepts() {
     const enrolled = this.profile.targetSubjects;
-    const all = Array.from(this.graph.nodes.values())
+    return Array.from(this.graph.nodes.values())
       .filter(c => !enrolled || enrolled.length === 0 || enrolled.includes(c.subject));
-
-    // Randomize order before scoring. Array.prototype.sort is stable, so
-    // without this, every concept that ties on score (the common case for
-    // a student with no differentiating signal yet — a perfect diagnostic,
-    // or one that failed nothing) fell back to Map/DB insertion order,
-    // which is identical for every account that loaded the same content
-    // catalog. That's what made the very first recommendation always land
-    // on the same concept (e.g. "Relative Density") for every new student
-    // regardless of account — shuffling first means a genuine tie now
-    // resolves to a random concept from the student's own enrolled
-    // subjects, not whichever one happened to be seeded first.
-    const shuffled = seededShuffle(all, Date.now());
-    const scored = shuffled.map(c => ({
-      concept: c,
-      score: this._sessionPriorityScore(c)
-    }));
-
-    scored.sort((a, b) => b.score - a.score);
-    const selected = scored.slice(0, maxLen).map(s => s.concept.id);
-    return this._interleaveQueue(selected);
   }
 
   /**
-   * Every concept in one subject+topic, scored and interleaved the same
-   * way buildSessionPlan() does across the whole graph (urgent decay
-   * first, active gaps next, interleaved with concepts already Held/
-   * Reinforced — i.e. genuine active retrieval of both past-struggled
-   * and past-passed items, not just a blind replay). Used for a
-   * recommendation anchored to one specific concept (a Home MissionCard
-   * tap) — the whole session should stay on that concept's topic
-   * instead of drifting into the general cross-subject queue after the
-   * first question. Not capped to any question count; a caller cycles
-   * through this list to reach its own minimum, since a topic can have
-   * fewer distinct concepts than questions wanted but a deeper pool per
-   * concept.
+   * Per-concept urgency — used INSIDE a generator to rank candidates
+   * within whatever scope that generator has already chosen (one topic,
+   * one due-for-review pool), never again to build one global top-N list.
+   *
+   * Two fixes from the old _sessionPriorityScore() this replaces:
+   *  - Fading tiebreaker was inverted: `decayEstimate * 100` rewarded the
+   *    LESS-forgotten concept, since decayEstimate is retention strength
+   *    (1 = fresh, 0 = gone). Now `(1 - decayEstimate) * 100` correctly
+   *    rewards the MORE-forgotten one — matches what the dead
+   *    ConceptNode.getPriorityScore() actually got right.
+   *  - Exam-proximity pressure-testing was Held-only. A Reinforced concept
+   *    (survived one real forgetting-and-recovery cycle already) is at
+   *    least as worth pressure-testing as a merely-Held one — now both
+   *    qualify.
+   *
+   * Also consults the Planner Handshake (this.plannerBridge — see
+   * PlannerBridge.js): a concept whose mapped Study Planner topic was
+   * JUST verified/completed gets zeroed out for the quarantine window
+   * regardless of its own retentionState, so the daily recommendation
+   * doesn't immediately nag about something the student just confirmed
+   * they've got; a concept whose mapped topic is a due/unresolved
+   * critical gap gets an additive boost. A concept with no reviewed
+   * mapping (Mathematics/Use of English today, or any not-yet-reviewed
+   * topic) is completely unaffected — see PlannerBridge's own doc comment
+   * for why that's a deliberate no-op, not a gap.
    */
-  buildTopicSessionPlan(subject, topic) {
-    const inTopic = Array.from(this.graph.nodes.values())
-      .filter(c => c.subject === subject && c.topic === topic);
-    const scored = inTopic.map(c => ({
-      concept: c,
-      score: this._sessionPriorityScore(c)
-    }));
-    scored.sort((a, b) => b.score - a.score);
-    return this._interleaveQueue(scored.map(s => s.concept.id));
-  }
+  _conceptUrgencyScore(concept) {
+    const plannerSignal = this.plannerBridge.getSignal(concept.subject, concept.topic, SessionConstants.QUESTION_REQUEUE_COOLDOWN_MS);
+    if (plannerSignal.signal === 'recently_completed') return 0;
 
-  _sessionPriorityScore(concept) {
     let score = 0;
 
-    // 1. URGENT DECAY (highest priority)
     if (concept.retentionState === RetentionState.FADING) {
-      score += 1000 + (concept.decayEstimate * 100);
+      score += 1000 + ((1 - concept.decayEstimate) * 100);
     }
 
-    // 2. ACTIVE GAPS blocking progress
     if (concept.retentionState === RetentionState.FORMING) {
       const isPrerequisite = Array.from(this.graph.nodes.values())
         .some(n => n.dependencyIds.includes(concept.id) && n.retentionState !== RetentionState.UNSEEN);
       score += isPrerequisite ? 600 : 400;
     }
 
-    // 3. MACRO-STATE adjustment (handled via session length cap, not score)
-    // Wavering/Recovering students get shorter sessions via _sessionLengthCap()
-
-    // 4. EXAM PROXIMITY: boost mixed-topic readiness
-    if (this.examDate) {
-      const weeksOut = daysBetween(Date.now(), this.examDate) / 7;
-      if (weeksOut <= 8 && weeksOut > 0) {
-        // Prioritize Held concepts that haven't been seen recently (pressure-testing)
-        if (concept.retentionState === RetentionState.HELD && concept.decayEstimate < 0.7) {
-          score += 200;
-        }
-      }
+    if (this.examDate && isExamProximity(this.examDate) &&
+        (concept.retentionState === RetentionState.HELD || concept.retentionState === RetentionState.REINFORCED) &&
+        concept.decayEstimate < 0.7) {
+      score += 200;
     }
 
-    // 5. BREADTH GUARANTEE: touch unseen or stale topics
-    if (concept.retentionState === RetentionState.UNSEEN) {
-      score += 50;
-    }
-
-    // Penalize recently practiced (unless Fading)
-    const hoursSince = concept.lastSeenAt
-      ? (Date.now() - concept.lastSeenAt) / (1000 * 60 * 60)
-      : Infinity;
-    if (hoursSince < 2 && concept.retentionState !== RetentionState.FADING) {
-      score -= 300;
+    if (plannerSignal.signal === 'due_critical') {
+      score += DashboardConstants.PLANNER_DUE_CRITICAL_BOOST;
     }
 
     return score;
+  }
+
+  _groupBySubjectTopic(concepts) {
+    const groups = new Map();
+    for (const c of concepts) {
+      const key = `${c.subject}::${c.topic}`;
+      if (!groups.has(key)) groups.set(key, { subject: c.subject, topic: c.topic, concepts: [] });
+      groups.get(key).concepts.push(c);
+    }
+    return Array.from(groups.values());
+  }
+
+  _orderConceptsByUrgency(concepts) {
+    return seededShuffle(concepts, Date.now())
+      .sort((a, b) => this._conceptUrgencyScore(b) - this._conceptUrgencyScore(a))
+      .map(c => c.id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // THE THREE SESSION TYPES
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Focused Sprint (Targeted Gaps) — 100% of the queue lives inside ONE
+   * struggling topic, chosen by urgency (Fading topics outrank
+   * Forming-only ones; ties broken by shuffle, not insertion order).
+   *
+   * Targets Fading OR Forming, not Fading alone: a real onboarding trace
+   * shows a brand-new student's graph is entirely Forming/Unseen on day
+   * one — never Fading (a concept's first-ever attempt can only become
+   * Forming; Fading requires having already been Held/Reinforced and then
+   * failing). A Fading-only rule would leave that student with zero
+   * eligible Sprint, ever, until something first became Held and later
+   * decayed — Forming-fallback keeps the Sprint option meaningful from
+   * day one.
+   *
+   * "Expand to parent topic if the bank is exhausted": current content
+   * doesn't meaningfully use `subtopic` as a level distinct from `topic`
+   * (verified against live kairo.questions: subtopic is null or identical
+   * to topic for effectively every seeded question), so the real
+   * expansion axis is topic -> other struggling topics in the SAME
+   * subject, never cross-subject (that's what UTME Mix is for). This
+   * returns a primary pool (the chosen topic's own concepts, most urgent
+   * first) plus an overflow pool (the same subject's other struggling
+   * topics, most urgent topic first) — the caller that actually resolves
+   * concept IDs into real questions (KairoEngine.getQuestionForConcept(),
+   * the only place that knows real per-concept question counts) draws
+   * from overflow only once primary runs dry.
+   */
+  buildFocusedSprint({ excludeSubjects = [] } = {}) {
+    const pool = this._enrolledConcepts().filter(c =>
+      !excludeSubjects.includes(c.subject) &&
+      (c.retentionState === RetentionState.FADING || c.retentionState === RetentionState.FORMING)
+    );
+    if (pool.length === 0) return { eligible: false, type: 'focused_sprint' };
+
+    const groups = this._groupBySubjectTopic(pool).map(g => ({
+      ...g,
+      urgency: Math.max(...g.concepts.map(c => this._conceptUrgencyScore(c))),
+      hasFading: g.concepts.some(c => c.retentionState === RetentionState.FADING)
+    }));
+
+    const ranked = seededShuffle(groups, Date.now())
+      .sort((a, b) => (Number(b.hasFading) - Number(a.hasFading)) || (b.urgency - a.urgency));
+
+    const [primary, ...rest] = ranked;
+    const overflow = rest
+      .filter(g => g.subject === primary.subject)
+      .sort((a, b) => (Number(b.hasFading) - Number(a.hasFading)) || (b.urgency - a.urgency))
+      .flatMap(g => this._orderConceptsByUrgency(g.concepts));
+
+    return {
+      eligible: true,
+      type: 'focused_sprint',
+      subject: primary.subject,
+      topic: primary.topic,
+      conceptIds: this._orderConceptsByUrgency(primary.concepts),
+      overflowConceptIds: overflow
+    };
+  }
+
+  /**
+   * Frontier Push (Breadth) — 100% of the queue is ONE never-seen topic,
+   * to guarantee real syllabus progression regardless of how many things
+   * are currently Fading/Forming. This is the direct fix for the old
+   * scorer's breadth-vs-depth gap: Unseen's flat +50 could never compete
+   * against Fading's 1000+, so once a student had enough struggling
+   * concepts to fill a session, brand-new topics could stop appearing for
+   * weeks. Frontier Push is now its own guaranteed session type, not one
+   * more thing competing for space inside a mixed queue.
+   *
+   * Every Unseen topic scores identically (nothing to rank by yet), so
+   * the choice is a shuffle rather than a sort — this also keeps rotating
+   * which subject gets the Frontier slot rather than fixating on one.
+   */
+  buildFrontierPush({ excludeSubjects = [] } = {}) {
+    const pool = this._enrolledConcepts().filter(c =>
+      !excludeSubjects.includes(c.subject) && c.retentionState === RetentionState.UNSEEN
+    );
+    if (pool.length === 0) return { eligible: false, type: 'frontier_push' };
+
+    const groups = seededShuffle(this._groupBySubjectTopic(pool), Date.now());
+    const [primary, ...rest] = groups;
+
+    return {
+      eligible: true,
+      type: 'frontier_push',
+      subject: primary.subject,
+      topic: primary.topic,
+      conceptIds: seededShuffle(primary.concepts, Date.now()).map(c => c.id),
+      overflowConceptIds: rest
+        .filter(g => g.subject === primary.subject)
+        .flatMap(g => seededShuffle(g.concepts, Date.now()).map(c => c.id))
+    };
+  }
+
+  /**
+   * UTME Mix (Spaced Retrieval) — the only session type that mixes
+   * subjects, deliberately: a real UTME paper forces topic-to-topic and
+   * subject-to-subject jumps, and no other session type here practices
+   * that skill. Eligible once the student has built a "critical mass" of
+   * Held/Reinforced concepts (mirrors computeMacroState()'s own
+   * COMPOUNDING threshold — reinforcedRatio > 0.3 — for consistency, not
+   * a new unrelated number), or unconditionally once macroState is
+   * peak_readiness, where mixed exam-shaped pressure-testing is the
+   * priority regardless of ratio.
+   *
+   * Draws from concepts genuinely due for review (nextReviewEstimate
+   * elapsed) via the RevisionScheduler passed into this engine's
+   * constructor — this is what finally gives that previously-unused
+   * spaced-repetition due-date math (computed by DecayModel on every
+   * session, never read by the old session-builder) a real job. Falls
+   * back to an equivalent inline check if no scheduler was wired in.
+   */
+  buildUtmeMix() {
+    const enrolled = this._enrolledConcepts();
+    const touched = enrolled.filter(c => c.retentionState !== RetentionState.UNSEEN);
+    const heldRatio = touched.length > 0
+      ? touched.filter(c => c.retentionState === RetentionState.HELD || c.retentionState === RetentionState.REINFORCED).length / touched.length
+      : 0;
+    const criticalMass = touched.length >= DashboardConstants.UTME_MIX_MIN_TOUCHED_CONCEPTS &&
+      heldRatio >= DashboardConstants.UTME_MIX_HELD_RATIO_THRESHOLD;
+    const eligible = criticalMass || this.profile.macroState === 'peak_readiness';
+    if (!eligible) return { eligible: false, type: 'utme_mix' };
+
+    const now = Date.now();
+    const due = this.scheduler
+      ? this.scheduler.getDueForRevision(this.graph)
+      : Array.from(this.graph.nodes.values()).filter(c =>
+          (c.retentionState === RetentionState.HELD || c.retentionState === RetentionState.REINFORCED) &&
+          (!c.nextReviewEstimate || c.nextReviewEstimate <= now)
+        );
+    const enrolledSubjects = this.profile.targetSubjects;
+    const dueEnrolled = due.filter(c => !enrolledSubjects || enrolledSubjects.length === 0 || enrolledSubjects.includes(c.subject));
+
+    if (dueEnrolled.length === 0) return { eligible: false, type: 'utme_mix' };
+
+    // Interleave by subject (not a single urgency sort) so one subject
+    // with many due concepts can't crowd out the "mix" this type exists
+    // to be.
+    const bySubject = new Map();
+    for (const c of dueEnrolled) {
+      if (!bySubject.has(c.subject)) bySubject.set(c.subject, []);
+      bySubject.get(c.subject).push(c.id);
+    }
+    const lanes = Array.from(bySubject.values()).map(ids => seededShuffle(ids, Date.now()));
+    const conceptIds = [];
+    for (let i = 0; lanes.some(l => i < l.length); i++) {
+      for (const lane of lanes) if (i < lane.length) conceptIds.push(lane[i]);
+    }
+
+    return { eligible: true, type: 'utme_mix', conceptIds };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // THE 2-OPTION DASHBOARD
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Decides which TWO of the three session types to offer, and which is
+   * Primary vs Secondary — the Anti-Fatigue Circuit Breaker lives here:
+   * a subject whose last Focused Sprint/Frontier Push finished below
+   * DashboardConstants.FRUSTRATION_ACCURACY_THRESHOLD (see
+   * recordSessionOutcome()) is barred from the Primary slot. For Sprint/
+   * Frontier specifically, a blocked natural pick first tries to PIVOT to a
+   * different subject's topic (a real Chemistry Sprint instead of the
+   * blocked Physics one) rather than just being dropped — only when no
+   * alternative-subject topic exists does the blocked pick survive,
+   * available for Secondary (or for Primary as an absolute last resort if
+   * nothing else qualifies at all — never leave the dashboard empty to
+   * enforce the breaker).
+   */
+  getDashboardOptions() {
+    const macro = this.profile.macroState;
+    const blockedSubject = this.profile.lastFrustratedSubject || null;
+
+    // For a subject-scoped type (Sprint/Frontier), a blocked natural pick
+    // doesn't just get excluded — it genuinely PIVOTS to a different
+    // subject's topic first, per the spec's own example ("pivot to a
+    // Chemistry or Biology Sprint"). Only when no alternative-subject topic
+    // exists for that type does the natural (blocked) pick survive, marked
+    // so it can't take Primary — still eligible for Secondary, or Primary
+    // as an absolute last resort if nothing else qualifies at all.
+    const buildSubjectScopedCandidate = (generatorFn) => {
+      const natural = generatorFn();
+      if (!natural.eligible || !blockedSubject || natural.subject !== blockedSubject) {
+        return { ...natural, blockedFromPrimary: natural.eligible && natural.subject === blockedSubject };
+      }
+      const alternative = generatorFn({ excludeSubjects: [blockedSubject] });
+      return alternative.eligible
+        ? { ...alternative, blockedFromPrimary: false }
+        : { ...natural, blockedFromPrimary: true };
+    };
+
+    const sprint = buildSubjectScopedCandidate((opts) => this.buildFocusedSprint(opts));
+    const frontier = buildSubjectScopedCandidate((opts) => this.buildFrontierPush(opts));
+    // Cross-subject by nature — a rough round can't fairly indict one
+    // subject, so UTME Mix is never blocked from Primary.
+    const utmeMix = { ...this.buildUtmeMix(), blockedFromPrimary: false };
+
+    const candidates = [sprint, frontier, utmeMix].filter(c => c.eligible);
+
+    if (candidates.length === 0) {
+      // Genuine edge case: nothing is Fading/Forming (no Sprint), nothing
+      // is Unseen (no Frontier), and there isn't yet enough Held/Reinforced
+      // volume — or peak_readiness — for a real UTME Mix (a student with
+      // only a handful of comfortably-Held concepts and nothing else, most
+      // likely very early or a thin manually-seeded graph). Never leave the
+      // dashboard empty when the student has ANY enrolled concept at all —
+      // same "a filter should narrow, never erase" philosophy as
+      // getQuestionForConcept()'s difficulty-window/cooldown fallbacks.
+      const fallback = this._fallbackAnyConcept();
+      return fallback
+        ? { primary: this._withDashboardCopy(fallback), secondary: null }
+        : { primary: null, secondary: null };
+    }
+
+    // peak_readiness prioritizes the mixed, exam-shaped session; every
+    // other macro-state prioritizes fixing a real gap first, then breadth,
+    // then the mix.
+    const priorityOrder = macro === 'peak_readiness'
+      ? ['utme_mix', 'focused_sprint', 'frontier_push']
+      : ['focused_sprint', 'frontier_push', 'utme_mix'];
+    const rank = (c) => priorityOrder.indexOf(c.type);
+
+    const primaryPool = candidates.filter(c => !c.blockedFromPrimary);
+    const primary = (primaryPool.length > 0 ? primaryPool : candidates)
+      .sort((a, b) => rank(a) - rank(b))[0];
+    const secondary = candidates
+      .filter(c => c !== primary)
+      .sort((a, b) => rank(a) - rank(b))[0] || null;
+
+    return {
+      primary: primary ? this._withDashboardCopy(primary) : null,
+      secondary: secondary ? this._withDashboardCopy(secondary) : null
+    };
+  }
+
+  /**
+   * Last-resort fallback for getDashboardOptions() when all three real
+   * session types are ineligible but the student has enrolled concepts at
+   * all — any state, ranked by whatever urgency they do have. Framed as a
+   * 'utme_mix' since it's the only type designed to hand back a plain,
+   * unscoped concept list.
+   */
+  _fallbackAnyConcept() {
+    const enrolled = this._enrolledConcepts();
+    if (enrolled.length === 0) return null;
+    const conceptIds = this._orderConceptsByUrgency(enrolled);
+    const top = this.graph.getConcept(conceptIds[0]);
+    return {
+      eligible: true,
+      type: 'utme_mix',
+      subject: top.subject,
+      topic: top.topic,
+      conceptIds,
+      overflowConceptIds: []
+    };
+  }
+
+  _withDashboardCopy(option) {
+    const reason = {
+      focused_sprint: `"${option.topic}" needs focused work right now — this sprint stays on it until it locks in.`,
+      frontier_push: `"${option.topic}" hasn't come up yet — a good next topic to bring into your syllabus coverage.`,
+      utme_mix: `A real exam-shaped mix, pulling in topics across your subjects that are due for a check.`
+    }[option.type];
+    return { ...option, reason };
+  }
+
+  /**
+   * Call once a Focused Sprint or Frontier Push session actually
+   * finishes, with that session's real accuracy — records the Circuit
+   * Breaker's frustration signal and clears the Avoidance Tracker for
+   * that subject on a genuine completion. UTME Mix is deliberately
+   * excluded: it mixes subjects, so a rough round can't fairly indict one
+   * of them.
+   */
+  recordSessionOutcome({ type, subject, accuracy }) {
+    if (type === 'utme_mix' || !subject) return;
+
+    if (accuracy < DashboardConstants.FRUSTRATION_ACCURACY_THRESHOLD) {
+      this.profile.lastFrustratedSubject = subject;
+      this.profile.lastFrustratedAt = Date.now();
+    } else if (this.profile.lastFrustratedSubject === subject) {
+      this.profile.lastFrustratedSubject = null;
+      this.profile.lastFrustratedAt = null;
+    }
+
+    if (type === 'focused_sprint') {
+      this.profile.avoidanceStreaks[subject] = 0;
+    }
+  }
+
+  /**
+   * Avoidance Tracking: call when the student picks the Secondary option
+   * over a Focused Sprint that was actually offered for `subject`.
+   * Returns true once the streak crosses AVOIDANCE_STREAK_THRESHOLD, so
+   * the caller (Kai) knows to shift that subject's next nudge from gentle
+   * to direct — still bound by KaiRules.NEVER_GUILT_BASED_REENGAGEMENT and
+   * the platform-wide banned-phrase list. This only counts the pattern;
+   * it never decides or contains the actual copy shown to the student.
+   */
+  recordSprintDodged(subject) {
+    if (!subject) return false;
+    const streaks = this.profile.avoidanceStreaks;
+    streaks[subject] = (streaks[subject] || 0) + 1;
+    return streaks[subject] >= DashboardConstants.AVOIDANCE_STREAK_THRESHOLD;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // BACKWARD-COMPATIBLE ENTRY POINTS
+  // (buildSessionPlan/buildRankedQueue/buildTopicSessionPlan keep their
+  // original signatures and return shapes — plain concept-ID arrays — so
+  // startSession()/getTodayFocus()/prefetchRecommendationQueues() and the
+  // Home MissionCard anchor flow don't need to change. Internally they
+  // now run on the three generators + _conceptUrgencyScore instead of the
+  // old flat _sessionPriorityScore, which no longer exists — replaced,
+  // not left running alongside its replacement.)
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Build the plan when the student opens Kairo — resolves to whatever
+   * getDashboardOptions() picked as Primary (Circuit Breaker included),
+   * capped to the macro-state session length, interleaved for pacing.
+   */
+  buildSessionPlan() {
+    this.sessionQueue = this.buildRankedQueue(this._sessionLengthCap());
+    this.sessionHistory = [];
+    this.fatigueCounter = 0;
+    this.interruptionBuffer = [];
+
+    return this.sessionQueue.slice();
+  }
+
+  /**
+   * The same Primary pick buildSessionPlan() uses, capped to an explicit
+   * length instead of the macro-state cap, and without touching this
+   * instance's live session state — a pure "what would Kairo recommend"
+   * read, used to pre-build several sessions' worth of queue at once
+   * (offline pre-fetch).
+   */
+  buildRankedQueue(maxLen) {
+    const { primary } = this.getDashboardOptions();
+    if (!primary) return [];
+
+    const ordered = [...primary.conceptIds, ...(primary.overflowConceptIds || [])];
+    if (ordered.length === 0) return [];
+
+    // A Focused Sprint/Frontier topic can have fewer distinct concepts
+    // than questions wanted for a longer prefetch window — cycle the same
+    // ordered pool rather than returning short, since
+    // getQuestionForConcept()'s own unseen-first logic is what actually
+    // keeps repeat concepts from serving the same question twice.
+    const selected = [];
+    for (let i = 0; selected.length < maxLen; i++) {
+      selected.push(ordered[i % ordered.length]);
+    }
+    return this._interleaveQueue(selected);
+  }
+
+  /**
+   * Every concept in one subject+topic, scored and interleaved — used for
+   * a recommendation anchored to one specific concept (a Home MissionCard
+   * tap), where the whole session should stay on that concept's topic.
+   * Not capped to any question count; a caller cycles through this list
+   * to reach its own minimum.
+   */
+  buildTopicSessionPlan(subject, topic) {
+    const inTopic = Array.from(this.graph.nodes.values())
+      .filter(c => c.subject === subject && c.topic === topic);
+    return this._interleaveQueue(this._orderConceptsByUrgency(inTopic));
   }
 
   _interleaveQueue(conceptIds) {
@@ -175,6 +538,11 @@ export class RecommendationEngine {
     switch (macro) {
       case 'wavering':
       case 'recovering':
+      // Fixed: at_risk previously fell through to the shared default (15)
+      // — the same length as a thriving 'building' student — despite
+      // being the more fragile state. Now matches wavering/recovering's
+      // gentle minimum.
+      case 'at_risk':
         return SessionConstants.MIN_SESSION_LENGTH;
       case 'orienting':
         return 10;
@@ -187,6 +555,9 @@ export class RecommendationEngine {
 
   // ═══════════════════════════════════════════════════════════════
   // QUESTION-LEVEL: Decide the very next question after each answer
+  // (unchanged by the V1 dashboard rewrite — this reacts within
+  // whichever session is already running, regardless of which of the
+  // three types it is)
   // ═══════════════════════════════════════════════════════════════
 
   /**
@@ -273,11 +644,9 @@ export class RecommendationEngine {
   }
 
   /**
-   * Human-readable reason the top-priority concept was chosen — the same
-   * signals _sessionPriorityScore() already scores on, translated into a
-   * sentence a student can actually read. For preview surfaces (Home) that
-   * need to explain today's recommendation before committing to a real
-   * session via buildSessionPlan().
+   * Human-readable reason the top-priority concept was chosen — for
+   * preview surfaces (Home) that need to explain today's recommendation
+   * before committing to a real session via buildSessionPlan().
    */
   explainTopPick(concept, macroState, examDate = null) {
     if (concept.retentionState === RetentionState.FADING) {
@@ -331,8 +700,10 @@ export class RecommendationEngine {
     const macro = this.profile.macroState;
     const sessionLen = this.sessionHistory.length;
 
-    // Wavering/Recovering: shorter sessions
-    if ((macro === 'wavering' || macro === 'recovering') && sessionLen >= 8) {
+    // Wavering/Recovering/At Risk: shorter sessions — at_risk added
+    // alongside the _sessionLengthCap() fix above; the same fragile state
+    // deserves the same early-out, not just a shorter starting cap.
+    if ((macro === 'wavering' || macro === 'recovering' || macro === 'at_risk') && sessionLen >= 8) {
       return { end: true, reason: 'Gentle session limit reached. Come back tomorrow.' };
     }
 

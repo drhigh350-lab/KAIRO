@@ -1,10 +1,16 @@
-import { MissionCard, Card, Button } from '../../components';
+import { useState } from 'react';
+import { MissionCard, Card, Button, AvoidanceInterventionModal } from '../../components';
 import { ScreenHeader } from '../learning/shared';
-import { getEngine, getInsightsSummary, getStreakStatus } from '../../lib/kairoEngine';
+import { getEngine, getInsightsSummary, getStreakStatus, reportSprintDodged, type DashboardOption } from '../../lib/kairoEngine';
+import { getPinnedDashboardOptions } from '../../lib/dailyRecommendation';
+import { generateMentorCopy } from '../../lib/mentorCopyGenerator';
+import { AVOIDANCE_STREAK_THRESHOLD } from '../../lib/dashboardDisplayConstants';
 
 export interface PracticeHomeProps {
   onBack: () => void;
   onStartSuggested: () => void;
+  /** Kairo V1 2-Option Dashboard — start a real session from the exact tapped Primary/Secondary DashboardOption. Falls back to onStartSuggested above when nothing is eligible (mirrors HomeDashboard.tsx's identical fallback). */
+  onStartDashboard: (option: DashboardOption) => void;
   onBySubject: () => void;
   onByTopic: () => void;
   onMixed: () => void;
@@ -28,10 +34,11 @@ const quickActions = [
  * Recommended Mission is the primary action; Quick Actions are for a
  * student who wants to override that default.
  */
-export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic, onMixed, onWeak, resumeSummary, onResume }: PracticeHomeProps) {
+export function PracticeHome({ onBack, onStartSuggested, onStartDashboard, onBySubject, onByTopic, onMixed, onWeak, resumeSummary, onResume }: PracticeHomeProps) {
   const insights = getInsightsSummary();
   const streak = getStreakStatus();
-  const sessions: { subject?: string; topic?: string; questionsAnswered?: number; correctCount?: number; completedAt?: number }[] = getEngine()?.profile?.sessions || [];
+  const profile = getEngine()?.profile;
+  const sessions: { subject?: string; topic?: string; questionsAnswered?: number; correctCount?: number; completedAt?: number }[] = profile?.sessions || [];
   const recent = [...sessions].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 5);
   const subjectHealth = insights?.strengths ?? [];
 
@@ -41,6 +48,50 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
     mixed: onMixed,
     weak: onWeak,
   };
+
+  // Kairo V1 2-Option Dashboard — same pinned read + Mentor Copy Generator
+  // Home's MissionCard uses, so Practice Home's own recommendation card
+  // (previously fully static — "Start Practising" / "Kairo builds this
+  // from your check-in and recent activity", regardless of real engine
+  // state) actually reflects it too.
+  const dashboardOptions = getPinnedDashboardOptions();
+  const primaryOption = dashboardOptions?.primary ?? null;
+  const secondaryOption = dashboardOptions?.secondary ?? null;
+  const avoidanceActive = !!(
+    primaryOption?.type === 'focused_sprint' &&
+    primaryOption.subject &&
+    (profile?.avoidanceStreaks?.[primaryOption.subject] ?? 0) >= AVOIDANCE_STREAK_THRESHOLD
+  );
+  const mentorCopy = generateMentorCopy(primaryOption, secondaryOption, avoidanceActive);
+  const [avoidanceIntervention, setAvoidanceIntervention] = useState<{ text: string; targetOption: DashboardOption } | null>(null);
+
+  function handlePrimaryStart() {
+    if (primaryOption) onStartDashboard(primaryOption);
+    else onStartSuggested();
+  }
+
+  function handleSecondaryStart() {
+    if (!secondaryOption) return;
+    if (primaryOption?.type === 'focused_sprint' && primaryOption.subject) {
+      const { thresholdCrossed, kaiMessage } = reportSprintDodged(primaryOption.subject);
+      if (thresholdCrossed && kaiMessage) {
+        setAvoidanceIntervention({ text: kaiMessage.text, targetOption: primaryOption });
+        return;
+      }
+    }
+    onStartDashboard(secondaryOption);
+  }
+
+  function handleInterventionAcknowledge() {
+    if (!avoidanceIntervention) return;
+    const target = avoidanceIntervention.targetOption;
+    setAvoidanceIntervention(null);
+    onStartDashboard(target);
+  }
+
+  function handleInterventionDismiss() {
+    setAvoidanceIntervention(null);
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
@@ -63,11 +114,12 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
 
         <MissionCard
           badge="Recommended"
-          title="Start Practising"
-          reason="Kairo builds this from your check-in and recent activity — adaptive from here."
+          title={mentorCopy.title}
+          reason={mentorCopy.body}
           chips={['≈5 min', 'Adaptive']}
-          ctaLabel="Start Session"
-          onStart={onStartSuggested}
+          ctaLabel={mentorCopy.primary_button}
+          onStart={handlePrimaryStart}
+          secondary={secondaryOption && mentorCopy.secondary_button ? { label: mentorCopy.secondary_button, onStart: handleSecondaryStart } : undefined}
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -124,6 +176,14 @@ export function PracticeHome({ onBack, onStartSuggested, onBySubject, onByTopic,
           </div>
         )}
       </div>
+
+      {avoidanceIntervention && (
+        <AvoidanceInterventionModal
+          text={avoidanceIntervention.text}
+          onAcknowledge={handleInterventionAcknowledge}
+          onDismiss={handleInterventionDismiss}
+        />
+      )}
     </div>
   );
 }
