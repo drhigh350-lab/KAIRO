@@ -801,6 +801,19 @@ export function PracticeFlow() {
           startSuggested();
           go('practiceQuestion');
         }}
+        onStartDashboard={(option) => {
+          setSubject(subjects.find((s) => s.label === option.subject) ?? subjects[0]);
+          setDifficulty('adaptive');
+          setLength(5);
+          setQIndex(0);
+          setShowPercent(false);
+          resetResults();
+          setEntryFlow('dashboard');
+          dashboardOptionRef.current = option;
+          dashboardOutcomeMetaRef.current = { type: option.type, subject: option.subject };
+          startDashboard(option);
+          go('practiceQuestion');
+        }}
         onBySubject={() => {
           setEntryFlow('subject');
           go('subject');

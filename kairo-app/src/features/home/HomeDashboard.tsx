@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
+import { MissionCard, Card, KairoWordmark, Input, Button, AvoidanceInterventionModal } from '../../components';
 import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
 import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus, reportSprintDodged, type DashboardOption } from '../../lib/kairoEngine';
 import { getPinnedDashboardOptions } from '../../lib/dailyRecommendation';
+import { generateMentorCopy } from '../../lib/mentorCopyGenerator';
+import { AVOIDANCE_STREAK_THRESHOLD } from '../../lib/dashboardDisplayConstants';
 import { InstallAppBanner } from './InstallAppBanner';
 
 interface EarnedBadge { id: string; name: string; desc: string }
@@ -26,25 +28,6 @@ function greeting(): string {
   return 'Good evening';
 }
 
-/** Kairo V1 2-Option Dashboard: MissionCard's Primary title, by session type. */
-function dashboardOptionTitle(option: DashboardOption): string {
-  switch (option.type) {
-    case 'focused_sprint': return option.topic ? `Focused Sprint: ${option.topic}` : 'Focused Sprint';
-    case 'frontier_push': return option.topic ? `New Topic: ${option.topic}` : 'Frontier Push';
-    case 'utme_mix': return 'UTME Mix';
-    default: return 'Start Practising';
-  }
-}
-
-/** MissionCard's Secondary ghost-button label, by session type. */
-function dashboardOptionSecondaryLabel(option: DashboardOption): string {
-  switch (option.type) {
-    case 'focused_sprint': return option.subject ? `Fix ${option.subject} instead` : 'Focused Sprint instead';
-    case 'frontier_push': return option.topic ? `Explore ${option.topic}` : 'Explore a new topic';
-    case 'utme_mix': return 'Mixed UTME practice';
-    default: return 'Try something else';
-  }
-}
 
 /** Batch 5's Gamification HUD — replaces the old avatar/profile-nav button in the header (Profile is a bottom-nav tab now, so that link was redundant) with the one number that actually reflects standing: lifetime Kairo Points. Sits directly above FlameIndicator, same spot the avatar used to occupy. */
 function GamificationHud({ points }: { points: number }) {
@@ -110,7 +93,6 @@ export function HomeDashboard() {
     subjects: routerState?.subjects?.length ? routerState.subjects : (profile?.targetSubjects ?? []),
   };
   const firstName = (data.name || '').split(' ')[0] || 'there';
-  const subjects = data.subjects ?? [];
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
   // Genuinely the most recently earned badge — badges are appended to
   // profile.badges in earn order (BadgeSystem.checkAndAward()), so the
@@ -132,6 +114,21 @@ export function HomeDashboard() {
   const dashboardOptions = getPinnedDashboardOptions();
   const primaryOption = dashboardOptions?.primary ?? null;
   const secondaryOption = dashboardOptions?.secondary ?? null;
+  // Whether the Avoidance Tracker's threshold is CURRENTLY crossed for the
+  // subject actually being offered as Primary right now — read straight
+  // off the live profile (already exposed here for kairoPoints/badges/etc.
+  // above), not just the one-time modal-trigger moment. This is what keeps
+  // the Mentor Copy Generator's Avoidance framing showing on the card
+  // itself even after the modal's been acted on, per the "keep both"
+  // decision: the modal is the one-time interruption, this is the
+  // persistent reminder until the student actually does that subject's
+  // Sprint (which resets avoidanceStreaks[subject] to 0).
+  const avoidanceActive = !!(
+    primaryOption?.type === 'focused_sprint' &&
+    primaryOption.subject &&
+    (profile?.avoidanceStreaks?.[primaryOption.subject] ?? 0) >= AVOIDANCE_STREAK_THRESHOLD
+  );
+  const mentorCopy = generateMentorCopy(primaryOption, secondaryOption, avoidanceActive);
   // Kai's Avoidance Tone intervention (explicit, narrow product-owner
   // exception to NEVER_GUILT_BASED_REENGAGEMENT) — set only once
   // reportSprintDodged() confirms the 3-dodge threshold actually crossed.
@@ -241,15 +238,12 @@ export function HomeDashboard() {
         <div className="desktop-main">
           <MissionCard
             badge="Recommended Next Step"
-            title={primaryOption ? dashboardOptionTitle(primaryOption) : 'Start Practising'}
-            reason={
-              primaryOption?.reason
-                ?? `Kairo built your first session from your check-in across ${subjects.length ? subjects.join(', ') : 'your subjects'} — adaptive from here.`
-            }
+            title={mentorCopy.title}
+            reason={mentorCopy.body}
             chips={['≈5 min', 'Adaptive']}
-            ctaLabel="Start Session"
+            ctaLabel={mentorCopy.primary_button}
             onStart={primaryOption ? handlePrimaryStart : () => navigate('/practice', { state: { entry: 'suggested' } })}
-            secondary={secondaryOption ? { label: dashboardOptionSecondaryLabel(secondaryOption), onStart: handleSecondaryStart } : undefined}
+            secondary={secondaryOption && mentorCopy.secondary_button ? { label: mentorCopy.secondary_button, onStart: handleSecondaryStart } : undefined}
           />
 
           <div>
@@ -348,31 +342,12 @@ export function HomeDashboard() {
         </div>
       </div>
 
-      {/*
-        Kai's Avoidance Tone intervention — deliberately NOT the shared
-        Modal component (which closes on backdrop click and Escape, both
-        casual, half-conscious dismissals that would undercut an
-        intentionally direct message). No X, no backdrop dismiss, no
-        Escape key. The only two ways out are both explicit, deliberate
-        taps: "Let's do it" (starts the Sprint the message names) or "Not
-        now" (a real, if de-emphasized, decline) — never a fully trapped
-        modal with zero way out, which is a genuine accessibility/App-
-        Store-review problem, not just a UX nicety.
-      */}
       {avoidanceIntervention && (
-        <div role="presentation" style={{ position: 'fixed', inset: 0, background: 'rgba(11,23,32,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
-          <div role="dialog" aria-modal="true" style={{ background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-xl)', padding: 24, maxWidth: 360, width: '100%' }}>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: 'var(--dark-text-heading)', marginBottom: 10 }}>From Kai</div>
-            <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.6, marginBottom: 20 }}>{avoidanceIntervention.text}</div>
-            <Button variant="darkAccent" size="lg" fullWidth onClick={handleInterventionAcknowledge}>Let's do it</Button>
-            <button type="button" onClick={handleInterventionDismiss} style={{
-              marginTop: 14, width: '100%', minHeight: 'var(--touch-min)', background: 'none', border: 'none',
-              color: 'var(--dark-text-faint)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-            }}>
-              Not now
-            </button>
-          </div>
-        </div>
+        <AvoidanceInterventionModal
+          text={avoidanceIntervention.text}
+          onAcknowledge={handleInterventionAcknowledge}
+          onDismiss={handleInterventionDismiss}
+        />
       )}
 
       {showGoalModal && (
