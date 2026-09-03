@@ -515,6 +515,39 @@ export class KairoEngine {
   }
 
   /**
+   * Resolve CBT questions from the current live catalog when connectivity is
+   * available. IndexedDB remains the deliberate offline/error fallback, not
+   * the online source of truth.
+   */
+  async getCbtQuestions({ subject, count = 20 } = {}) {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (online && this.sync.adapter) {
+      try {
+        const liveQuestions = await this.sync.adapter.fetchQuestions({ subject });
+        this.questionGraph.replaceQuestionsForSubject(subject, liveQuestions.map(data => new Question(data)));
+        await this.store.reconcileQuestionQueue(
+          subject,
+          liveQuestions.map(data => ({ ...this._flattenQuestion(data), catalogVersion: this._questionCatalogVersion(liveQuestions) }))
+        );
+        await this.store.clearPrefetchedQueues();
+        this.questionGraph.autoBuildRelationships();
+
+        const shuffled = liveQuestions.map(data => this._flattenQuestion(data));
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled.slice(0, count);
+      } catch {
+        // A transient online failure should still allow a paper from the last
+        // successfully synchronized mirror to be built.
+      }
+    }
+
+    return this.contentPacks.getOfflineQuestions({ subject, count });
+  }
+
+  /**
    * Canonical Question shape (.stem, .conceptsTested[]) -> the flat
    * .text/.conceptId consumer shape CBTExamMode and ContentPackManager's
    * offline queue expect. Keeps the field-name translation in one place

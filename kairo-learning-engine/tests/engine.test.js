@@ -70,6 +70,25 @@ await test('content catalog reconciliation removes deleted local questions and r
   assert((await store.get(STORES.QUEUE, 'other_subject')).text === 'keep', 'other subjects should not be affected');
 });
 
+await test('CBT uses live Supabase questions online, including current image URLs', async () => {
+  const cbtEngine = new KairoEngine({ studentId: 'cbt_live_test', name: 'Test', examDate: Date.now() + 86400000, targetSubjects: ['Biology'] });
+  await cbtEngine.init();
+  await cbtEngine.store.put(STORES.QUEUE, { queueId: 'deleted_local', id: 'deleted_local', subject: 'Biology', text: 'stale question' });
+  cbtEngine.sync.attachRemote({
+    fetchQuestions: async () => [{
+      id: 'live_question', subject: 'Biology', topic: 'Cells', stem: 'Current question',
+      options: [{ label: 'A', text: 'One' }], correctOption: 'A', explanation: 'Because',
+      conceptsTested: [], prerequisiteConcepts: [], difficultyRating: 2, lifecycleState: 'live',
+      imageUrl: 'https://example.com/current-diagram.png'
+    }]
+  }, cbtEngine);
+
+  cbtEngine.cbt.setup({ subjects: ['Biology'], examType: 'custom', customQuestionCounts: { Biology: 1 }, customTotalTimeMin: 1 });
+  const paper = await cbtEngine.cbt.buildPaper();
+  assertEqual(paper.paper[0].questionId, 'live_question', 'online CBT should not serve a deleted local question');
+  assertEqual(paper.paper[0].imageUrl, 'https://example.com/current-diagram.png', 'online CBT should carry the current image URL');
+});
+
 // ═══════════════════════════════════════════════════════════════
 // SETUP
 // ═══════════════════════════════════════════════════════════════

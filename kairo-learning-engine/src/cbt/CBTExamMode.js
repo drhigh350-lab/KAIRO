@@ -95,17 +95,24 @@ export class CBTExamMode {
   }
 
   /**
-   * Build the exam paper by pulling questions from downloaded packs.
+   * Build the exam paper from the current live catalog while online. The
+   * engine deliberately falls back to the last synchronized local mirror
+   * only when offline or when a live request cannot be completed.
    */
   async buildPaper() {
     const paper = [];
     let globalIndex = 0;
 
     for (const subject of this.config.subjects) {
-      const questions = await this.engine.contentPacks.getOfflineQuestions({
-        subject,
-        count: this._questionCountFor(subject)
-      });
+      const questions = this.engine.getCbtQuestions
+        ? await this.engine.getCbtQuestions({
+          subject,
+          count: this._questionCountFor(subject)
+        })
+        : await this.engine.contentPacks.getOfflineQuestions({
+          subject,
+          count: this._questionCountFor(subject)
+        });
 
       for (let i = 0; i < questions.length; i++) {
         paper.push({
