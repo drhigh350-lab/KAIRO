@@ -680,6 +680,7 @@ export class SupabaseSyncAdapter {
       explanation: row.explanation,
       distractorRationale: row.distractor_rationale,
       lifecycleState: row.lifecycle_state,
+      updatedAt: row.updated_at || null,
       empiricalStats: row.empirical_stats || { totalAttempts: 0, correctCount: 0, avgResponseTimeMs: 0, distractorSelectionCounts: {} },
       // Batch 2 (pre-launch bug fix): public Supabase Storage URL (the
       // question-diagrams bucket) for a diagram this question's stem

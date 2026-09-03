@@ -409,8 +409,12 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   await ensureMistakePatchesLoaded();
   const wanted = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
   const target = wanted.length ? wanted : SEEDED_SUBJECTS;
-  const missing = target.filter((s) => !contentLoadedFor.includes(s));
-  if (missing.length === 0) return;
+
+  // Supabase is authoritative whenever the browser is online. Do not use the
+  // old process-lifetime guard here: an admin edit or deletion must be seen
+  // by the next Practice/CBT/recommendation entry point. When offline, keep
+  // using the last successfully synchronized IndexedDB mirror instead.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   await kairo.loadContentCatalog({ subjects: target });
   contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
 }

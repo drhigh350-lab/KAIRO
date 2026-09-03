@@ -451,6 +451,7 @@ export class KairoEngine {
     let conceptsLoaded = 0;
     let questionsLoaded = 0;
     const newConceptIds = [];
+    let catalogRefreshed = false;
 
     for (const filter of filters) {
       const concepts = await this.sync.adapter.fetchConcepts(filter);
@@ -462,15 +463,30 @@ export class KairoEngine {
       }
 
       const questions = await this.sync.adapter.fetchQuestions(filter);
-      for (const data of questions) {
-        if (!this.questionGraph.getQuestion(data.id)) {
-          this.questionGraph.addQuestion(new Question(data));
-          questionsLoaded++;
+      const subject = filter.subject || null;
+      const catalogVersion = this._questionCatalogVersion(questions);
+      const flattenedQuestions = questions.map(data => ({
+        ...this._flattenQuestion(data),
+        catalogVersion
+      }));
+
+      if (subject) {
+        this.questionGraph.replaceQuestionsForSubject(subject, questions.map(data => new Question(data)));
+        await this.store.reconcileQuestionQueue(subject, flattenedQuestions);
+      } else {
+        for (const data of questions) {
+          if (!this.questionGraph.getQuestion(data.id)) {
+            this.questionGraph.addQuestion(new Question(data));
+            questionsLoaded++;
+          }
+          await this.store.put(STORES.QUEUE, this._flattenQuestion(data));
         }
-        await this.store.put(STORES.QUEUE, this._flattenQuestion(data));
       }
+      questionsLoaded += subject ? questions.length : 0;
+      catalogRefreshed = true;
     }
 
+    if (catalogRefreshed) await this.store.clearPrefetchedQueues();
     this.questionGraph.autoBuildRelationships();
 
     // A concept becoming a local ConceptNode for the first time (e.g. right
@@ -504,6 +520,12 @@ export class KairoEngine {
    * offline queue expect. Keeps the field-name translation in one place
    * instead of duplicated across every consumer.
    */
+  _questionCatalogVersion(questions) {
+    return JSON.stringify(questions
+      .map(q => [q.id, q.updatedAt || null, q.lifecycleState || null, q.imageUrl || null])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+  }
+
   _flattenQuestion(q) {
     return {
       queueId: q.id,

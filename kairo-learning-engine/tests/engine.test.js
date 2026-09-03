@@ -10,6 +10,7 @@ import { isPrimaryConceptLink } from "../src/utils/helpers.js";
 import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
 import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
 import { PlannerBridge } from "../src/engine/PlannerBridge.js";
+import { LocalStore, STORES } from "../src/data/LocalStore.js";
 import { EliteScore } from "../src/engine/EliteScore.js";
 
 let passCount = 0;
@@ -49,6 +50,25 @@ function assert(condition, message) {
 function assertEqual(a, b, message) {
   if (a !== b) throw new Error(`${message} — expected "${b}", got "${a}"`);
 }
+
+await test('content catalog reconciliation removes deleted local questions and replaces changed records', async () => {
+  const store = new LocalStore();
+  await store.init();
+  await store.put(STORES.QUEUE, { queueId: 'catalog_a', id: 'catalog_a', subject: 'Biology', text: 'old A' });
+  await store.put(STORES.QUEUE, { queueId: 'catalog_deleted', id: 'catalog_deleted', subject: 'Biology', text: 'deleted' });
+  await store.put(STORES.QUEUE, { queueId: 'other_subject', id: 'other_subject', subject: 'Physics', text: 'keep' });
+
+  await store.reconcileQuestionQueue('Biology', [
+    { queueId: 'catalog_a', id: 'catalog_a', subject: 'Biology', text: 'new A' },
+    { queueId: 'catalog_b', id: 'catalog_b', subject: 'Biology', text: 'new B' },
+  ]);
+
+  const biology = (await store.getAll(STORES.QUEUE)).filter(q => q.subject === 'Biology');
+  assertEqual(biology.length, 2, 'Biology mirror should contain only the current live rows');
+  assertEqual(biology.find(q => q.id === 'catalog_a').text, 'new A', 'changed rows should overwrite stale local data');
+  assert(!biology.some(q => q.id === 'catalog_deleted'), 'deleted rows should be removed from the local mirror');
+  assert((await store.get(STORES.QUEUE, 'other_subject')).text === 'keep', 'other subjects should not be affected');
+});
 
 // ═══════════════════════════════════════════════════════════════
 // SETUP

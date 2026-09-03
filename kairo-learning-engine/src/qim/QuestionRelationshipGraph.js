@@ -35,6 +35,29 @@ export class QuestionRelationshipGraph {
   }
 
   /**
+   * Replace the questions for one subject with the authoritative live result.
+   * This keeps Practice/recommendations aligned with the same catalog that is
+   * mirrored into IndexedDB for CBT, instead of retaining deleted questions
+   * in the in-memory graph forever.
+   */
+  replaceQuestionsForSubject(subject, questions) {
+    for (const [id, question] of this.questions) {
+      if (question.subject !== subject) continue;
+      this.questions.delete(id);
+      this.relationships.delete(id);
+    }
+
+    const remainingIds = new Set(this.questions.keys());
+    for (const rels of this.relationships.values()) {
+      for (const type of Object.keys(rels)) {
+        rels[type] = rels[type].filter(id => remainingIds.has(id));
+      }
+    }
+
+    for (const question of questions) this.addQuestion(question);
+  }
+
+  /**
    * Link two questions with a relationship type.
    */
   link(fromId, toId, type) {

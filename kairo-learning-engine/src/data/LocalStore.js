@@ -168,6 +168,28 @@ export class LocalStore {
     return all.filter(a => a.conceptId === conceptId);
   }
 
+  /**
+   * Reconcile one subject's offline mirror against the authoritative live
+   * catalog. Deletions are intentional: the local queue is a mirror, not a
+   * second source of truth.
+   */
+  async reconcileQuestionQueue(subject, questions) {
+    const current = await this.getAll(STORES.QUEUE);
+    const liveIds = new Set(questions.map(q => q.id || q.questionId || q.queueId));
+    for (const record of current) {
+      if (record.subject === subject && !liveIds.has(record.id || record.questionId || record.queueId)) {
+        await this.delete(STORES.QUEUE, record.queueId);
+      }
+    }
+    for (const question of questions) await this.put(STORES.QUEUE, question);
+  }
+
+  /** Invalidate resolved recommendation queues after any catalog refresh. */
+  async clearPrefetchedQueues() {
+    const queues = await this.getPrefetchedQueues();
+    for (const queue of queues) await this.deletePrefetchedQueue(queue.queueId);
+  }
+
   async savePrefetchedQueue(queue) {
     await this.put(STORES.PREFETCHED_QUEUES, queue);
   }
