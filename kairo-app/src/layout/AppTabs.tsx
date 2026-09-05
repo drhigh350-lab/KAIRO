@@ -52,9 +52,9 @@ export function AppTabs() {
   return (
     <NavVisibilityContext.Provider value={setNavHidden}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-          <Outlet />
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, paddingBottom: navHidden ? 0 : 'calc(76px + env(safe-area-inset-bottom))' }}>
+        <Outlet />
+      </div>
         {!navHidden && (
           <BottomNav
             items={items}

@@ -1277,6 +1277,7 @@ export class KairoEngine {
       timestamp: Date.now(),
       errorTag,
       questionId,
+      sessionId: this.currentSession?.sessionId || null,
       selectedOption,
       correctOption,
       difficulty: questionDifficulty,

@@ -19,6 +19,9 @@ export function BottomNav({ items, active, onChange, dark = false }: BottomNavPr
       display: 'flex', justifyContent: 'center', alignItems: 'center',
       borderTop: `1px solid ${dark ? 'var(--dark-border)' : 'var(--color-border-subtle)'}`, padding: '10px 4px 10px', fontFamily: 'var(--font-body)',
       background: dark ? 'var(--dark-bg-canvas)' : 'var(--kairo-white)',
+      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 100,
+      paddingBottom: 'calc(10px + env(safe-area-inset-bottom))',
+      boxShadow: dark ? '0 -8px 24px rgba(0,0,0,0.18)' : '0 -8px 24px rgba(0,0,0,0.08)',
     }}>
       <div className="app-bottomnav-inner" style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', width: '100%' }}>
         {items.map((item) => {

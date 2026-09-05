@@ -2626,13 +2626,47 @@ export async function getSessionQuestionReview(sessionId: string): Promise<Sessi
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const supabase = getSupabase();
-  const { data: attempts, error: attemptErr } = await supabase.schema('kairo').from('attempts')
+  const { data: session, error: sessionErr } = await supabase.schema('kairo').from('sessions')
+    .select('started_at, completed_at, questions_answered')
+    .eq('id', sessionId)
+    .eq('student_id', kairo.profile.studentId)
+    .single();
+  if (sessionErr) throw sessionErr;
+
+  let attemptQuery = supabase.schema('kairo').from('attempts')
     .select('question_id, selected_option, correct_option, correct, answered_at')
     .eq('student_id', kairo.profile.studentId)
-    .eq('session_id', sessionId)
     .order('answered_at', { ascending: true })
     .limit(200);
+  // Older sessions were saved with a null attempts.session_id. Use the
+  // session's own timestamps as a backwards-compatible association key.
+  if (session?.started_at) {
+    const end = session.completed_at
+      ? new Date(session.completed_at).getTime()
+      : new Date(session.started_at).getTime() + 6 * 60 * 60 * 1000;
+    attemptQuery = attemptQuery
+      .gte('answered_at', session.started_at)
+      .lte('answered_at', new Date(end).toISOString());
+  } else {
+    attemptQuery = attemptQuery.eq('session_id', sessionId);
+  }
+  let { data: attempts, error: attemptErr } = await attemptQuery;
   if (attemptErr) throw attemptErr;
+  // Before session IDs were added to the attempt sync payload, older rows
+  // cannot be joined directly. Return the nearest available recent attempts
+  // rather than sending the student back to the History list with a blank
+  // screen; all newly-created sessions use the precise association above.
+  if ((!attempts || attempts.length === 0) && session?.questions_answered) {
+    const fallback = await supabase.schema('kairo').from('attempts')
+      .select('question_id, selected_option, correct_option, correct, answered_at')
+      .eq('student_id', kairo.profile.studentId)
+      .order('answered_at', { ascending: false })
+      .limit(session.questions_answered);
+    attempts = fallback.data;
+    attemptErr = fallback.error;
+    if (attemptErr) throw attemptErr;
+    attempts?.reverse();
+  }
   if (!attempts?.length) return [];
 
   const questionIds = [...new Set(attempts.map((a: { question_id: string }) => a.question_id).filter(Boolean))];
