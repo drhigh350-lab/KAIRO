@@ -34,7 +34,7 @@ const EXAM_PACE_SEC = 45;
 
 type Screen = 'practiceHome' | 'subject' | 'practiceHub' | 'topic' | 'subtopic' | 'practiceQuestion' | 'practiceSummary' | 'practiceReview';
 type SubjectLike = Subject | { key: string; label: string };
-type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'dashboard' | 'verify' | 'drill' | 'endurance';
+type EntryKind = 'home' | 'subject' | 'topic' | 'mixed' | 'weak' | 'suggested' | 'dashboard' | 'verify' | 'repair' | 'drill' | 'endurance';
 
 interface InitialState {
   screen: Screen;
@@ -78,6 +78,9 @@ function computeInitial(entry: string, verifyTarget: { subjectLabel: string; top
   }
   if (kind === 'drill') {
     return { ...base, subject: { key: 'drill', label: 'Drill' }, difficulty: 'adaptive', length: 10, screen: 'practiceQuestion' };
+  }
+  if (kind === 'repair' && verifyTarget) {
+    return { ...base, subject: { key: verifyTarget.subjectLabel, label: verifyTarget.subjectLabel }, length: 5, screen: 'practiceQuestion' };
   }
   if (kind === 'endurance') {
     return { ...base, subject: { key: 'endurance', label: 'Endurance' }, difficulty: 'adaptive', length: 60, screen: 'practiceQuestion' };
@@ -305,6 +308,23 @@ export function PracticeFlow() {
       return;
     }
     startTopicSession(verifyTarget.subjectLabel, verifyTarget.topic, undefined, VERIFICATION_SESSION_LENGTH, undefined, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startedRepair = useRef(false);
+  useEffect(() => {
+    if (entryFlow !== 'repair' || startedRepair.current) return;
+    startedRepair.current = true;
+    if (!verifyTarget) {
+      setEngineLoadError('Missing repair topic — go back to Review and try again.');
+      return;
+    }
+    const existing = getPracticeSessionSnapshot(getEngine()?.profile?.studentId);
+    if (existing && existing.entryFlow === 'repair' && existing.subjectLabel === verifyTarget.subjectLabel && existing.topic === verifyTarget.topic) {
+      resumeSession(existing);
+      return;
+    }
+    startTopicSession(verifyTarget.subjectLabel, verifyTarget.topic, undefined, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

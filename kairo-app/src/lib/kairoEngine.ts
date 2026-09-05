@@ -1514,6 +1514,7 @@ export function hasCompletedTodaysRecommendation(): boolean {
 export interface CbtPaperQuestion {
   globalIndex: number;
   subject: string;
+  topic?: string | null;
   questionId: string;
   text: string;
   options: { label: string; text: string }[];
@@ -2611,6 +2612,7 @@ export async function getSessionHistory(limit = 20): Promise<SessionHistoryEntry
 export interface SessionQuestionReview {
   globalIndex: number;
   subject: string;
+  topic: string | null;
   questionId: string;
   text: string;
   options: Array<{ label: string; text: string }>;
@@ -2672,14 +2674,14 @@ export async function getSessionQuestionReview(sessionId: string): Promise<Sessi
 
   const questionIds = [...new Set(attempts.map((a: { question_id: string }) => a.question_id).filter(Boolean))];
   const { data: questions, error: questionErr } = await supabase.schema('kairo').from('questions')
-    .select('id, subject, stem, options, correct_option, explanation, image_url, distractors, distractor_rationale')
+    .select('id, subject, topic, stem, options, correct_option, explanation, image_url, distractors, distractor_rationale')
     .in('id', questionIds)
     .limit(200);
   if (questionErr) throw questionErr;
   const byId = new Map((questions || []).map((q: { id: string }) => [q.id, q]));
 
   return attempts.map((attempt: { question_id: string; selected_option: string | null; correct_option: string | null; correct: boolean }, index: number) => {
-    const q = byId.get(attempt.question_id) as { id: string; subject?: string; stem?: string; options?: Array<{ label?: string; text?: string; isCorrect?: boolean }>; correct_option?: string; explanation?: string; image_url?: string | null; distractors?: Array<{ option?: string; label?: string; explanation?: string }>; distractor_rationale?: string | null } | undefined;
+    const q = byId.get(attempt.question_id) as { id: string; subject?: string; topic?: string | null; stem?: string; options?: Array<{ label?: string; text?: string; isCorrect?: boolean }>; correct_option?: string; explanation?: string; image_url?: string | null; distractors?: Array<{ option?: string; label?: string; explanation?: string }>; distractor_rationale?: string | null } | undefined;
     const options = (q?.options || []).map((option) => ({ label: option.label || '', text: option.text || '' }));
     const distractors = (q?.distractors || []).map((d) => ({
       label: d.label || d.option || '',
@@ -2688,6 +2690,7 @@ export async function getSessionQuestionReview(sessionId: string): Promise<Sessi
     return {
       globalIndex: index,
       subject: q?.subject || 'Practice',
+      topic: q?.topic || null,
       questionId: attempt.question_id,
       text: q?.stem || 'Question text unavailable',
       options,

@@ -227,19 +227,20 @@ export function Review() {
       options: r.options || [],
       imageUrl: r.imageUrl || null,
     }));
-    return <CbtReview paper={paper} questionResults={selectedCbtReview.questionResults || []} onBack={() => setSelectedCbtReview(null)} />;
+    return <CbtReview paper={paper} questionResults={selectedCbtReview.questionResults || []} onBack={() => setSelectedCbtReview(null)} onRepair={(subject, topic) => navigate('/practice', { state: { entry: 'repair', subjectLabel: subject, topic } })} />;
   }
 
   if (selectedSessionReview) {
     const paper: CbtPaperQuestion[] = selectedSessionReview.map((r) => ({
       globalIndex: r.globalIndex,
       subject: r.subject,
+      topic: r.topic,
       questionId: r.questionId,
       text: r.text,
       options: r.options,
       imageUrl: r.imageUrl,
     }));
-    return <CbtReview paper={paper} questionResults={selectedSessionReview.map((r) => ({ ...r, correctOption: r.correctOption || '' }))} onBack={() => setSelectedSessionReview(null)} />;
+    return <CbtReview paper={paper} questionResults={selectedSessionReview.map((r) => ({ ...r, correctOption: r.correctOption || '' }))} onBack={() => setSelectedSessionReview(null)} onRepair={(subject, topic) => navigate('/practice', { state: { entry: 'repair', subjectLabel: subject, topic } })} />;
   }
 
   return (

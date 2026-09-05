@@ -11,21 +11,24 @@ export interface CbtReviewProps {
   paper: CbtPaperQuestion[];
   questionResults: ReviewResult[];
   onBack?: () => void;
+  onRepair?: (subject: string, topic: string) => void;
 }
 
 /** Saved correction view: one question at a time, with a ledger, Previous/Next controls, bookmark/report actions, and the full distractor diagnosis. */
-export function CbtReview({ paper, questionResults, onBack }: CbtReviewProps) {
+export function CbtReview({ paper, questionResults, onBack, onRepair }: CbtReviewProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [filter, setFilter] = useState<'all' | 'correct' | 'wrong'>('all');
   const [bookmarked, setBookmarked] = useState(false);
   const [reported, setReported] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const result = questionResults[currentIndex];
+  const filteredResults = questionResults.filter((item) => filter === 'all' || (filter === 'correct' ? item.isCorrect : !item.isCorrect || !item.studentAnswer));
+  const result = filteredResults[currentIndex];
   const question = result ? paper[result.globalIndex] : undefined;
   const options = question?.options || result?.options || [];
 
   useEffect(() => {
     setCurrentIndex(0);
-  }, [questionResults]);
+  }, [questionResults, filter]);
 
   useEffect(() => {
     if (!result?.questionId) return;
@@ -80,14 +83,17 @@ export function CbtReview({ paper, questionResults, onBack }: CbtReviewProps) {
       <div style={{ padding: '10px 20px 110px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-text-faint)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
-            {result.subject} · Question {currentIndex + 1} of {questionResults.length}
+            {result.subject} · Question {currentIndex + 1} of {filteredResults.length}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" onClick={handleBookmark} aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark question'} style={toolButton(bookmarked)}>{bookmarked ? '★ Saved' : '☆ Save'}</button>
             <button type="button" onClick={handleReport} disabled={reported} aria-label="Report question" style={toolButton(false)}>{reported ? 'Reported' : '⚑ Report'}</button>
           </div>
         </div>
-        <div style={{ height: 5, borderRadius: 99, background: 'var(--dark-border)', overflow: 'hidden' }}><div style={{ width: `${((currentIndex + 1) / questionResults.length) * 100}%`, height: '100%', background: 'var(--kairo-gold-500)' }} /></div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 8, background: 'rgba(201,162,39,.08)', border: '1px solid var(--dark-border)', borderRadius: 4 }}>
+          {([['all', `All · ${questionResults.length}`], ['correct', `Correct only · ${questionResults.filter((item) => item.isCorrect).length}`], ['wrong', `Wrong / unanswered · ${questionResults.filter((item) => !item.isCorrect || !item.studentAnswer).length}`]] as const).map(([key, label]) => <button key={key} type="button" onClick={() => setFilter(key)} style={{ border: `1px solid ${filter === key ? 'var(--kairo-gold-500)' : 'var(--dark-border)'}`, background: filter === key ? 'var(--dark-bg-surface)' : 'transparent', color: filter === key ? 'var(--dark-text-heading)' : 'var(--dark-text-muted)', padding: '7px 10px', borderRadius: 3, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{label}</button>)}
+        </div>
+        <div style={{ height: 5, borderRadius: 99, background: 'var(--dark-border)', overflow: 'hidden' }}><div style={{ width: `${((currentIndex + 1) / filteredResults.length) * 100}%`, height: '100%', background: 'var(--kairo-gold-500)' }} /></div>
 
         <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', padding: 18 }}>
           <div style={{ fontSize: 11, color: result.isCorrect ? 'var(--dark-success)' : 'var(--dark-danger)', fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }}>
@@ -111,6 +117,8 @@ export function CbtReview({ paper, questionResults, onBack }: CbtReviewProps) {
             <div style={{ marginTop: 7, color: 'var(--dark-text-body)', fontSize: 13.5, lineHeight: 1.55 }}>{result.explanation || 'Review the distinction between the correct answer and the distractors below.'}</div>
           </div>
 
+          {!result.isCorrect && question?.topic && onRepair && <button type="button" onClick={() => onRepair(result.subject, question.topic!)} style={{ width: '100%', marginTop: 14, padding: '13px 14px', textAlign: 'left', borderRadius: 'var(--radius-md)', border: '1px solid var(--dark-accent-blue)', background: 'rgba(46,124,246,.12)', color: 'var(--dark-text-body)', cursor: 'pointer', fontFamily: 'inherit' }}><strong style={{ display: 'block', color: 'var(--dark-accent-blue)', fontSize: 13 }}>Fix this topic with 5 questions →</strong><span style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--dark-text-muted)' }}>KAIRO will pull five fresh questions from {question.topic} and adapt as you answer.</span></button>}
+
           <div style={{ marginTop: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--dark-accent-blue)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 10 }}>Why the other options are wrong</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -120,13 +128,13 @@ export function CbtReview({ paper, questionResults, onBack }: CbtReviewProps) {
         </Card>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(42px, 1fr))', gap: 6, padding: 12, background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-md)' }}>
-          {questionResults.map((item, index) => <button key={`${item.questionId || index}-${index}`} type="button" onClick={() => setCurrentIndex(index)} aria-label={`Go to question ${index + 1}`} style={{ minHeight: 34, borderRadius: 4, border: index === currentIndex ? '2px solid var(--kairo-gold-500)' : '1px solid transparent', background: item.isCorrect ? 'var(--dark-success)' : item.studentAnswer ? 'var(--dark-danger)' : 'var(--dark-border)', color: '#fff', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>{String(index + 1).padStart(2, '0')} {item.isCorrect ? '✓' : item.studentAnswer ? '×' : '·'}</button>)}
+          {filteredResults.map((item, index) => <button key={`${item.questionId || index}-${index}`} type="button" onClick={() => setCurrentIndex(index)} aria-label={`Go to question ${index + 1}`} style={{ minHeight: 34, borderRadius: 4, border: index === currentIndex ? '2px solid var(--kairo-gold-500)' : '1px solid transparent', background: item.isCorrect ? 'var(--dark-success)' : item.studentAnswer ? 'var(--dark-danger)' : 'var(--dark-border)', color: '#fff', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>{String(index + 1).padStart(2, '0')} {item.isCorrect ? '✓' : item.studentAnswer ? '×' : '·'}</button>)}
         </div>
       </div>
       {toast && <div style={{ position: 'fixed', left: 20, right: 20, bottom: 90, zIndex: 110, padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--dark-bg-elevated)', color: 'var(--dark-text-body)', border: '1px solid var(--dark-border)', textAlign: 'center', fontSize: 13 }}>{toast}</div>}
       <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 105, display: 'flex', gap: 10, padding: '10px 20px calc(10px + env(safe-area-inset-bottom))', background: 'var(--dark-bg-canvas)', borderTop: '1px solid var(--dark-border)' }}>
         <Button variant="secondary" size="lg" fullWidth disabled={currentIndex === 0} onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}>Previous</Button>
-        <Button variant="gold" size="lg" fullWidth disabled={currentIndex === questionResults.length - 1} onClick={() => setCurrentIndex((i) => Math.min(questionResults.length - 1, i + 1))}>{currentIndex === questionResults.length - 1 ? 'Last question' : 'Next question'}</Button>
+        <Button variant="gold" size="lg" fullWidth disabled={currentIndex === filteredResults.length - 1} onClick={() => setCurrentIndex((i) => Math.min(filteredResults.length - 1, i + 1))}>{currentIndex === filteredResults.length - 1 ? 'Last question' : 'Next question'}</Button>
       </div>
     </div>
   );
