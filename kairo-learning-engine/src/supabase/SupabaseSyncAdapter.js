@@ -340,7 +340,18 @@ export class SupabaseSyncAdapter {
       .maybeSingle();
     if (fetchErr) throw fetchErr;
 
-    if (existing) return this._rowToProfile(existing);
+    if (existing) {
+      if (!existing.email && initialProfileData?.email) {
+        const { data: repaired, error: repairErr } = await this._table('students')
+          .update({ email: initialProfileData.email, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+          .select()
+          .single();
+        if (repairErr) throw repairErr;
+        return this._rowToProfile(repaired);
+      }
+      return this._rowToProfile(existing);
+    }
 
     const { data: created, error: insertErr } = await this._table('students')
       .insert(this._profileToRow(initialProfileData, authUserId))

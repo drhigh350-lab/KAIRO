@@ -285,7 +285,14 @@ export class KairoEngine {
       throw new Error('connectSupabase requires a signed-in user — sign in first or pass email/password.');
     }
 
-    const remoteProfile = await adapter.ensureStudentRow(user.id, this.profile.toJSON());
+    // OAuth users already carry a verified email in auth.users even when the
+    // fresh local profile did not come through the email signup form. Keep it
+    // on the student row so transactional welcome mail has a recipient.
+    const initialProfile = {
+      ...this.profile.toJSON(),
+      email: this.profile.email || user.email || null,
+    };
+    const remoteProfile = await adapter.ensureStudentRow(user.id, initialProfile);
 
     // Hydrate the full remote profile onto this profile instance. Every
     // caller of connectSupabase() (sign-up, sign-in, restoreSession,
