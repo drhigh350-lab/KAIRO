@@ -57,7 +57,9 @@ body {
 .kairo-pressable:focus-visible { outline: 2px solid var(--dark-accent-blue); outline-offset: 3px; }
 
 .kairo-loading-state {
-  min-height: min(58dvh, 520px);
+  flex: 1;
+  width: 100%;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -68,14 +70,6 @@ body {
   color: var(--dark-text-body);
   background: var(--dark-bg-canvas);
 }
-.kairo-loading-title {
-  margin-top: 12px;
-  color: var(--dark-text-heading);
-  font-family: var(--font-heading);
-  font-size: 17px;
-  font-weight: 800;
-}
-.kairo-loading-detail { color: var(--dark-text-muted); font-size: 13px; }
 .kairo-loading-dots { display: flex; gap: 5px; margin-top: 8px; }
 .kairo-loading-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--dark-accent-blue); animation: kairo-dot-bounce 1s ease-in-out infinite; }
 .kairo-loading-dots span:nth-child(2) { animation-delay: 140ms; }

@@ -537,15 +537,10 @@ export function KairoPointsInfo({ iconColor = 'var(--dark-text-faint)' }: { icon
 }
 
 
-export function KairoLoading({
-  title = 'Kairo is getting things ready',
-  detail = 'Syncing your learning space…',
-}: { title?: string; detail?: string }) {
+export function KairoLoading() {
   return (
     <div className="kairo-loading-state" role="status" aria-live="polite">
       <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>
-      <div className="kairo-loading-title">{title}</div>
-      <div className="kairo-loading-detail">{detail}</div>
     </div>
   );
 }

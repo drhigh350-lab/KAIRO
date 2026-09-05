@@ -74,7 +74,7 @@ function useBootRestore(): boolean {
 }
 
 function BootScreen() {
-  return <KairoLoading title="Kairo is opening your learning space" detail="Restoring your progress and getting your dashboard ready…" />;
+  return <KairoLoading />;
 }
 
 /**
