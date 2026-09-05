@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Card } from '../../components';
-import { ScreenHeader } from '../learning/shared';
+import { KairoLoading, ScreenHeader } from '../learning/shared';
 import { Row } from './ExamSetup';
-import { getCbtHistory, type CbtHistoryEntry } from '../../lib/kairoEngine';
+import { getCbtHistory, type CbtHistoryEntry, type CbtPaperQuestion } from '../../lib/kairoEngine';
+import { CbtReview } from './CbtReview';
 
 export interface CbtHistoryProps {
   onBack?: () => void;
@@ -11,6 +12,7 @@ export interface CbtHistoryProps {
 /** Real past-exam log from kairo.cbt_results — every completed mock, in date order, with the same per-subject breakdown the summary screen showed right after finishing it. */
 export function CbtHistory({ onBack }: CbtHistoryProps) {
   const [entries, setEntries] = useState<CbtHistoryEntry[] | null>(null);
+  const [selected, setSelected] = useState<CbtHistoryEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -22,12 +24,24 @@ export function CbtHistory({ onBack }: CbtHistoryProps) {
   const avgPct = entries && entries.length ? Math.round(entries.reduce((s, e) => s + e.percentage, 0) / entries.length) : null;
   const bestPct = entries && entries.length ? Math.max(...entries.map((e) => e.percentage)) : null;
 
+  if (selected) {
+    const paper: CbtPaperQuestion[] = (selected.questionResults || []).map((r) => ({
+      globalIndex: r.globalIndex,
+      subject: r.subject,
+      questionId: r.questionId || `history_${selected.id}_${r.globalIndex}`,
+      text: r.text || 'Question text unavailable',
+      options: r.options || [],
+      imageUrl: r.imageUrl || null,
+    }));
+    return <CbtReview paper={paper} questionResults={selected.questionResults || []} onBack={() => setSelected(null)} />;
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title="Exam History" tone="dark" />
       <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
         {error && <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>{error}</div>}
-        {!error && entries === null && <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>Loading…</div>}
+        {!error && entries === null && <KairoLoading title="Loading your exam log" detail="Pulling your latest scores and question snapshots…" />}
         {!error && entries && entries.length === 0 && (
           <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40, lineHeight: 1.5 }}>
             No exams taken yet. Complete a CBT simulation to see your history here.
@@ -58,6 +72,9 @@ export function CbtHistory({ onBack }: CbtHistoryProps) {
                     </div>
                   ))}
                 </div>
+                <button type="button" className="kairo-pressable" onClick={() => setSelected(e)} disabled={!e.questionResults?.length} style={{ width: '100%', marginTop: 12, padding: '10px 12px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--dark-accent-blue)', background: 'transparent', color: 'var(--dark-accent-blue)', fontFamily: 'inherit', fontWeight: 700, cursor: e.questionResults?.length ? 'pointer' : 'not-allowed', opacity: e.questionResults?.length ? 1 : .5 }}>
+                  {e.questionResults?.length ? 'Open question review' : 'Question review unavailable for this exam'}
+                </button>
               </Card>
             ))}
           </>

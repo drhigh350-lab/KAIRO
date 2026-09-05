@@ -89,7 +89,7 @@ export function CbtSummary({ results, onHome, onReview }: CbtSummaryProps) {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', marginBottom: 6 }}>FROM KAI</div>
           <div style={{ fontSize: 14, color: 'var(--dark-text-body)', lineHeight: 1.5 }}>{results.kaiSummary}</div>
           <div style={{ marginTop: 14 }}>
-            <Button variant="secondary" size="md" fullWidth onClick={onReview}>Review Incorrect Questions</Button>
+            <Button variant="secondary" size="md" fullWidth onClick={onReview}>Review All Questions</Button>
           </div>
         </Card>
       </div>

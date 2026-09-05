@@ -11,6 +11,7 @@ import { getCbtSessionSnapshot, clearSessionSnapshot } from '../../lib/sessionRe
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
+import { KairoLoading } from '../learning/shared';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
 
@@ -217,11 +218,7 @@ export function CbtFlow() {
     return <ExamInstructions onBack={() => setScreen('setup')} onBegin={handleBegin} />;
   }
   if (screen === 'starting') {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
-        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Preparing your exam…</div>
-      </div>
-    );
+    return <KairoLoading title="Kairo is building your exam" detail="Loading the latest questions, diagrams, and exam structure…" />;
   }
   if (screen === 'exam') {
     return (

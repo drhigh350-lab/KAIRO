@@ -25,7 +25,7 @@ import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { PlannerFlow } from './features/planner/PlannerFlow';
 import { StreakSavior } from './features/home/StreakSavior';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
-import { KairoMark } from './components';
+import { KairoLoading } from './features/learning/shared';
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
@@ -74,11 +74,7 @@ function useBootRestore(): boolean {
 }
 
 function BootScreen() {
-  return (
-    <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', background: 'var(--dark-bg-canvas)' }}>
-      <KairoMark tone="white" size={44} />
-    </div>
-  );
+  return <KairoLoading title="Kairo is opening your learning space" detail="Restoring your progress and getting your dashboard ready…" />;
 }
 
 /**

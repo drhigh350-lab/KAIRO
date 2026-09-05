@@ -1606,6 +1606,10 @@ export function getCbtSubjectTimes(): Record<string, number> {
 export interface CbtQuestionResult {
   globalIndex: number;
   subject: string;
+  questionId?: string;
+  text?: string | null;
+  options?: { label: string; text: string }[];
+  imageUrl?: string | null;
   studentAnswer: string | null;
   correctOption: string;
   isCorrect: boolean;
@@ -1675,6 +1679,7 @@ export interface CbtHistoryEntry {
   percentage: number;
   bySubject: { subject: string; correct: number; total: number; percentage: number }[];
   timeAnalysis: { totalTimeMin: number; avgTimePerQuestionSec: number } | null;
+  questionResults?: CbtQuestionResult[];
   startedAt: number;
   completedAt: number;
 }
@@ -1693,6 +1698,7 @@ export async function getCbtHistory(limit = 20): Promise<CbtHistoryEntry[]> {
     percentage: row.percentage,
     bySubject: row.by_subject || [],
     timeAnalysis: row.time_analysis,
+    questionResults: row.question_results || [],
     startedAt: new Date(row.started_at).getTime(),
     completedAt: new Date(row.completed_at).getTime(),
   }));
