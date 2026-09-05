@@ -2607,3 +2607,56 @@ export async function getSessionHistory(limit = 20): Promise<SessionHistoryEntry
     completedAt: row.completed_at ? new Date(row.completed_at).getTime() : null,
   }));
 }
+
+export interface SessionQuestionReview {
+  globalIndex: number;
+  subject: string;
+  questionId: string;
+  text: string;
+  options: Array<{ label: string; text: string }>;
+  imageUrl: string | null;
+  studentAnswer: string | null;
+  correctOption: string | null;
+  isCorrect: boolean;
+  explanation: string | null;
+}
+
+/** Load the actual questions and answer choices behind one History session. */
+export async function getSessionQuestionReview(sessionId: string): Promise<SessionQuestionReview[]> {
+  const kairo = getEngine();
+  if (!kairo) throw new Error('No active engine — sign in first.');
+  const supabase = getSupabase();
+  const { data: attempts, error: attemptErr } = await supabase.schema('kairo').from('attempts')
+    .select('question_id, selected_option, correct_option, correct, answered_at')
+    .eq('student_id', kairo.profile.studentId)
+    .eq('session_id', sessionId)
+    .order('answered_at', { ascending: true })
+    .limit(200);
+  if (attemptErr) throw attemptErr;
+  if (!attempts?.length) return [];
+
+  const questionIds = [...new Set(attempts.map((a: { question_id: string }) => a.question_id).filter(Boolean))];
+  const { data: questions, error: questionErr } = await supabase.schema('kairo').from('questions')
+    .select('id, subject, stem, options, correct_option, explanation, image_url')
+    .in('id', questionIds)
+    .limit(200);
+  if (questionErr) throw questionErr;
+  const byId = new Map((questions || []).map((q: { id: string }) => [q.id, q]));
+
+  return attempts.map((attempt: { question_id: string; selected_option: string | null; correct_option: string | null; correct: boolean }, index: number) => {
+    const q = byId.get(attempt.question_id) as { id: string; subject?: string; stem?: string; options?: Array<{ label?: string; text?: string; isCorrect?: boolean }>; correct_option?: string; explanation?: string; image_url?: string | null } | undefined;
+    const options = (q?.options || []).map((option) => ({ label: option.label || '', text: option.text || '' }));
+    return {
+      globalIndex: index,
+      subject: q?.subject || 'Practice',
+      questionId: attempt.question_id,
+      text: q?.stem || 'Question text unavailable',
+      options,
+      imageUrl: q?.image_url || null,
+      studentAnswer: attempt.selected_option,
+      correctOption: attempt.correct_option || q?.correct_option || null,
+      isCorrect: !!attempt.correct,
+      explanation: q?.explanation || null,
+    };
+  });
+}

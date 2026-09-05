@@ -5,8 +5,8 @@ import { InlineToast } from '../learning/shared';
 import { CbtReview } from '../cbt/CbtReview';
 import {
   loadReviewData, getPendingRepairsCount, getRecentMistakes, markMistakeUnderstood, getWeakTopicsForReview,
-  getBookmarkedQuestions, removeBookmark, getSessionHistory, getCbtHistory,
-  type MistakeTicket, type WeakTopicForReview, type BookmarkedQuestion, type SessionHistoryEntry, type CbtHistoryEntry, type CbtPaperQuestion,
+  getBookmarkedQuestions, removeBookmark, getSessionHistory, getCbtHistory, getSessionQuestionReview,
+  type MistakeTicket, type WeakTopicForReview, type BookmarkedQuestion, type SessionHistoryEntry, type CbtHistoryEntry, type CbtPaperQuestion, type SessionQuestionReview,
 } from '../../lib/kairoEngine';
 
 function relativeDay(ts: number): string {
@@ -152,6 +152,7 @@ export function Review() {
   const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
   const [selectedCbtReview, setSelectedCbtReview] = useState<CbtHistoryEntry | null>(null);
+  const [selectedSessionReview, setSelectedSessionReview] = useState<SessionQuestionReview[] | null>(null);
   const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
@@ -182,18 +183,26 @@ export function Review() {
   }
 
   async function handleOpenSession(entry: SessionHistoryEntry) {
-    if (entry.mode !== 'cbt_exam') return;
     setReviewingSessionId(entry.id);
     try {
-      const cbtResults = await getCbtHistory(50);
-      const result = cbtResults.find((item) => item.id === entry.id);
-      if (result) setSelectedCbtReview(result);
-      else {
-        setToast('This exam does not have a saved question review yet.');
-        setTimeout(() => setToast(null), 3200);
+      if (entry.mode === 'cbt_exam') {
+        const cbtResults = await getCbtHistory(50);
+        const result = cbtResults.find((item) => item.id === entry.id);
+        if (result) setSelectedCbtReview(result);
+        else {
+          setToast('This exam does not have a saved question review yet.');
+          setTimeout(() => setToast(null), 3200);
+        }
+      } else {
+        const result = await getSessionQuestionReview(entry.id);
+        if (result.length) setSelectedSessionReview(result);
+        else {
+          setToast('This session does not have a saved question review yet.');
+          setTimeout(() => setToast(null), 3200);
+        }
       }
     } catch {
-      setToast('Kairo could not load this exam review right now.');
+      setToast('Kairo could not load this session review right now.');
       setTimeout(() => setToast(null), 3200);
     } finally {
       setReviewingSessionId(null);
@@ -219,6 +228,18 @@ export function Review() {
       imageUrl: r.imageUrl || null,
     }));
     return <CbtReview paper={paper} questionResults={selectedCbtReview.questionResults || []} onBack={() => setSelectedCbtReview(null)} />;
+  }
+
+  if (selectedSessionReview) {
+    const paper: CbtPaperQuestion[] = selectedSessionReview.map((r) => ({
+      globalIndex: r.globalIndex,
+      subject: r.subject,
+      questionId: r.questionId,
+      text: r.text,
+      options: r.options,
+      imageUrl: r.imageUrl,
+    }));
+    return <CbtReview paper={paper} questionResults={selectedSessionReview.map((r) => ({ ...r, correctOption: r.correctOption || '' }))} onBack={() => setSelectedSessionReview(null)} />;
   }
 
   return (
@@ -311,10 +332,10 @@ export function Review() {
           >
             {history?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No sessions yet.</div>}
             {history?.map((s) => (
-              <button type="button" key={s.id} onClick={() => handleOpenSession(s)} disabled={s.mode !== 'cbt_exam' || reviewingSessionId === s.id} aria-label={s.mode === 'cbt_exam' ? `Review ${s.modeLabel}` : `${s.modeLabel} session`} style={{
+              <button type="button" key={s.id} onClick={() => handleOpenSession(s)} disabled={s.questionsAnswered === 0 || reviewingSessionId === s.id} aria-label={`Review ${s.modeLabel}`} style={{
                 width: '100%', textAlign: 'left', marginTop: 10, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)',
                 border: 'none', borderLeft: `3px solid ${sessionAccentColor(s)}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 13,
-                fontFamily: 'inherit', cursor: s.mode === 'cbt_exam' ? 'pointer' : 'default', opacity: reviewingSessionId === s.id ? .65 : 1,
+                fontFamily: 'inherit', cursor: s.questionsAnswered > 0 ? 'pointer' : 'default', opacity: reviewingSessionId === s.id ? .65 : 1,
               }}>
                 <div>
                   <span style={{ color: 'var(--dark-text-body)', fontWeight: 600 }}>{s.modeLabel}</span>
