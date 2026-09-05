@@ -1,6 +1,6 @@
 // Scheduled Web Push delivery. Invoke daily with x-cron-secret.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import webpush from "npm:web-push@3.0.1";
+import webpush from "npm:web-push@3.6.7";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
