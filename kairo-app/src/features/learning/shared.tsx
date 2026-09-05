@@ -271,6 +271,16 @@ export function QuestionDiagram({ imageUrl }: { imageUrl?: string | null }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [imageUrl]);
   if (!imageUrl) return null;
+  const normalizedUrl = (() => {
+    const raw = imageUrl.trim();
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
+    const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+    if (!base) return raw;
+    const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/public\/question-diagrams\/)/, '');
+    return `${base}/storage/v1/object/public/question-diagrams/${path.split('/').map(encodeURIComponent).join('/')}`;
+  })();
+  if (!normalizedUrl) return null;
   if (failed) {
     return (
       <div style={{
@@ -281,7 +291,7 @@ export function QuestionDiagram({ imageUrl }: { imageUrl?: string | null }) {
   }
   return (
     <div style={{ marginTop: 16, borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--dark-bg-surface)' }}>
-      <img src={imageUrl} alt="Question diagram" onError={() => setFailed(true)} style={{ display: 'block', width: '100%', height: 'auto' }} />
+      <img src={normalizedUrl} alt="Question diagram" loading="lazy" decoding="async" onError={() => setFailed(true)} style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 'min(52vh, 520px)', objectFit: 'contain' }} />
     </div>
   );
 }

@@ -8,11 +8,16 @@
 
 html {
   height: 100%;
+  overflow-x: hidden;
 }
+
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
   min-height: 100%;
   background: var(--color-bg-canvas);
+  margin: 0;
+  overflow-x: hidden;
 }
 
 @media (min-width: 640px) {
@@ -25,7 +30,11 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
+  width: 100%;
+  overflow-x: clip;
 }
+
+img, svg, video, canvas { max-width: 100%; }
 
 /* Skeleton placeholder — shown behind the Kairo logo/wordmark and any
    avatar/mascot image while its asset is still loading (slow connections,

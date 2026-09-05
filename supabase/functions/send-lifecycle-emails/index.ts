@@ -110,10 +110,47 @@ Deno.serve(async (req) => {
   );
 
   const results = {
+    welcome: { sent: 0, failed: 0 },
+    weeklySummary: { sent: 0, failed: 0 },
+    monthlySummary: { sent: 0, failed: 0 },
     streakRisk: { sent: 0, failed: 0 },
     achievement: { sent: 0, failed: 0 },
     reengagement: { sent: 0, failed: 0 },
   };
+
+  async function sendCandidate(candidate: any, category: string, subject: string, body: string, dedupeKey: string, bucket: { sent: number; failed: number }) {
+    try {
+      await sendEmail(resendApiKey, candidate.email, subject, emailShell(candidate.name || "there", `<p>Hey ${candidate.name || "there"},</p>${body}`));
+      const { error: logErr } = await supabase.schema("kairo").from("email_log").insert({ student_id: candidate.student_id, category, dedupe_key: dedupeKey });
+      if (logErr) throw logErr;
+      bucket.sent++;
+    } catch (e) {
+      console.error(`${category} send failed:`, candidate.student_id, e);
+      bucket.failed++;
+    }
+  }
+
+  // These four paths are intentionally separate RPCs so one broken candidate
+  // query cannot prevent unrelated lifecycle mail from being delivered.
+  const { data: welcomeCandidates, error: welcomeErr } = await supabase.schema("kairo").rpc("get_welcome_email_candidates");
+  if (welcomeErr) console.error("get_welcome_email_candidates failed:", welcomeErr);
+  for (const c of welcomeCandidates ?? []) {
+    await sendCandidate(c, "welcome", "Welcome to Kairo", `<p>Your account is ready. Start with a short practice session — Kairo will use what you miss to choose the next useful step.</p><p><a href="${Deno.env.get("APP_URL") || "https://app.techmedng.com"}/practice">Start practicing →</a></p>`, c.dedupe_key, results.welcome);
+  }
+
+  const { data: weeklyCandidates, error: weeklyErr } = await supabase.schema("kairo").rpc("get_weekly_summary_candidates");
+  if (weeklyErr) console.error("get_weekly_summary_candidates failed:", weeklyErr);
+  for (const c of weeklyCandidates ?? []) {
+    const focus = c.focus_topic ? ` Your next useful focus is <strong>${c.focus_topic}</strong>.` : " Keep the next session short and focused.";
+    await sendCandidate(c, "weekly_summary", "Your Kairo weekly review", `<p>You completed <strong>${c.sessions_count}</strong> session${c.sessions_count === 1 ? "" : "s"} and answered <strong>${c.questions_count}</strong> questions at <strong>${c.accuracy}%</strong> accuracy.${focus}</p><p><a href="${Deno.env.get("APP_URL") || "https://app.techmedng.com"}/review">Open your review queue →</a></p>`, c.dedupe_key, results.weeklySummary);
+  }
+
+  const { data: monthlyCandidates, error: monthlyErr } = await supabase.schema("kairo").rpc("get_monthly_summary_candidates");
+  if (monthlyErr) console.error("get_monthly_summary_candidates failed:", monthlyErr);
+  for (const c of monthlyCandidates ?? []) {
+    const focus = c.focus_topic ? ` The clearest next target is <strong>${c.focus_topic}</strong>.` : " Choose one weak topic for your next sprint.";
+    await sendCandidate(c, "monthly_summary", "Your Kairo monthly checkpoint", `<p>This month: <strong>${c.sessions_count}</strong> session${c.sessions_count === 1 ? "" : "s"}, <strong>${c.questions_count}</strong> questions, and <strong>${c.accuracy}%</strong> average accuracy.${focus}</p><p><a href="${Deno.env.get("APP_URL") || "https://app.techmedng.com"}/home">See your next action →</a></p>`, c.dedupe_key, results.monthlySummary);
+  }
 
   // ---- Streak-at-risk ----
   const { data: streakCandidates, error: streakErr } = await supabase

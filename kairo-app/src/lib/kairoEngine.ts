@@ -147,6 +147,18 @@ export interface SignUpArgs {
   password: string;
 }
 
+/** Keep auth-provider metadata from replacing a student's real name with an email local-part. */
+function validProfileName(value: unknown, email = ''): string {
+  const name = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  if (!name || name.length < 2 || name.length > 120) return '';
+  const localPart = email.split('@')[0]?.trim().toLowerCase();
+  if (localPart && name.toLowerCase() === localPart) return '';
+  // Reject common provider-generated forms such as "johnson wisdom 417" when
+  // they are returned as the name instead of the full_name claim.
+  if (/\s\d{2,}$/.test(name)) return '';
+  return name;
+}
+
 /** Where Supabase's confirmation-link email sends the browser back to. */
 function emailConfirmRedirect(): string {
   return `${window.location.origin}/onboarding`;
@@ -169,7 +181,8 @@ export async function signUpAndConnect({ name, email, password }: SignUpArgs): P
   const kairo = createEngine(name);
   await kairo.init();
   const adapter = new SupabaseSyncAdapter(supabase, kairo.store);
-  const { session } = await adapter.signUp(email, password, { name }, { emailRedirectTo: emailConfirmRedirect() });
+  const cleanName = validProfileName(name, email);
+  const { session } = await adapter.signUp(email, password, { name: cleanName, full_name: cleanName }, { emailRedirectTo: emailConfirmRedirect() });
   if (!session) {
     engine = null;
     return { needsEmailVerification: true, email };
@@ -335,7 +348,10 @@ export async function connectGoogleAccount(): Promise<GoogleSignInResult> {
   const { data } = await supabase.auth.getSession();
   if (!data.session) throw new Error('Google sign-in did not complete — no session was returned.');
 
-  const googleName = (data.session.user.user_metadata?.full_name || data.session.user.user_metadata?.name || '').trim();
+  const metadata = data.session.user.user_metadata || {};
+  const googleName = validProfileName(metadata.full_name, data.session.user.email || '')
+    || validProfileName(metadata.name, data.session.user.email || '')
+    || validProfileName(metadata.display_name, data.session.user.email || '');
   const kairo = createEngine(googleName);
   await kairo.init();
   const remoteProfile = await kairo.connectSupabase(supabase, {});
