@@ -2614,6 +2614,7 @@ export interface SessionQuestionReview {
   questionId: string;
   text: string;
   options: Array<{ label: string; text: string }>;
+  distractors: Array<{ label: string; text?: string; whyWrong: string }>;
   imageUrl: string | null;
   studentAnswer: string | null;
   correctOption: string | null;
@@ -2671,21 +2672,26 @@ export async function getSessionQuestionReview(sessionId: string): Promise<Sessi
 
   const questionIds = [...new Set(attempts.map((a: { question_id: string }) => a.question_id).filter(Boolean))];
   const { data: questions, error: questionErr } = await supabase.schema('kairo').from('questions')
-    .select('id, subject, stem, options, correct_option, explanation, image_url')
+    .select('id, subject, stem, options, correct_option, explanation, image_url, distractors, distractor_rationale')
     .in('id', questionIds)
     .limit(200);
   if (questionErr) throw questionErr;
   const byId = new Map((questions || []).map((q: { id: string }) => [q.id, q]));
 
   return attempts.map((attempt: { question_id: string; selected_option: string | null; correct_option: string | null; correct: boolean }, index: number) => {
-    const q = byId.get(attempt.question_id) as { id: string; subject?: string; stem?: string; options?: Array<{ label?: string; text?: string; isCorrect?: boolean }>; correct_option?: string; explanation?: string; image_url?: string | null } | undefined;
+    const q = byId.get(attempt.question_id) as { id: string; subject?: string; stem?: string; options?: Array<{ label?: string; text?: string; isCorrect?: boolean }>; correct_option?: string; explanation?: string; image_url?: string | null; distractors?: Array<{ option?: string; label?: string; explanation?: string }>; distractor_rationale?: string | null } | undefined;
     const options = (q?.options || []).map((option) => ({ label: option.label || '', text: option.text || '' }));
+    const distractors = (q?.distractors || []).map((d) => ({
+      label: d.label || d.option || '',
+      whyWrong: d.explanation || q?.distractor_rationale || 'This option does not match the rule tested in this question.',
+    })).filter((d) => d.label && d.label !== (attempt.correct_option || q?.correct_option)).slice(0, 3);
     return {
       globalIndex: index,
       subject: q?.subject || 'Practice',
       questionId: attempt.question_id,
       text: q?.stem || 'Question text unavailable',
       options,
+      distractors,
       imageUrl: q?.image_url || null,
       studentAnswer: attempt.selected_option,
       correctOption: attempt.correct_option || q?.correct_option || null,
