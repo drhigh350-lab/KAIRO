@@ -14,10 +14,14 @@ create or replace function kairo.get_welcome_email_candidates()
 returns table(student_id uuid, name text, email text, dedupe_key text)
 language sql security definer set search_path to kairo, pg_temp
 as $function$
-  select s.id, s.name, s.email, coalesce(s.registration_date::text, current_date::text)
+  select s.id,
+    coalesce(nullif(s.name, ''), u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', 'there'),
+    coalesce(nullif(s.email, ''), u.email),
+    coalesce(s.registration_date::text, current_date::text)
   from kairo.students s
-  where s.email is not null
-    and s.registration_date >= current_date - interval '1 day'
+  join auth.users u on u.id = s.auth_user_id
+  where coalesce(nullif(s.email, ''), u.email) is not null
+    and s.registration_date >= now() - interval '1 day'
     and not exists (select 1 from kairo.email_log l where l.student_id = s.id and l.category = 'welcome');
 $function$;
 
