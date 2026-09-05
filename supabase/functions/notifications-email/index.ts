@@ -25,7 +25,7 @@ import { render } from "npm:@react-email/render@2.1.0";
 import * as React from "npm:react@19.2.8";
 import NotificationEmail from "./_templates/notification-email.tsx";
 
-const FROM_ADDRESS = "Kai from Kairo <kai@techmedng.com>";
+const FROM_ADDRESS = "Kai from Kairo <kai@kairo.techmedng.com>";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
