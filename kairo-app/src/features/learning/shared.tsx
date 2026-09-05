@@ -543,10 +543,9 @@ export function KairoLoading({
 }: { title?: string; detail?: string }) {
   return (
     <div className="kairo-loading-state" role="status" aria-live="polite">
-      <div className="kairo-loading-k" aria-hidden="true">K</div>
+      <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>
       <div className="kairo-loading-title">{title}</div>
       <div className="kairo-loading-detail">{detail}</div>
-      <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>
     </div>
   );
 }

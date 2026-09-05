@@ -108,14 +108,6 @@ export function Profile() {
             </div>
           </Card>
         )}
-        <Card onClick={() => navigate('/cbt')} style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none', cursor: 'pointer', transition: 'transform 160ms var(--kairo-ease-out), box-shadow 180ms var(--kairo-ease-out)' }}>
-          <div className="kairo-loading-k" style={{ width: 42, height: 42, borderRadius: 14, fontSize: 23, flexShrink: 0 }}>K</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>CBT exam log</div>
-            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 3 }}>Open past simulations, question review, and subject breakdowns</div>
-          </div>
-          <ChevronRight />
-        </Card>
       </div>
 
       {/* 2) The Insights Hub — Weekly Drop, Actionable Carousel, Subject Health, Monthly Checkpoint (see ProfileInsights.tsx) */}

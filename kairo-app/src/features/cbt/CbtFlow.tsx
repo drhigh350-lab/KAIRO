@@ -5,7 +5,6 @@ import { ExamInstructions } from './ExamInstructions';
 import { CbtExam } from './CbtExam';
 import { CbtSummary, type CbtResults } from './CbtSummary';
 import { CbtReview } from './CbtReview';
-import { CbtHistory } from './CbtHistory';
 import { startCbtExam, finishCbtExam, resumeCbtExam, startSmartPatchSession, getEngine, CBT_DEFAULT_SUBJECTS, type CbtPaperQuestion, type CbtExamType } from '../../lib/kairoEngine';
 import { getCbtSessionSnapshot, clearSessionSnapshot } from '../../lib/sessionResume';
 import { useBackIntercept } from '../../lib/useBackIntercept';
@@ -13,7 +12,7 @@ import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
 import { KairoLoading } from '../learning/shared';
 
-type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review' | 'history';
+type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review';
 
 // CBT's screens all share one route (/cbt/*), so the physical back button
 // only ever sees one browser history entry for the whole flow — without
@@ -23,7 +22,6 @@ type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'revi
 // out of a live attempt); 'starting' is a transient load, also swallowed.
 const SCREEN_DEPTH: Record<Screen, number> = {
   setup: 0,
-  history: 1,
   instructions: 1,
   starting: 1,
   exam: 1,
@@ -141,7 +139,7 @@ export function CbtFlow() {
   const fromSummaryToHome = () => goHomeOrStreakSavior(navigate, false);
 
   useBackIntercept(SCREEN_DEPTH[screen], () => {
-    if (screen === 'history' || screen === 'instructions') { setScreen('setup'); return; }
+    if (screen === 'instructions') { setScreen('setup'); return; }
     if (screen === 'review') { setScreen('summary'); return; }
     if (screen === 'summary') { fromSummaryToHome(); return; }
     // 'exam' / 'starting': swallowed, no navigation — protects a live attempt from an accidental exit.
@@ -199,7 +197,6 @@ export function CbtFlow() {
       <ExamSetup
         onBack={toHome}
         onContinue={() => setScreen('instructions')}
-        onViewHistory={() => setScreen('history')}
         examType={examType}
         onExamTypeChange={setExamType}
         subject={subject}
@@ -210,9 +207,6 @@ export function CbtFlow() {
         onCustomTotalPresetChange={setCustomTotalPreset}
       />
     );
-  }
-  if (screen === 'history') {
-    return <CbtHistory onBack={() => setScreen('setup')} />;
   }
   if (screen === 'instructions') {
     return <ExamInstructions onBack={() => setScreen('setup')} onBegin={handleBegin} />;

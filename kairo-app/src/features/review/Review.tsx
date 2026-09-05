@@ -2,10 +2,11 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card } from '../../components';
 import { InlineToast } from '../learning/shared';
+import { CbtReview } from '../cbt/CbtReview';
 import {
   loadReviewData, getPendingRepairsCount, getRecentMistakes, markMistakeUnderstood, getWeakTopicsForReview,
-  getBookmarkedQuestions, removeBookmark, getSessionHistory,
-  type MistakeTicket, type WeakTopicForReview, type BookmarkedQuestion, type SessionHistoryEntry,
+  getBookmarkedQuestions, removeBookmark, getSessionHistory, getCbtHistory,
+  type MistakeTicket, type WeakTopicForReview, type BookmarkedQuestion, type SessionHistoryEntry, type CbtHistoryEntry, type CbtPaperQuestion,
 } from '../../lib/kairoEngine';
 
 function relativeDay(ts: number): string {
@@ -150,6 +151,8 @@ export function Review() {
 
   const [bookmarks, setBookmarks] = useState<BookmarkedQuestion[] | null>(null);
   const [history, setHistory] = useState<SessionHistoryEntry[] | null>(null);
+  const [selectedCbtReview, setSelectedCbtReview] = useState<CbtHistoryEntry | null>(null);
+  const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
   useEffect(() => {
@@ -178,6 +181,25 @@ export function Review() {
       .finally(() => setSavingTicket(null));
   }
 
+  async function handleOpenSession(entry: SessionHistoryEntry) {
+    if (entry.mode !== 'cbt_exam') return;
+    setReviewingSessionId(entry.id);
+    try {
+      const cbtResults = await getCbtHistory(50);
+      const result = cbtResults.find((item) => item.id === entry.id);
+      if (result) setSelectedCbtReview(result);
+      else {
+        setToast('This exam does not have a saved question review yet.');
+        setTimeout(() => setToast(null), 3200);
+      }
+    } catch {
+      setToast('Kairo could not load this exam review right now.');
+      setTimeout(() => setToast(null), 3200);
+    } finally {
+      setReviewingSessionId(null);
+    }
+  }
+
   async function handleRemoveBookmark(questionId: string) {
     setBookmarks((prev) => prev?.filter((b) => b.id !== questionId) ?? prev);
     try {
@@ -185,6 +207,18 @@ export function Review() {
     } catch {
       getBookmarkedQuestions(20).then(setBookmarks).catch(() => {});
     }
+  }
+
+  if (selectedCbtReview) {
+    const paper: CbtPaperQuestion[] = (selectedCbtReview.questionResults || []).map((r) => ({
+      globalIndex: r.globalIndex,
+      subject: r.subject,
+      questionId: r.questionId || `history_${selectedCbtReview.id}_${r.globalIndex}`,
+      text: r.text || 'Question text unavailable',
+      options: r.options || [],
+      imageUrl: r.imageUrl || null,
+    }));
+    return <CbtReview paper={paper} questionResults={selectedCbtReview.questionResults || []} onBack={() => setSelectedCbtReview(null)} />;
   }
 
   return (
@@ -277,9 +311,10 @@ export function Review() {
           >
             {history?.length === 0 && <div style={{ fontSize: 12, color: 'var(--dark-text-faint)', paddingTop: 10 }}>No sessions yet.</div>}
             {history?.map((s) => (
-              <div key={s.id} style={{
-                marginTop: 10, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)',
-                borderLeft: `3px solid ${sessionAccentColor(s)}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 13,
+              <button type="button" key={s.id} onClick={() => handleOpenSession(s)} disabled={s.mode !== 'cbt_exam' || reviewingSessionId === s.id} aria-label={s.mode === 'cbt_exam' ? `Review ${s.modeLabel}` : `${s.modeLabel} session`} style={{
+                width: '100%', textAlign: 'left', marginTop: 10, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)',
+                border: 'none', borderLeft: `3px solid ${sessionAccentColor(s)}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 13,
+                fontFamily: 'inherit', cursor: s.mode === 'cbt_exam' ? 'pointer' : 'default', opacity: reviewingSessionId === s.id ? .65 : 1,
               }}>
                 <div>
                   <span style={{ color: 'var(--dark-text-body)', fontWeight: 600 }}>{s.modeLabel}</span>
@@ -287,8 +322,8 @@ export function Review() {
                     {s.questionsAnswered} question{s.questionsAnswered === 1 ? '' : 's'}{s.questionsAnswered > 0 ? `, ${s.correctCount} correct` : ''}
                   </span>
                 </div>
-                <span style={{ color: 'var(--dark-text-faint)', flexShrink: 0 }}>{relativeDay(s.startedAt)}</span>
-              </div>
+                <span style={{ color: 'var(--dark-text-faint)', flexShrink: 0 }}>{reviewingSessionId === s.id ? 'Loading review…' : relativeDay(s.startedAt)}</span>
+              </button>
             ))}
           </AccordionCard>
         </div>

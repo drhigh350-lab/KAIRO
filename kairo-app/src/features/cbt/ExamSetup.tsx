@@ -41,7 +41,6 @@ const CUSTOM_TOTAL_PRESETS = [
 export interface ExamSetupProps {
   onBack?: () => void;
   onContinue?: () => void;
-  onViewHistory?: () => void;
   examType: CbtExamType;
   onExamTypeChange: (t: CbtExamType) => void;
   subject: string;
@@ -52,7 +51,7 @@ export interface ExamSetupProps {
   onCustomTotalPresetChange: (n: number) => void;
 }
 export function ExamSetup({
-  onBack, onContinue, onViewHistory,
+  onBack, onContinue,
   examType, onExamTypeChange,
   subject, onSubjectChange,
   customSubjects, onToggleCustomSubject,
@@ -67,15 +66,7 @@ export function ExamSetup({
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title="CBT Exam Mode" tone="dark" />
       <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Choose how you want to be tested.</div>
-          {onViewHistory && (
-            <button type="button" onClick={onViewHistory} style={{
-              flexShrink: 0, background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 12.5, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)', padding: '4px 0 4px 12px',
-            }}>Past Exams</button>
-          )}
-        </div>
+        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Choose how you want to be tested.</div>
 
         <div style={{ display: 'flex', gap: 8 }}>
           {EXAM_TYPES.map((t) => {
