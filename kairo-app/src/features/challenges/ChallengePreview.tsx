@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Badge, Button, Card } from '../../components';
 import { ScreenHeader } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
-import { getChallengeQuestions, getCompletedCount } from '../../lib/challengesApi';
+import { getChallengeQuestions, getChallengeLeaderboard, getCompletedCount } from '../../lib/challengesApi';
+import type { ChallengeLeaderboardRow } from '../../lib/challengesApi';
 
 export interface ChallengePreviewProps {
   challenge: Challenge;
@@ -22,9 +23,12 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
   const isMockUtme = challenge.type === 'mock_utme';
   const [completedCount, setCompletedCount] = useState<number | null>(null);
   const [diagramQuestions, setDiagramQuestions] = useState<ChallengeQuestion[]>([]);
+  const [leaderboard, setLeaderboard] = useState<ChallengeLeaderboardRow[]>([]);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     getCompletedCount(challengeId).then(setCompletedCount).catch(() => setCompletedCount(null));
+    getChallengeLeaderboard(challengeId, 5).then(setLeaderboard).catch(() => setLeaderboard([]));
     if (challenge.questionIds?.length) {
       getChallengeQuestions(challenge.questionIds)
         .then((questions) => setDiagramQuestions(questions.filter((question) => !!question.imageUrl)))
@@ -45,7 +49,12 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
             <Badge tone={live ? 'success' : 'darkNeutral'}>{live ? 'Live now' : challenge.timingLabel}</Badge>
           </div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 25, lineHeight: 1.15, color: '#fff', margin: '14px 0 0', fontWeight: 800 }}>{challenge.title}</h1>
-          <p style={{ color: 'var(--arena-blue-soft)', margin: '10px 0 0', fontSize: 13, lineHeight: 1.5 }}>Compete, learn, and see how you perform against the KAIRO community.</p>
+          <p style={{ color: 'var(--arena-blue-soft)', margin: '10px 0 0', fontSize: 13, lineHeight: 1.5 }}>{challenge.description || 'Compete, learn, and see how you perform against the KAIRO community.'}</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 13 }}>
+            <ArenaPill>{challenge.subject || 'Mixed'}</ArenaPill>
+            <ArenaPill>{challenge.difficulty || 'Mixed difficulty'}</ArenaPill>
+            <ArenaPill>{challenge.timingLabel}</ArenaPill>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
@@ -79,6 +88,15 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
           </div>
         </Card>
 
+        {leaderboard.length > 0 && (
+          <Card style={{ background: 'var(--arena-blue-surface)', border: '1px solid rgba(152,176,196,.14)', borderRadius: 14, boxShadow: 'none', padding: 16 }}>
+            <div style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>Leaderboard</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              {leaderboard.map((row, index) => <div key={`${row.student_id}-${index}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--arena-blue-soft)', fontSize: 12 }}><span><b style={{ color: 'var(--arena-gold)', marginRight: 8 }}>{index + 1}</b>{row.student_name || 'Player'}</span><strong style={{ color: '#fff' }}>{row.score}</strong></div>)}
+            </div>
+          </Card>
+        )}
+
         {alreadyCompleted && <div style={{ color: 'var(--arena-blue-soft)', fontSize: 12, lineHeight: 1.5 }}>You have already completed this challenge. You can play again, but only your first attempt counts toward the leaderboard.</div>}
 
         <div style={{ marginTop: 'auto' }}>
@@ -91,6 +109,10 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
           ) : (
             <Button variant="secondary" size="lg" fullWidth disabled>{primaryLabel}</Button>
           )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" onClick={() => { const text = `${challenge.title} — think you can beat me? ${window.location.origin}/challenges/${challengeId}`; if (navigator.share) navigator.share({ title: challenge.title, text, url: `${window.location.origin}/challenges/${challengeId}` }).catch(() => {}); else navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ flex: 1, border: 'none', borderRadius: 999, padding: '11px 10px', background: '#25D366', color: '#fff', fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer' }}>{copied ? 'Copied ✓' : 'Share Challenge'}</button>
+            <button type="button" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/challenges/${challengeId}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ border: '1px solid rgba(152,176,196,.25)', borderRadius: 999, padding: '11px 14px', background: 'transparent', color: 'var(--arena-blue-soft)', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>Copy</button>
+          </div>
           <div style={{ textAlign: 'center', color: 'var(--arena-blue-soft)', fontSize: 11, marginTop: 12 }}>Powered by TECHMED · KAIRO Arena</div>
         </div>
       </div>
@@ -104,4 +126,8 @@ function ArenaStat({ label, value }: { label: string; value: string }) {
 
 function Rule({ number, text }: { number: string; text: string }) {
   return <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ color: 'var(--arena-gold)', fontSize: 11, fontWeight: 900 }}>{number}</span><span style={{ color: 'var(--arena-blue-soft)', fontSize: 12.5, lineHeight: 1.4 }}>{text}</span></div>;
+}
+
+function ArenaPill({ children }: { children: string }) {
+  return <span style={{ borderRadius: 999, padding: '5px 9px', background: 'rgba(0,29,54,.35)', color: 'var(--arena-blue-soft)', fontSize: 10, fontWeight: 700 }}>{children}</span>;
 }

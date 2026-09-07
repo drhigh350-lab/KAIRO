@@ -17,6 +17,9 @@ export interface DbChallenge {
   type: string;
   title: string;
   theme: string | null;
+  description: string | null;
+  subject: string | null;
+  difficulty: string | null;
   question_ids: string[];
   scoring_formula: 'accuracy' | 'speed' | 'hybrid';
   starts_at: string;
@@ -99,6 +102,9 @@ export function mapDbChallenge(db: DbChallenge): Challenge {
     type: db.type,
     title: db.title,
     theme: db.theme || db.type,
+    description: db.description,
+    subject: db.subject,
+    difficulty: db.difficulty,
     status,
     timingLabel: timingLabel(status, db.starts_at, db.ends_at),
     questionCount: db.question_ids?.length || 0,

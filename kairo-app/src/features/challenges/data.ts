@@ -16,6 +16,9 @@ export interface Challenge {
   type: string;
   title: string;
   theme: string;
+  description?: string | null;
+  subject?: string | null;
+  difficulty?: string | null;
   status: ChallengeStatus;
   timingLabel: string;
   questionCount: number;
