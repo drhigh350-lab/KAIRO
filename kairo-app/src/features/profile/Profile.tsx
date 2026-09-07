@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Button, Card, ProgressBar } from '../../components';
 import { ScreenHeader, ChevronRight, KairoScoreInfo, KairoPointsInfo, Modal } from '../learning/shared';
-import { getProfileSummary, getPrestigeProgress, getBadgeVault, isOnboarded, signOutAndDisconnect } from '../../lib/kairoEngine';
+import { getProfileSummary, getPrestigeProgress, getBadgeVault, getDiagramQuestionPreview, isOnboarded, signOutAndDisconnect, type DiagramPreviewQuestion } from '../../lib/kairoEngine';
 import { BadgeVaultRow, BadgeVaultSheet } from './BadgeVault';
 import { InsightsHub } from './ProfileInsights';
 
@@ -10,6 +10,7 @@ export function Profile() {
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
   const [openTrackKey, setOpenTrackKey] = useState<string | null>(null);
+  const [diagramPreview, setDiagramPreview] = useState<{ total: number; questions: DiagramPreviewQuestion[] } | null>(null);
   const profile = getProfileSummary();
   const prestige = getPrestigeProgress();
   const vault = getBadgeVault();
@@ -21,6 +22,10 @@ export function Profile() {
   // silently dropping a 2nd/3rd/etc. subject track from the grid entirely.
   const allBadges = vault ? [vault.tracks.consistency, vault.tracks.resilience, vault.tracks.execution, ...vault.subjects] : [];
   const onboarded = isOnboarded();
+
+  useEffect(() => {
+    getDiagramQuestionPreview(6).then(setDiagramPreview).catch(() => setDiagramPreview(null));
+  }, []);
 
   const firstName = profile?.name || 'there';
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
@@ -112,6 +117,28 @@ export function Profile() {
 
       {/* 2) The Insights Hub — Weekly Drop, Actionable Carousel, Subject Health, Monthly Checkpoint (see ProfileInsights.tsx) */}
       <InsightsHub />
+
+      {diagramPreview && diagramPreview.questions.length > 0 && (
+        <div style={{ padding: '0 20px' }}>
+          <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)' }}>Diagram questions</div>
+                <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', marginTop: 3 }}>Preview from KAIRO’s question bank</div>
+              </div>
+              <span style={{ color: 'var(--dark-accent-blue)', fontSize: 12, fontWeight: 700 }}>{diagramPreview.total} available</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 14 }}>
+              {diagramPreview.questions.slice(0, 6).map((question) => (
+                <div key={question.id} style={{ borderRadius: 8, overflow: 'hidden', background: '#fff', border: '1px solid var(--dark-border)' }}>
+                  <img src={question.imageUrl} alt="KAIRO diagram question" loading="lazy" decoding="async" style={{ display: 'block', width: '100%', height: 76, objectFit: 'contain' }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', lineHeight: 1.45, marginTop: 12 }}>These diagrams will also appear during your normal practice sessions.</div>
+          </Card>
+        </div>
+      )}
 
       {/* 3) Targets & Badge Vault, etc. */}
       <div className="desktop-grid" style={{ padding: '0 20px 24px' }}>

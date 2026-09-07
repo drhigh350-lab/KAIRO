@@ -2724,3 +2724,30 @@ export async function getSessionQuestionReview(sessionId: string): Promise<Sessi
     };
   });
 }
+
+
+export interface DiagramPreviewQuestion {
+  id: string;
+  subject: string;
+  topic: string;
+  stem: string;
+  imageUrl: string;
+}
+
+/** Real diagram bank preview for Profile — intentionally separate from Arena. */
+export async function getDiagramQuestionPreview(limit = 6): Promise<{ total: number; questions: DiagramPreviewQuestion[] }> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('questions')
+    .select('id, subject, topic, stem, image_url')
+    .not('image_url', 'is', null)
+    .limit(Math.max(limit, 100));
+  if (error) throw error;
+  const questions = (data || []).map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    subject: row.subject as string,
+    topic: row.topic as string,
+    stem: row.stem as string,
+    imageUrl: row.image_url as string,
+  }));
+  return { total: questions.length, questions: questions.slice(0, limit) };
+}
