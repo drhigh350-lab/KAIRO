@@ -695,6 +695,16 @@ export class KairoEngine {
     const ripe = pool.filter(q => this._questionCooldownUntil(q.id, concept, { enforceVolumeLock }) <= now);
     if (ripe.length > 0) pool = ripe;
 
+    // Diagram coverage is intentional learning content, not a decorative
+    // edge case. Every fifth slot in a queue prefers an unseen diagram when
+    // the selected concept has one, so a student can encounter diagrams in
+    // ordinary Practice/CBT preparation without turning every question into
+    // an image question.
+    if (excludeIds.length % 5 === 0) {
+      const diagramPool = pool.filter(q => !!q.imageUrl);
+      if (diagramPool.length > 0) pool = diagramPool;
+    }
+
     // Shuffle rather than a single Math.random() index pick — this pool
     // backs every 10-slot recommendation/practice queue, so it must be
     // randomized before selection, not just individually sampled from the

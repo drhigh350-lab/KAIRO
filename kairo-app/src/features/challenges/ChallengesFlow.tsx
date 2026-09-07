@@ -80,6 +80,11 @@ export function ChallengesFlow() {
     const db = (dbChallenges || []).find((c) => c.id === id);
     if (!db) return;
     setSelectedDb(db);
+    setMyAttempt(null);
+    // Show the Arena preview immediately. The attempt lookup is secondary
+    // metadata and must never leave the student staring at a blank hub while
+    // Supabase responds.
+    go('preview');
     setBusy(true);
     try {
       const attempt = await getMyAttempt(id);
@@ -88,7 +93,6 @@ export function ChallengesFlow() {
       setMyAttempt(null);
     } finally {
       setBusy(false);
-      go('preview');
     }
   }
 
