@@ -397,6 +397,8 @@ export async function signOutAndDisconnect(): Promise<void> {
   }
   engine = null;
   contentLoadedFor = [];
+  contentLoadedAt = 0;
+  contentLoadPromise = null;
   mistakePatchesLoaded = false;
 }
 
@@ -412,6 +414,9 @@ export function hasSeededContent(subjectLabel: string): boolean {
 }
 
 let contentLoadedFor: string[] = [];
+let contentLoadedAt = 0;
+let contentLoadPromise: Promise<void> | null = null;
+const CONTENT_CACHE_TTL_MS = 60_000;
 
 async function ensureContentLoaded(subjects: string[]): Promise<void> {
   const kairo = getEngine();
@@ -422,17 +427,33 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   // not just Review's own screens. Its own idempotency guard (not the
   // `missing.length === 0` early return below) is what makes this safe to
   // call unconditionally here.
-  await ensureMistakePatchesLoaded();
   const wanted = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
   const target = wanted.length ? wanted : SEEDED_SUBJECTS;
+
+  // Multiple UI paths can request the same catalog during one tap (for
+  // example Review -> repair while the Review data is still settling). Share
+  // the same promise instead of opening duplicate Supabase requests.
+  const targetKey = [...new Set(target)].sort().join('|');
+  const cachedKey = [...contentLoadedFor].sort().join('|');
+  if (cachedKey === targetKey && Date.now() - contentLoadedAt < CONTENT_CACHE_TTL_MS) return;
+  if (contentLoadPromise) return contentLoadPromise;
 
   // Supabase is authoritative whenever the browser is online. Do not use the
   // old process-lifetime guard here: an admin edit or deletion must be seen
   // by the next Practice/CBT/recommendation entry point. When offline, keep
   // using the last successfully synchronized IndexedDB mirror instead.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-  await kairo.loadContentCatalog({ subjects: target });
-  contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
+  contentLoadPromise = (async () => {
+    await ensureMistakePatchesLoaded();
+    await kairo.loadContentCatalog({ subjects: target });
+    contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
+    contentLoadedAt = Date.now();
+  })();
+  try {
+    await contentLoadPromise;
+  } finally {
+    contentLoadPromise = null;
+  }
 }
 
 export interface SuggestedSessionResult {
