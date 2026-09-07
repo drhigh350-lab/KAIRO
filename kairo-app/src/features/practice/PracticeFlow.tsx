@@ -13,6 +13,7 @@ import { getEngine, startSuggestedSession, startDashboardSession, reportDashboar
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
+import { KairoLoading } from '../learning/shared';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 import { recordVerificationResult } from '../../lib/planner/plannerApi';
@@ -958,11 +959,7 @@ export function PracticeFlow() {
       );
     }
     if (!engineQuestions) {
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
-          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>Preparing your session…</div>
-        </div>
-      );
+      return <KairoLoading message="Preparing your questions" detail="KAIRO is selecting the best practice set for you." />;
     }
     return (
       <PracticeQuestion

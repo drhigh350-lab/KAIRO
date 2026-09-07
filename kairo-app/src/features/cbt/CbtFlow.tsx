@@ -212,7 +212,7 @@ export function CbtFlow() {
     return <ExamInstructions onBack={() => setScreen('setup')} onBegin={handleBegin} />;
   }
   if (screen === 'starting') {
-    return <KairoLoading />;
+    return <KairoLoading message="Preparing your exam" detail="KAIRO is assembling your question paper and checking the timing." />;
   }
   if (screen === 'exam') {
     return (
