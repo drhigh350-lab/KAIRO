@@ -3,6 +3,7 @@ import { Badge, Card, StreakBadge } from '../../components';
 import { ScreenHeader } from '../learning/shared';
 import type { Challenge } from './data';
 import { getStreakStatus } from '../../lib/kairoEngine';
+import { ArenaTabs, ArenaBottomSpace } from './ArenaTabs';
 
 /**
  * "Challenge Friends" (Batch 3.4) — an invite to a still-live, TECHMED-
@@ -142,7 +143,9 @@ export function ChallengesHub({ loading, challenges, onBack, onSelect }: Challen
             </div>
           </div>
         )}
+        <ArenaBottomSpace />
       </div>
+      <ArenaTabs />
     </div>
   );
 }

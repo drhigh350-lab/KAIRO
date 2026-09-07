@@ -2747,7 +2747,15 @@ export async function getDiagramQuestionPreview(limit = 6): Promise<{ total: num
     subject: row.subject as string,
     topic: row.topic as string,
     stem: row.stem as string,
-    imageUrl: row.image_url as string,
+    imageUrl: normalizeDiagramUrl(row.image_url as string),
   }));
-  return { total: questions.length, questions: questions.slice(0, limit) };
+  return { total: questions.length, questions: limit >= 100 ? questions : questions.slice(0, limit) };
+}
+
+function normalizeDiagramUrl(value: string): string {
+  const raw = value.trim();
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+  const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/public\/question-diagrams\/)/, '');
+  return base ? `${base}/storage/v1/object/public/question-diagrams/${path.split('/').map(encodeURIComponent).join('/')}` : raw;
 }

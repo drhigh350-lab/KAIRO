@@ -11,6 +11,7 @@ export function Profile() {
   const [signingOut, setSigningOut] = useState(false);
   const [openTrackKey, setOpenTrackKey] = useState<string | null>(null);
   const [diagramPreview, setDiagramPreview] = useState<{ total: number; questions: DiagramPreviewQuestion[] } | null>(null);
+  const [showAllDiagrams, setShowAllDiagrams] = useState(false);
   const profile = getProfileSummary();
   const prestige = getPrestigeProgress();
   const vault = getBadgeVault();
@@ -24,7 +25,7 @@ export function Profile() {
   const onboarded = isOnboarded();
 
   useEffect(() => {
-    getDiagramQuestionPreview(6).then(setDiagramPreview).catch(() => setDiagramPreview(null));
+    getDiagramQuestionPreview(100).then(setDiagramPreview).catch(() => setDiagramPreview(null));
   }, []);
 
   const firstName = profile?.name || 'there';
@@ -128,13 +129,14 @@ export function Profile() {
               </div>
               <span style={{ color: 'var(--dark-accent-blue)', fontSize: 12, fontWeight: 700 }}>{diagramPreview.total} available</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 14 }}>
-              {diagramPreview.questions.slice(0, 6).map((question) => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))', gap: 8, marginTop: 14, maxHeight: showAllDiagrams ? 620 : 170, overflowY: 'auto' }}>
+              {diagramPreview.questions.slice(0, showAllDiagrams ? diagramPreview.questions.length : 6).map((question) => (
                 <div key={question.id} style={{ borderRadius: 8, overflow: 'hidden', background: '#fff', border: '1px solid var(--dark-border)' }}>
-                  <img src={question.imageUrl} alt="KAIRO diagram question" loading="lazy" decoding="async" style={{ display: 'block', width: '100%', height: 76, objectFit: 'contain' }} />
+                  <img src={question.imageUrl} alt={`${question.subject} diagram question`} loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = 'none'; }} style={{ display: 'block', width: '100%', height: 76, objectFit: 'contain' }} />
                 </div>
               ))}
             </div>
+            {diagramPreview.total > 6 && <button type="button" onClick={() => setShowAllDiagrams((value) => !value)} style={{ marginTop: 12, border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-pill)', padding: '9px 14px', background: 'transparent', color: 'var(--dark-accent-blue)', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>{showAllDiagrams ? 'Show fewer diagrams' : `View all ${diagramPreview.total} diagrams`}</button>}
             <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', lineHeight: 1.45, marginTop: 12 }}>These diagrams will also appear during your normal practice sessions.</div>
           </Card>
         </div>
