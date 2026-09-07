@@ -53,8 +53,8 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: Cha
   const isCorrect = selected === question.correct;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--dark-bg-canvas)' }}>
-      <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 8px', background: 'var(--dark-bg-canvas)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh', fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--arena-navy-deep)' }}>
+      <div className="app-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px 12px', background: 'var(--arena-navy-deep)', borderBottom: '1px solid rgba(152,176,196,.12)' }}>
         <IconButton dark onClick={() => setShowExitConfirm(true)}><CloseIcon /></IconButton>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-muted)' }}>Question {index + 1} of {total}</div>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--dark-text-heading)', minWidth: 40, textAlign: 'right' }}>{formatTime(elapsedSec)}</div>

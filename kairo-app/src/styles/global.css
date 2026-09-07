@@ -56,6 +56,12 @@ img, svg, video, canvas { max-width: 100%; }
 :root {
   --kairo-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --kairo-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --arena-navy-deep: #012748;
+  --arena-navy-deepest: #001D36;
+  --arena-blue-surface: #09476E;
+  --arena-blue-elevated: #0B3A5C;
+  --arena-blue-soft: #98B0C4;
+  --arena-gold: #C9A227;
 }
 
 .kairo-pressable {
