@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 
 export interface ButtonProps {
+  id?: string;
   children: ReactNode;
   variant?: 'primary' | 'secondary' | 'ghost' | 'gold' | 'darkAccent' | 'danger';
   size?: 'sm' | 'md' | 'lg';
@@ -40,7 +41,7 @@ function variantStyle(variant: string, disabled: boolean): CSSProperties {
   }
 }
 
-export function Button({ children, variant = 'primary', size = 'md', disabled = false, icon, fullWidth = false, onClick, type = 'button' }: ButtonProps) {
+export function Button({ id, children, variant = 'primary', size = 'md', disabled = false, icon, fullWidth = false, onClick, type = 'button' }: ButtonProps) {
   const vs = variantStyle(variant, disabled);
   const sz = sizes[size] || sizes.md;
   // Emil's-Skills tactile press (ui-polish-spec.md's "active:scale-[0.98]" rule) — every button
@@ -49,6 +50,7 @@ export function Button({ children, variant = 'primary', size = 'md', disabled = 
   const [pressed, setPressed] = useState(false);
   return (
     <button
+      id={id}
       type={type}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}

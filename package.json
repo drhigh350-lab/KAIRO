@@ -1,7 +1,13 @@
 {
+  "name": "kairo",
   "private": true,
   "workspaces": [
     "kairo-app",
     "kairo-learning-engine"
-  ]
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=kairo-app",
+    "build": "npm run build --workspace=kairo-app && rm -rf dist && cp -r kairo-app/dist dist",
+    "lint": "npm run lint --workspace=kairo-app"
+  }
 }
