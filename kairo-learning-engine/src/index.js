@@ -362,16 +362,19 @@ export class KairoEngine {
     // offline-first contract exists to prevent. Union + dedupe by
     // sessionId, same pattern SyncManager.applyRemoteConceptStates()
     // already uses for attempts.
-    try {
+    // Session history is useful for dashboard metrics, but it is not needed
+    // to authenticate or render the first screen. Fetch it in the background
+    // so a slow history query cannot hold the whole app behind the splash.
+    void adapter.fetchSessions(remoteProfile.studentId).then(async (remoteSessions) => {
       const localSessions = this.profile.sessions || [];
-      const remoteSessions = await adapter.fetchSessions(remoteProfile.studentId);
       const merged = new Map();
       for (const s of remoteSessions) merged.set(s.sessionId, s);
       for (const s of localSessions) if (!merged.has(s.sessionId)) merged.set(s.sessionId, s);
       this.profile.sessions = Array.from(merged.values()).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
-    } catch {
-      // best-effort — offline or a failed fetch leaves the local copy untouched, not emptied
-    }
+      await this.store.saveProfile(this.profile);
+    }).catch(() => {
+      // best-effort — offline or a failed fetch leaves the local copy untouched
+    });
 
     // Every module below was constructed once, at engine-construction time,
     // against a blank profile — the Object.assign above overwrites

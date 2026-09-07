@@ -102,6 +102,7 @@ export function mapDbChallenge(db: DbChallenge): Challenge {
     status,
     timingLabel: timingLabel(status, db.starts_at, db.ends_at),
     questionCount: db.question_ids?.length || 0,
+    questionIds: db.question_ids || [],
     scoringFormula: db.scoring_formula,
     accent: mapAccent(db.type),
   };

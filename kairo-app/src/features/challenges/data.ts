@@ -19,6 +19,7 @@ export interface Challenge {
   status: ChallengeStatus;
   timingLabel: string;
   questionCount: number;
+  questionIds?: string[];
   scoringFormula: 'accuracy' | 'speed' | 'hybrid';
   accent: ChallengeAccent;
 }
