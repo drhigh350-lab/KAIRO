@@ -23,7 +23,7 @@ const scoringLabel: Record<Challenge['scoringFormula'], string> = { accuracy: 'A
 export function ChallengePreview({ challenge, challengeId, alreadyCompleted, busy, onBack, onJoin, onViewResult, onGoToCbt }: ChallengePreviewProps) {
   const isMockUtme = challenge.type === 'mock_utme';
   const [completedCount, setCompletedCount] = useState<number | null>(null);
-  const [previewQuestions, setPreviewQuestions] = useState<ChallengeQuestion[]>([]);
+  const [diagramQuestions, setDiagramQuestions] = useState<ChallengeQuestion[]>([]);
   const [leaderboard, setLeaderboard] = useState<ChallengeLeaderboardRow[]>([]);
   const [copied, setCopied] = useState(false);
 
@@ -32,8 +32,8 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
     getChallengeLeaderboard(challengeId, 5).then(setLeaderboard).catch(() => setLeaderboard([]));
     if (challenge.questionIds?.length) {
       getChallengeQuestions(challenge.questionIds)
-        .then(setPreviewQuestions)
-        .catch(() => setPreviewQuestions([]));
+        .then((questions) => setDiagramQuestions(questions.filter((question) => !!question.imageUrl)))
+        .catch(() => setDiagramQuestions([]));
     }
   }, [challengeId, challenge.questionIds]);
 
@@ -65,25 +65,18 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
           <ArenaStat label="Format" value={isMockUtme ? 'CBT simulation' : 'Challenge'} />
         </div>
 
-        {previewQuestions.length > 0 && (
+        {diagramQuestions.length > 0 && (
           <Card style={{ background: 'var(--arena-blue-surface)', border: '1px solid rgba(201,162,39,.3)', borderRadius: 14, boxShadow: 'none', padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <div style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>Arena question file</div>
-              <span style={{ color: 'var(--arena-gold)', fontSize: 12, fontWeight: 800 }}>{previewQuestions.length} questions</span>
+              <div style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>Diagram questions included</div>
+              <span style={{ color: 'var(--arena-gold)', fontSize: 12, fontWeight: 800 }}>{diagramQuestions.length}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
-              {previewQuestions.map((question, index) => (
-                <div key={question.id} style={{ borderRadius: 11, border: '1px solid rgba(152,176,196,.16)', background: 'var(--arena-blue-elevated)', padding: 13 }}>
-                  <div style={{ color: 'var(--arena-gold)', fontSize: 10, fontWeight: 900, letterSpacing: '.08em', textTransform: 'uppercase' }}>Question {index + 1}</div>
-                  {question.imageUrl && <img src={question.imageUrl} alt={`Diagram for question ${index + 1}`} loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = 'none'; }} style={{ display: 'block', width: '100%', maxHeight: 190, objectFit: 'contain', borderRadius: 8, background: '#fff', padding: 6, marginTop: 9 }} />}
-                  <div style={{ color: '#fff', fontSize: 13, lineHeight: 1.5, fontWeight: 700, marginTop: question.imageUrl ? 10 : 8 }}>{question.stem}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
-                    {question.options.map((option, optionIndex) => <div key={`${question.id}-${optionIndex}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: 'var(--arena-blue-soft)', fontSize: 12, lineHeight: 1.4 }}><span style={{ color: 'var(--arena-gold)', fontWeight: 900 }}>{String.fromCharCode(65 + optionIndex)}.</span><span>{option}</span></div>)}
-                  </div>
-                </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
+              {diagramQuestions.slice(0, 3).map((question) => (
+                <img key={question.id} src={question.imageUrl || undefined} alt="Diagram question preview" loading="lazy" decoding="async" style={{ width: '100%', height: 72, objectFit: 'contain', borderRadius: 8, background: '#fff', padding: 4 }} />
               ))}
             </div>
-            <div style={{ color: 'var(--arena-blue-soft)', fontSize: 11, lineHeight: 1.45, marginTop: 12 }}>This is the complete Arena question file. Diagrams appear inside the questions that use them; answers are kept hidden until you submit your attempt.</div>
+            <div style={{ color: 'var(--arena-blue-soft)', fontSize: 11, marginTop: 10 }}>The full diagram set will appear as you move through the challenge.</div>
           </Card>
         )}
 

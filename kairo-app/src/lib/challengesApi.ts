@@ -146,20 +146,11 @@ export async function getChallengeQuestions(questionIds: string[]): Promise<Chal
         options: row.options as EngineFlatQuestion['options'],
         correctOption: row.correct_option as string,
         explanation: row.explanation as string | null,
-        imageUrl: row.image_url ? normalizeChallengeImageUrl(String(row.image_url)) : null,
+        imageUrl: row.image_url as string | null,
       };
       const ui = toUiQuestion(flat);
       return { id: ui.id, stem: ui.stem, options: ui.options, correct: ui.correct, why: ui.why, imageUrl: ui.imageUrl };
     });
-}
-
-function normalizeChallengeImageUrl(value: string): string {
-  const raw = value.trim();
-  if (/^(https?:\/\/|data:)/i.test(raw)) return raw;
-  const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-  if (!base) return raw;
-  const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/public\/question-diagrams\/)/, '');
-  return `${base}/storage/v1/object/public/question-diagrams/${path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 /** The signed-in student's own attempt for this challenge, or null if they haven't joined. */
