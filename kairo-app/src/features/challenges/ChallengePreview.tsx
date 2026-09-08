@@ -4,7 +4,6 @@ import { ScreenHeader } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
 import { getChallengeQuestions, getChallengeLeaderboard, getCompletedCount } from '../../lib/challengesApi';
 import type { ChallengeLeaderboardRow } from '../../lib/challengesApi';
-import { ArenaTabs, ArenaBottomSpace } from './ArenaTabs';
 
 export interface ChallengePreviewProps {
   challenge: Challenge;
@@ -115,10 +114,8 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
             <button type="button" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/challenges/${challengeId}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ border: '1px solid rgba(152,176,196,.25)', borderRadius: 999, padding: '11px 14px', background: 'transparent', color: 'var(--arena-blue-soft)', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>Copy</button>
           </div>
           <div style={{ textAlign: 'center', color: 'var(--arena-blue-soft)', fontSize: 11, marginTop: 12 }}>Powered by TECHMED · KAIRO Arena</div>
-          <ArenaBottomSpace />
         </div>
       </div>
-      <ArenaTabs />
     </div>
   );
 }
