@@ -278,7 +278,9 @@ export function QuestionDiagram({ imageUrl }: { imageUrl?: string | null }) {
     if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
     const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
     if (!base) return raw;
-    const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/public\/question-diagrams\/)/, '');
+    // image_url can be a bucket-relative path or a copied Storage object path;
+    // normalize either form to the public bucket endpoint.
+    const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/(public|authenticated)\/question-diagrams\/)/, '');
     return `${base}/storage/v1/object/public/question-diagrams/${path.split('/').map(encodeURIComponent).join('/')}`;
   })();
   if (!normalizedUrl) return null;

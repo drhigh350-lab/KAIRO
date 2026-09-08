@@ -3,11 +3,13 @@ import { Button } from '../../components';
 import { ScreenHeader, SearchIcon } from '../learning/shared';
 import { subjects, type Subject } from './data';
 import { hasSeededContent } from '../../lib/kairoEngine';
+import { canonicalSubject } from '../../lib/subjectScope';
 
 export interface SubjectSelectProps {
   onBack?: () => void;
   onPick: (subject: Subject) => void;
   recentKeys?: string[];
+  allowedSubjects?: string[];
 }
 
 interface RowProps {
@@ -47,14 +49,17 @@ function Row({ s, active, favourite, onClick, onToggleFav }: RowProps) {
   );
 }
 
-export function SubjectSelect({ onBack, onPick, recentKeys }: SubjectSelectProps) {
+export function SubjectSelect({ onBack, onPick, recentKeys, allowedSubjects }: SubjectSelectProps) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<Record<string, boolean>>({});
 
-  const recents = (recentKeys || []).map((k) => subjects.find((s) => s.key === k)).filter((s): s is Subject => Boolean(s));
-  const favSubjects = subjects.filter((s) => favourites[s.key]);
-  const filtered = subjects.filter((s) => s.label.toLowerCase().includes(query.toLowerCase()));
+  const visibleSubjects = allowedSubjects?.length
+    ? subjects.filter((s) => allowedSubjects.some((allowed) => canonicalSubject(allowed) === canonicalSubject(s.label)))
+    : subjects;
+  const recents = (recentKeys || []).map((k) => visibleSubjects.find((s) => s.key === k)).filter((s): s is Subject => Boolean(s));
+  const favSubjects = visibleSubjects.filter((s) => favourites[s.key]);
+  const filtered = visibleSubjects.filter((s) => s.label.toLowerCase().includes(query.toLowerCase()));
 
   function toggleFav(e: React.MouseEvent, key: string) { e.stopPropagation(); setFavourites((f) => ({ ...f, [key]: !f[key] })); }
 
@@ -62,7 +67,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys }: SubjectSelectProps
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title="Practice" tone="dark" />
       <div style={{ padding: '10px 20px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 16 }}>Choose a subject to practise.</div>
+        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 16 }}>{allowedSubjects?.length ? 'Choose from the subjects for your target course.' : 'Choose a subject to practise.'}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--dark-border)', marginBottom: 20 }}>
           <span style={{ color: 'var(--dark-text-faint)', display: 'flex' }}><SearchIcon /></span>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search subjects" style={{
@@ -83,7 +88,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys }: SubjectSelectProps
           </div>
         )}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 8 }}>{query ? 'RESULTS' : 'ALL SUBJECTS'}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 8 }}>{query ? 'RESULTS' : allowedSubjects?.length ? 'YOUR COURSE SUBJECTS' : 'ALL SUBJECTS'}</div>
           {filtered.map((s) => <Row key={s.key} s={s} active={selected === s.key} favourite={!!favourites[s.key]} onClick={() => setSelected(s.key)} onToggleFav={(e) => toggleFav(e, s.key)} />)}
         </div>
       </div>

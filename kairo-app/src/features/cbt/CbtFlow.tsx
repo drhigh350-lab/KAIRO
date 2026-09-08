@@ -11,6 +11,7 @@ import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
 import { KairoLoading } from '../learning/shared';
+import { getCourseSubjects } from '../../lib/subjectScope';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review';
 
@@ -33,7 +34,12 @@ const SCREEN_DEPTH: Record<Screen, number> = {
 export function CbtFlow() {
   const navigate = useNavigate();
   const location = useLocation();
-  const studentId = getEngine()?.profile?.studentId;
+  const profile = getEngine()?.profile;
+  const studentId = profile?.studentId;
+  const courseSubjects = getCourseSubjects(profile?.targetCourse, profile?.targetSubjects || [])
+    .map((s) => s === 'English Language' ? 'Use of English' : s)
+    .filter((s) => CBT_DEFAULT_SUBJECTS.includes(s));
+  const availableSubjects = courseSubjects.length ? courseSubjects : CBT_DEFAULT_SUBJECTS;
   // Review Tab's Smart Patch (Batch 1) — arrives with no picker screens at
   // all, straight into a live session built from exactly the ripe repairs
   // Review already computed. Read once via ref, same reasoning as every
@@ -59,8 +65,8 @@ export function CbtFlow() {
   const [startError, setStartError] = useState<string | null>(null);
 
   const [examType, setExamType] = useState<CbtExamType>('full');
-  const [subject, setSubject] = useState(CBT_DEFAULT_SUBJECTS[1]);
-  const [customSubjects, setCustomSubjects] = useState<string[]>(CBT_DEFAULT_SUBJECTS);
+  const [subject, setSubject] = useState(availableSubjects[1] || availableSubjects[0]);
+  const [customSubjects, setCustomSubjects] = useState<string[]>(availableSubjects);
   const [customTotalPreset, setCustomTotalPreset] = useState(80);
 
   // Anti-Refresh Wipeout (Batch 1): rebuild the live exam from the
@@ -205,6 +211,7 @@ export function CbtFlow() {
         onToggleCustomSubject={toggleCustomSubject}
         customTotalPreset={customTotalPreset}
         onCustomTotalPresetChange={setCustomTotalPreset}
+        availableSubjects={availableSubjects}
       />
     );
   }

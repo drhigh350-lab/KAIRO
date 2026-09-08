@@ -6,6 +6,7 @@ import { getSubjects } from '../../lib/planner/syllabus';
 import { toLocalIso, type PlannedTopic, type PlannerInput, type PlannerPlan } from '../../lib/planner/plannerEngine';
 import { loadCurrentPlan, saveAndBuildPlan, markTopicComplete, getPinnedRecommendation, type PlannerState, type DueTopic } from '../../lib/planner/plannerApi';
 import { getEngine } from '../../lib/kairoEngine';
+import { getCourseSubjects } from '../../lib/subjectScope';
 
 type Screen = 'loading' | 'setup' | 'home';
 
@@ -66,6 +67,7 @@ export function PlannerFlow() {
     const profile = kairo?.profile;
     const allSubjects = getSubjects();
     const targetSubjectNames: string[] = profile?.targetSubjects ?? [];
+    const allowedSubjectNames = getCourseSubjects(profile?.targetCourse, targetSubjectNames);
     const defaultSelectedSlugs = allSubjects.filter((s) => targetSubjectNames.includes(s.name)).map((s) => s.slug);
     const defaultTargetDateIso = profile?.examDate ? toLocalIso(new Date(profile.examDate)) : null;
     return (
@@ -74,6 +76,7 @@ export function PlannerFlow() {
         onSubmit={handleSetupSubmit}
         allSubjects={allSubjects}
         defaultSelectedSlugs={defaultSelectedSlugs}
+        allowedSubjectNames={allowedSubjectNames}
         defaultTargetDateIso={defaultTargetDateIso}
         submitting={submitting}
       />

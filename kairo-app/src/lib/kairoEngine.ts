@@ -3,6 +3,7 @@ import { getSupabase } from './supabaseClient';
 import { selectedOptionLabel, type EngineFlatQuestion } from './engineAdapter';
 import type { PracticeExplanation } from '../features/practice/PracticeQuestion';
 import type { SessionRewards } from '../features/practice/PracticeSummary';
+import { getSeededCourseSubjects } from './subjectScope';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Engine = any;
@@ -427,8 +428,11 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   // not just Review's own screens. Its own idempotency guard (not the
   // `missing.length === 0` early return below) is what makes this safe to
   // call unconditionally here.
-  const wanted = subjects.filter((s) => SEEDED_SUBJECTS.includes(s));
-  const target = wanted.length ? wanted : SEEDED_SUBJECTS;
+  const profileSubjects = getSeededCourseSubjects(kairo.profile?.targetCourse, kairo.profile?.targetSubjects || []).map(normalizeSubjectName);
+  const wanted = subjects.map(normalizeSubjectName).filter((s) => profileSubjects.includes(s));
+  // A known course is authoritative. The legacy fallback only applies when
+  // no course/subject scope has been saved yet, never to a scoped student.
+  const target = wanted.length ? wanted : profileSubjects.length ? profileSubjects : SEEDED_SUBJECTS;
 
   // Multiple UI paths can request the same catalog during one tap (for
   // example Review -> repair while the Review data is still settling). Share
@@ -1583,7 +1587,11 @@ export interface StartCbtExamOptions {
 export async function startCbtExam(options: StartCbtExamOptions = {}): Promise<{ totalQuestions: number; totalTimeMin: number; paper: CbtPaperQuestion[]; subjects: string[]; startTime: number }> {
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
-  const subjects = options.subjects?.length ? options.subjects : CBT_DEFAULT_SUBJECTS;
+  const scopedSubjects = getSeededCourseSubjects(kairo.profile?.targetCourse, kairo.profile?.targetSubjects || [])
+    .map((s) => s === 'English Language' ? 'Use of English' : s)
+    .filter((s) => CBT_DEFAULT_SUBJECTS.includes(s));
+  const requestedSubjects = options.subjects?.length ? options.subjects.filter((s) => !scopedSubjects.length || scopedSubjects.includes(s)) : [];
+  const subjects = requestedSubjects.length ? requestedSubjects : scopedSubjects.length ? scopedSubjects : CBT_DEFAULT_SUBJECTS;
   await ensureContentLoaded(subjects);
   const setup = kairo.cbt.setup({
     subjects,
@@ -2758,6 +2766,6 @@ function normalizeDiagramUrl(value: string): string {
   const raw = value.trim();
   if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
   const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-  const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/public\/question-diagrams\/)/, '');
+  const path = raw.replace(/^\/?(question-diagrams\/|storage\/v1\/object\/(public|authenticated)\/question-diagrams\/)/, '');
   return base ? `${base}/storage/v1/object/public/question-diagrams/${path.split('/').map(encodeURIComponent).join('/')}` : raw;
 }

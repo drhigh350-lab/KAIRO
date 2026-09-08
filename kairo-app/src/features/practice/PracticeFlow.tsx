@@ -19,6 +19,7 @@ import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, 
 import { recordVerificationResult } from '../../lib/planner/plannerApi';
 import { countHighFrictionPasses } from '../../lib/planner/plannerSrs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
+import { getCourseSubjects } from '../../lib/subjectScope';
 
 /** Batch 2's "Trust, but Verify" loop — a strictly scoped 10-question session on exactly one Planner topic, launched instantly with no picker screens. */
 const VERIFICATION_SESSION_LENGTH = 10;
@@ -101,6 +102,8 @@ function computeInitial(entry: string, verifyTarget: { subjectLabel: string; top
 export function PracticeFlow() {
   const navigate = useNavigate();
   const location = useLocation();
+  const profile = getEngine()?.profile;
+  const allowedSubjects = getCourseSubjects(profile?.targetCourse, profile?.targetSubjects || []);
   // Tapping the Practice tab directly (no entry state) lands on Practice Home,
   // never a bare subject picker — a student should never have to choose from
   // a menu to begin (Practice Module Spec §2.1). Explicit entry kinds (from
@@ -861,6 +864,7 @@ export function PracticeFlow() {
       <SubjectSelect
         onBack={toHome}
         recentKeys={recentKeys}
+        allowedSubjects={allowedSubjects}
         onPick={(s) => {
           setSubject(s);
           setRecentKeys((k) => [s.key, ...k.filter((x) => x !== s.key)].slice(0, 3));

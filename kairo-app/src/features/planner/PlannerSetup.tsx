@@ -34,6 +34,7 @@ export interface PlannerSetupProps {
   allSubjects: Subject[];
   /** Student's own onboarding subject picks (label strings) — pre-selected when they match a real Blueprint subject; every Blueprint subject is still selectable, since UTME's exact subject list can differ slightly from what the student entered at onboarding. */
   defaultSelectedSlugs: string[];
+  allowedSubjectNames?: string[];
   /** Pre-fills the target date from the student's real exam date, where one's already set. */
   defaultTargetDateIso: string | null;
   submitting: boolean;
@@ -48,12 +49,13 @@ export interface PlannerSetupProps {
  * the whole Blueprint is the safer default for a student building a plan
  * for the first time.
  */
-export function PlannerSetup({ onBack, onSubmit, allSubjects, defaultSelectedSlugs, defaultTargetDateIso, submitting }: PlannerSetupProps) {
+export function PlannerSetup({ onBack, onSubmit, allSubjects, defaultSelectedSlugs, allowedSubjectNames, defaultTargetDateIso, submitting }: PlannerSetupProps) {
+  const visibleSubjects = allowedSubjectNames?.length ? allSubjects.filter((s) => allowedSubjectNames.includes(s.name)) : allSubjects;
   const [targetDate, setTargetDate] = useState(defaultTargetDateIso ?? '');
   const [availableDays, setAvailableDays] = useState<number[]>([1, 2, 3, 4, 5, 6]); // Mon-Sat by default — a realistic weekday+Saturday cadence, Sunday off
   const [hoursPerDay, setHoursPerDay] = useState(2);
   const [selectedSlugs, setSelectedSlugs] = useState<string[]>(
-    defaultSelectedSlugs.length ? defaultSelectedSlugs : allSubjects.map((s) => s.slug),
+    defaultSelectedSlugs.length ? defaultSelectedSlugs.filter((slug) => visibleSubjects.some((s) => s.slug === slug)) : visibleSubjects.map((s) => s.slug),
   );
   const [confidenceBySlug, setConfidenceBySlug] = useState<Record<string, ConfidenceLevel>>({});
 
@@ -112,7 +114,7 @@ export function PlannerSetup({ onBack, onSubmit, allSubjects, defaultSelectedSlu
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>Subjects</div>
           <ChipRow>
-            {allSubjects.map((s) => (
+            {visibleSubjects.map((s) => (
               <Chip key={s.slug} active={selectedSlugs.includes(s.slug)} onClick={() => toggleSubject(s.slug)}>{s.name}</Chip>
             ))}
           </ChipRow>
@@ -122,7 +124,7 @@ export function PlannerSetup({ onBack, onSubmit, allSubjects, defaultSelectedSlu
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 8 }}>How confident are you, subject by subject?</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {allSubjects.filter((s) => selectedSlugs.includes(s.slug)).map((s) => (
+              {visibleSubjects.filter((s) => selectedSlugs.includes(s.slug)).map((s) => (
                 <div key={s.slug} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--dark-text-body)' }}>{s.name}</span>
                   <div style={{ display: 'flex', gap: 6 }}>

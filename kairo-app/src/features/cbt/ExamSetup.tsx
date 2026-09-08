@@ -49,6 +49,7 @@ export interface ExamSetupProps {
   onToggleCustomSubject: (s: string) => void;
   customTotalPreset: number;
   onCustomTotalPresetChange: (n: number) => void;
+  availableSubjects?: string[];
 }
 export function ExamSetup({
   onBack, onContinue,
@@ -56,6 +57,7 @@ export function ExamSetup({
   subject, onSubjectChange,
   customSubjects, onToggleCustomSubject,
   customTotalPreset, onCustomTotalPresetChange,
+  availableSubjects = cbtSubjects,
 }: ExamSetupProps) {
   const subjectQuestions = cbtQuestionCountFor(subject);
   const subjectTimeMin = cbtProportionalTimeMin(subjectQuestions);
@@ -83,8 +85,8 @@ export function ExamSetup({
         {examType === 'full' && (
           <>
             <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
-              {cbtSubjects.map((s, i) => (
-                <div key={s} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < cbtSubjects.length - 1 ? '1px solid var(--dark-border)' : 'none' }}>
+              {availableSubjects.map((s, i) => (
+                <div key={s} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < availableSubjects.length - 1 ? '1px solid var(--dark-border)' : 'none' }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--dark-text-heading)' }}>{s}</span>
                   {i === 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', background: 'var(--dark-bg-elevated)', padding: '3px 10px', borderRadius: 'var(--radius-pill)' }}>Compulsory</span>}
                 </div>
@@ -103,7 +105,7 @@ export function ExamSetup({
           <>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)' }}>Pick a subject</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {cbtSubjects.map((s) => {
+              {availableSubjects.map((s) => {
                 const active = subject === s;
                 return (
                   <button type="button" key={s} aria-pressed={active} onClick={() => onSubjectChange(s)} style={{
@@ -126,7 +128,7 @@ export function ExamSetup({
           <>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)' }}>Subjects</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {cbtSubjects.map((s) => {
+              {availableSubjects.map((s) => {
                 const active = customSubjects.includes(s);
                 return (
                   <button type="button" key={s} aria-pressed={active} onClick={() => onToggleCustomSubject(s)} style={{
