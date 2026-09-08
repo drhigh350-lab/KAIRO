@@ -2749,9 +2749,10 @@ export async function getDiagramQuestionPreview(limit = 6): Promise<{ total: num
   const { data, error } = await supabase.schema('kairo').from('questions')
     .select('id, subject, topic, stem, options, image_url')
     .not('image_url', 'is', null)
+    .neq('image_url', '')
     .limit(Math.max(limit, 100));
   if (error) throw error;
-  const questions = (data || []).map((row: Record<string, unknown>) => ({
+  const questions = (data || []).filter((row: Record<string, unknown>) => typeof row.image_url === 'string' && row.image_url.trim().length > 0).map((row: Record<string, unknown>) => ({
     id: row.id as string,
     subject: row.subject as string,
     topic: row.topic as string,
