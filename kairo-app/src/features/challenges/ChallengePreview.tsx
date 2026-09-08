@@ -30,12 +30,12 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
   useEffect(() => {
     getCompletedCount(challengeId).then(setCompletedCount).catch(() => setCompletedCount(null));
     getChallengeLeaderboard(challengeId, 5).then(setLeaderboard).catch(() => setLeaderboard([]));
-    if (challenge.questionIds?.length) {
-      getChallengeQuestions(challenge.questionIds)
+    if (challenge.questionCount > 0) {
+      getChallengeQuestions(challengeId)
         .then((questions) => setDiagramQuestions(questions.filter((question) => !!question.imageUrl)))
         .catch(() => setDiagramQuestions([]));
     }
-  }, [challengeId, challenge.questionIds]);
+  }, [challengeId, challenge.questionCount]);
 
   const live = challenge.status === 'live';
   const primaryLabel = isMockUtme ? 'Go to CBT Exam Mode' : alreadyCompleted ? 'See Your Result' : live ? 'Start Challenge' : challenge.status === 'upcoming' ? 'Not Live Yet' : 'Challenge Ended';

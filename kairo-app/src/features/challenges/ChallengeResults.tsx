@@ -3,14 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { AnswerFeedback, Badge, Button, Card } from '../../components';
 import { InlineToast, StatTile } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
-import { getChallengeLeaderboard, getCompletedCount, getCurrentStudentId, type ChallengeLeaderboardRow } from '../../lib/challengesApi';
+import { getChallengeLeaderboard, getCompletedCount, getCurrentStudentId, getQuestionExplanations, type ChallengeLeaderboardRow, type SubmitAttemptResult } from '../../lib/challengesApi';
 
 export interface ChallengeResultsProps {
   challenge: Challenge;
   challengeId: string;
   questions: ChallengeQuestion[];
+  /** The option index the student picked for each question, by question index. */
   answers: Record<number, number>;
-  result: { score: number; accuracy: number; timeTakenMs: number };
+  /**
+   * The verified result from submitChallengeAttempt — this, not the
+   * client's own guess, is the record of truth for score/rank/correctness.
+   * answerKey maps question id -> correct option LABEL ("A"/"B"/...),
+   * only populated once submission has actually happened server-side.
+   */
+  result: SubmitAttemptResult;
   onBackToHub: () => void;
 }
 
@@ -20,6 +27,10 @@ function formatTime(ms: number): string {
   return `${m}m ${s.toString().padStart(2, '0')}s`;
 }
 
+function labelToIndex(label: string): number {
+  return label.toUpperCase().charCodeAt(0) - 65;
+}
+
 export function ChallengeResults({ challenge, challengeId, questions, answers, result, onBackToHub }: ChallengeResultsProps) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -27,20 +38,25 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<ChallengeLeaderboardRow[]>([]);
   const [totalParticipants, setTotalParticipants] = useState<number | null>(null);
+  const [explanations, setExplanations] = useState<Record<string, string | null>>({});
 
-  const { score, accuracy, timeTakenMs } = result;
+  const { score, accuracyPct, timeTakenMs, isFirstAttempt, attemptNumber, improvedBy, answerKey } = result;
   const total = questions.length;
-  const correctCount = questions.filter((q, i) => answers[i] === q.correct).length;
   const myStudentId = getCurrentStudentId();
 
   useEffect(() => {
     Promise.all([
       getChallengeLeaderboard(challengeId),
       getCompletedCount(challengeId),
+      // Safe now — the attempt is already submitted and scored, nothing
+      // left to leak. Falls back to no explanation text if a question is
+      // community-authored (this fetch only covers the official bank).
+      getQuestionExplanations(questions.map((q) => q.id)),
     ])
-      .then(([rows, count]) => {
+      .then(([rows, count, expl]) => {
         setLeaderboard(rows);
         setTotalParticipants(count);
+        setExplanations(expl);
       })
       .catch(() => { setLeaderboard([]); setTotalParticipants(null); })
       .finally(() => setLoading(false));
@@ -50,21 +66,28 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
   const yourRank = myRow?.rank ?? null;
 
   const badges: string[] = [];
-  if (accuracy === 100) badges.push('Perfect Score');
+  if (accuracyPct === 100) badges.push('Perfect Score');
   if (yourRank != null && totalParticipants != null && totalParticipants > 0 && yourRank <= Math.max(1, Math.ceil(totalParticipants * 0.1))) badges.push('Top 10%');
 
-  const band = accuracy >= 80 ? 'high' : accuracy >= 50 ? 'mid' : 'low';
-  const encouragement =
-    band === 'high'
-      ? `Strong run — ${correctCount} of ${total} correct. This kind of consistency is exactly what keeps a streak like this worth showing up for.`
+  const band = accuracyPct >= 80 ? 'high' : accuracyPct >= 50 ? 'mid' : 'low';
+
+  // Replays get their own message (improvement-focused, per the "no
+  // Practice Mode label, just tell them how much better they did" rule) —
+  // never the plain first-attempt encouragement copy.
+  const encouragement = !isFirstAttempt
+    ? (improvedBy != null && improvedBy > 0
+        ? `Huge jump — you improved by ${improvedBy}% on attempt #${attemptNumber}. Only your first attempt counts for the leaderboard, but that growth is real.`
+        : `Attempt #${attemptNumber} done. Only your first attempt counts for the leaderboard — this one was just for you.`)
+    : band === 'high'
+      ? `Strong run — ${score} of ${total} correct. This kind of consistency is exactly what keeps a streak like this worth showing up for.`
       : band === 'mid'
-        ? `Solid effort — ${correctCount} of ${total} correct, with a clear pattern in what's worth reviewing next.`
+        ? `Solid effort — ${score} of ${total} correct, with a clear pattern in what's worth reviewing next.`
         : `You showed up and finished it — that's the part that actually matters. Most students improve by their 2nd attempt on this one.`;
 
   function share() {
     const shareData = {
       title: challenge.title,
-      text: `I scored ${score} points (${accuracy}% accuracy) on ${challenge.title} on Kairo!`,
+      text: `I scored ${score} points (${accuracyPct}% accuracy) on ${challenge.title} on Kairo!`,
     };
     if (navigator.share) {
       navigator.share(shareData).catch(() => {});
@@ -92,14 +115,16 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
 
       <div style={{ padding: '32px 20px 16px', textAlign: 'center' }}>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--dark-text-heading)' }}>{challenge.title}</div>
-        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>Results are in</div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>
+          {isFirstAttempt ? 'Results are in' : `Attempt #${attemptNumber} — results are in`}
+        </div>
       </div>
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
           <div style={{ display: 'flex' }}>
             <StatTile dark label="Score" value={score} />
-            <StatTile dark label="Accuracy" value={`${accuracy}%`} />
+            <StatTile dark label="Accuracy" value={`${accuracyPct}%`} />
             <StatTile dark label="Time" value={formatTime(timeTakenMs)} />
           </div>
         </Card>
@@ -118,7 +143,9 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em' }}>LEADERBOARD</div>
             <div style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>
-              {yourRank != null && totalParticipants != null ? `You're #${yourRank} of ${totalParticipants}` : 'Not ranked yet'}
+              {!isFirstAttempt
+                ? 'Replays aren\u2019t ranked'
+                : yourRank != null && totalParticipants != null ? `You're #${yourRank} of ${totalParticipants}` : 'Not ranked yet'}
             </div>
           </div>
           {leaderboard.length === 0 ? (
@@ -151,24 +178,29 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
           </button>
           {showReview && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
-              {questions.map((q, i) => (
-                <div key={q.id}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 6 }}>{i + 1}. {q.stem}</div>
-                  <AnswerFeedback
-                    dark
-                    correct={answers[i] === q.correct}
-                    title={answers[i] === q.correct ? 'Correct' : `Correct answer: ${String.fromCharCode(65 + q.correct)}`}
-                    detail={q.why}
-                  />
-                </div>
-              ))}
+              {questions.map((q, i) => {
+                const correctLabel = answerKey[q.id];
+                const correctIndex = correctLabel ? labelToIndex(correctLabel) : -1;
+                const isCorrect = correctIndex >= 0 && answers[i] === correctIndex;
+                return (
+                  <div key={q.id}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dark-text-heading)', marginBottom: 6 }}>{i + 1}. {q.stem}</div>
+                    <AnswerFeedback
+                      dark
+                      correct={isCorrect}
+                      title={isCorrect || correctIndex < 0 ? 'Correct' : `Correct answer: ${String.fromCharCode(65 + correctIndex)}`}
+                      detail={explanations[q.id] ?? undefined}
+                    />
+                  </div>
+                );
+              })}
             </div>
           )}
         </Card>
 
         <Card style={{ background: 'linear-gradient(135deg, var(--dark-accent-blue), var(--dark-accent-blue-deep))', color: '#fff', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 8px 30px var(--dark-accent-blue-glow)' }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Share your result</div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>{challenge.title} · {score} points · {accuracy}% accuracy</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>{challenge.title} · {score} points · {accuracyPct}% accuracy</div>
           <Button variant="gold" size="md" fullWidth onClick={share}>Share Result</Button>
         </Card>
       </div>

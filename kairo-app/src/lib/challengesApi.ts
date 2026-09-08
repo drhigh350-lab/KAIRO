@@ -1,15 +1,22 @@
 import { getSupabase } from './supabaseClient';
 import { getEngine } from './kairoEngine';
-import { toUiQuestion, type EngineFlatQuestion } from './engineAdapter';
 import type { Challenge, ChallengeAccent, ChallengeQuestion, ChallengeStatus } from '../features/challenges/data';
 
 /**
- * Real Challenges data — queried directly from Supabase rather than
- * through KairoEngine, since the vendored engine's own `ChallengesModule`
- * is an unrelated feature (personal daily/weekly achievement checks, not
- * admin-authored public events). kairo.challenges/challenge_attempts and
- * the get_challenge_leaderboard() RPC are the real backing for this
- * screen — this file is the only place that touches them.
+ * Real Challenges data — queried directly from Supabase. kairo.challenges /
+ * kairo.challenge_attempts and two SECURITY DEFINER RPCs are the real
+ * backing for this screen:
+ *   - get_challenge_questions_safe(challenge_id): returns questions WITHOUT
+ *     the answer key. The previous version of this file selected
+ *     kairo.questions directly (including correct_option) and sent it to
+ *     the browser before the student answered — a real answer-leak, fixed
+ *     here by using this RPC instead of a raw table select.
+ *   - submit_arena_attempt(attempt_id, question_results, time_taken_ms):
+ *     re-scores the attempt SERVER-SIDE against the real answer key and
+ *     returns the verified score/rank/participant_count. The client never
+ *     computes or trusts its own score for what gets stored — only for the
+ *     instant per-question right/wrong flash during play, which is a UI
+ *     nicety, not the record of truth.
  */
 
 export interface DbChallenge {
@@ -40,6 +47,7 @@ export interface DbChallengeAttempt {
   accuracy: number | null;
   time_taken_ms: number | null;
   question_results: unknown[];
+  rank_in_challenge: number | null;
 }
 
 export interface ChallengeLeaderboardRow {
@@ -126,31 +134,26 @@ export async function getCompletedCount(challengeId: string): Promise<number> {
   return (data || []).length;
 }
 
-export async function getChallengeQuestions(questionIds: string[]): Promise<ChallengeQuestion[]> {
-  if (!questionIds.length) return [];
+/**
+ * Fetches questions for play WITHOUT the answer key, via
+ * get_challenge_questions_safe. Do not replace this with a direct
+ * `.from('questions').select(...)` — that column includes correct_option
+ * and would send the answer to the browser before the student answers.
+ */
+export async function getChallengeQuestions(challengeId: string): Promise<ChallengeQuestion[]> {
   const supabase = getSupabase();
-  const { data, error } = await supabase.schema('kairo').from('questions')
-    .select('id, subject, topic, stem, options, correct_option, explanation, image_url')
-    .in('id', questionIds);
+  const { data, error } = await supabase.schema('kairo').rpc('get_challenge_questions_safe', {
+    p_challenge_id: challengeId,
+  });
   if (error) throw error;
-  const byId = new Map((data || []).map((row: Record<string, unknown>) => [row.id, row]));
-  return questionIds
-    .map((id) => byId.get(id))
-    .filter((row): row is Record<string, unknown> => !!row)
-    .map((row) => {
-      const flat: EngineFlatQuestion = {
-        id: row.id as string,
-        subject: row.subject as string,
-        topic: row.topic as string,
-        text: row.stem as string,
-        options: row.options as EngineFlatQuestion['options'],
-        correctOption: row.correct_option as string,
-        explanation: row.explanation as string | null,
-        imageUrl: row.image_url as string | null,
-      };
-      const ui = toUiQuestion(flat);
-      return { id: ui.id, stem: ui.stem, options: ui.options, correct: ui.correct, why: ui.why, imageUrl: ui.imageUrl };
-    });
+  return (data || [])
+    .sort((a: { q_position: number }, b: { q_position: number }) => a.q_position - b.q_position)
+    .map((row: { id: string; stem: string; options: { label: string; text: string }[]; image_url: string | null }) => ({
+      id: row.id,
+      stem: row.stem,
+      options: (row.options || []).map((o) => o.text),
+      imageUrl: row.image_url,
+    }));
 }
 
 /** The signed-in student's own attempt for this challenge, or null if they haven't joined. */
@@ -168,31 +171,85 @@ export async function joinChallenge(challengeId: string): Promise<DbChallengeAtt
   const studentId = currentStudentId();
   if (!studentId) throw new Error('No active engine — sign in first.');
   const supabase = getSupabase();
-  const { data, error } = await supabase.schema('kairo').from('challenge_attempts')
-    .insert({ id: crypto.randomUUID(), challenge_id: challengeId, student_id: studentId })
-    .select().single();
+  const { data, error } = await supabase.schema('kairo').rpc('join_arena_challenge', {
+    p_challenge_id: challengeId,
+    p_student_id: studentId,
+  });
   if (error) throw error;
-  return data;
+  // join_arena_challenge returns the new attempt id (text) — fetch the full row
+  // so callers get the same shape they did before.
+  const attempt = await getMyAttempt(challengeId);
+  if (!attempt) throw new Error('Could not load the attempt that was just created.');
+  return attempt;
 }
 
 export interface SubmitAttemptArgs {
   attemptId: string;
-  score: number;
-  accuracy: number;
+  questionResults: { questionId: string; selectedOption: string; responseTimeMs: number }[];
   timeTakenMs: number;
-  questionResults: { questionId: string; correct: boolean; selectedOption: string | null }[];
 }
 
-export async function submitChallengeAttempt({ attemptId, score, accuracy, timeTakenMs, questionResults }: SubmitAttemptArgs): Promise<void> {
+export interface SubmitAttemptResult {
+  score: number;
+  total: number;
+  accuracyPct: number;
+  timeTakenMs: number;
+  rankInChallenge: number | null;
+  participantCount: number;
+  betterThanPct: number | null;
+  isWin: boolean;
+  isFirstAttempt: boolean;
+  attemptNumber: number;
+  previousBestScore: number | null;
+  improvedBy: number | null;
+  /** Correct option label per question id, returned only now that the attempt is submitted — safe to show on the results screen. */
+  answerKey: Record<string, string>;
+}
+
+/**
+ * Submits an attempt for SERVER-SIDE scoring via submit_arena_attempt.
+ * This re-derives correctness against the real answer key in the database
+ * — the client's own guess at right/wrong (used only for the instant
+ * per-question flash during play) is never what gets stored or ranked.
+ */
+export async function submitChallengeAttempt({ attemptId, questionResults, timeTakenMs }: SubmitAttemptArgs): Promise<SubmitAttemptResult> {
   const supabase = getSupabase();
-  const { error } = await supabase.schema('kairo').from('challenge_attempts').update({
-    completed_at: new Date().toISOString(),
-    score,
-    accuracy,
-    time_taken_ms: timeTakenMs,
-    question_results: questionResults,
-  }).eq('id', attemptId);
+  const { data, error } = await supabase.schema('kairo').rpc('submit_arena_attempt', {
+    p_attempt_id: attemptId,
+    p_question_results: questionResults.map((r) => ({
+      question_id: r.questionId,
+      selected_option: r.selectedOption,
+      response_time_ms: r.responseTimeMs,
+    })),
+    p_time_taken_ms: timeTakenMs,
+  });
   if (error) throw error;
+
+  const answerKey: Record<string, string> = {};
+  // submit_arena_attempt doesn't currently return per-question correct
+  // options in its jsonb payload — pull them from challenge_attempts.
+  // question_results, which the RPC writes with the verified answer key.
+  const { data: attemptRow } = await supabase.schema('kairo').from('challenge_attempts')
+    .select('question_results').eq('id', attemptId).maybeSingle();
+  for (const r of (attemptRow?.question_results as { question_id: string; correct_option: string }[]) || []) {
+    answerKey[r.question_id] = r.correct_option;
+  }
+
+  return {
+    score: data.score,
+    total: data.total,
+    accuracyPct: data.accuracy_pct,
+    timeTakenMs: data.time_taken_ms,
+    rankInChallenge: data.rank_in_challenge,
+    participantCount: data.participant_count,
+    betterThanPct: data.better_than_pct,
+    isWin: data.is_win,
+    isFirstAttempt: data.is_first_attempt,
+    attemptNumber: data.attempt_number,
+    previousBestScore: data.previous_best_score,
+    improvedBy: data.improved_by,
+    answerKey,
+  };
 }
 
 /** Real cross-student leaderboard via the get_challenge_leaderboard() SECURITY DEFINER RPC — a window of rows around the signed-in student. */
@@ -206,4 +263,22 @@ export async function getChallengeLeaderboard(challengeId: string, windowSize = 
   });
   if (error) throw error;
   return data || [];
+}
+
+/**
+ * Explanations for the Results review screen — safe to fetch directly
+ * (unlike during play) because the attempt is already submitted and
+ * scored by this point; there's no answer left to leak. Kept as its own
+ * call rather than folded into submit_arena_attempt so that RPC's job
+ * stays scoring, not content delivery.
+ */
+export async function getQuestionExplanations(questionIds: string[]): Promise<Record<string, string | null>> {
+  if (!questionIds.length) return {};
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').from('questions')
+    .select('id, explanation').in('id', questionIds);
+  if (error) throw error;
+  const out: Record<string, string | null> = {};
+  for (const row of data || []) out[row.id] = row.explanation;
+  return out;
 }

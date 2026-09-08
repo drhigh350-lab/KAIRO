@@ -8,7 +8,7 @@ import { ChallengeResults } from './ChallengeResults';
 import type { Challenge, ChallengeQuestion } from './data';
 import {
   listChallenges, getMyAttempt, joinChallenge, getChallengeQuestions, submitChallengeAttempt,
-  mapDbChallenge, type DbChallenge, type DbChallengeAttempt,
+  mapDbChallenge, type DbChallenge, type DbChallengeAttempt, type SubmitAttemptResult,
 } from '../../lib/challengesApi';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 
@@ -27,7 +27,7 @@ export function ChallengesFlow() {
   const [questions, setQuestions] = useState<ChallengeQuestion[]>([]);
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [result, setResult] = useState<{ score: number; accuracy: number; timeTakenMs: number } | null>(null);
+  const [result, setResult] = useState<SubmitAttemptResult | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -100,8 +100,12 @@ export function ChallengesFlow() {
     if (!selectedDb) return;
     setBusy(true);
     try {
+      // Unlimited replays: joinChallenge always creates a fresh attempt row
+      // now (see join_arena_challenge) rather than reusing an in-progress
+      // one — only the FIRST ever attempt at a challenge counts toward the
+      // leaderboard (counts_toward_leaderboard, set server-side).
       const attempt = myAttempt && !myAttempt.completed_at ? myAttempt : await joinChallenge(selectedDb.id);
-      const qs = await getChallengeQuestions(selectedDb.question_ids);
+      const qs = await getChallengeQuestions(selectedDb.id);
       setAttemptId(attempt.id);
       setQuestions(qs);
       go('getReady');
@@ -116,16 +120,34 @@ export function ChallengesFlow() {
     if (!myAttempt || !selectedDb) return;
     setBusy(true);
     try {
-      const qs = await getChallengeQuestions(selectedDb.question_ids);
+      const qs = await getChallengeQuestions(selectedDb.id);
       setQuestions(qs);
-      const questionResults = (myAttempt.question_results as { questionId: string; correct: boolean; selectedOption: string | null }[]) || [];
+      const questionResults = (myAttempt.question_results as { question_id: string; correct: boolean; selected_option: string | null; correct_option: string }[]) || [];
       const restoredAnswers: Record<number, number> = {};
+      const answerKey: Record<string, string> = {};
       qs.forEach((q, i) => {
-        const found = questionResults.find((r) => r.questionId === q.id);
-        if (found) restoredAnswers[i] = found.correct ? q.correct : (q.options.findIndex((_, oi) => oi !== q.correct) ?? -1);
+        const found = questionResults.find((r) => r.question_id === q.id);
+        if (found) {
+          answerKey[q.id] = found.correct_option;
+          if (found.selected_option) restoredAnswers[i] = found.selected_option.toUpperCase().charCodeAt(0) - 65;
+        }
       });
       setAnswers(restoredAnswers);
-      setResult({ score: myAttempt.score || 0, accuracy: myAttempt.accuracy || 0, timeTakenMs: myAttempt.time_taken_ms || 0 });
+      setResult({
+        score: myAttempt.score || 0,
+        total: qs.length,
+        accuracyPct: myAttempt.accuracy || 0,
+        timeTakenMs: myAttempt.time_taken_ms || 0,
+        rankInChallenge: myAttempt.rank_in_challenge,
+        participantCount: 0,
+        betterThanPct: null,
+        isWin: false,
+        isFirstAttempt: myAttempt.counts_toward_leaderboard,
+        attemptNumber: 1,
+        previousBestScore: null,
+        improvedBy: null,
+        answerKey,
+      });
       go('results');
     } finally {
       setBusy(false);
@@ -135,22 +157,20 @@ export function ChallengesFlow() {
   async function handleFinish(finalAnswers: Record<number, number>, timeTakenMs: number) {
     setAnswers(finalAnswers);
     if (!attemptId) { go('results'); return; }
-    const total = questions.length;
-    const correctCount = questions.filter((q, i) => finalAnswers[i] === q.correct).length;
-    const accuracy = total ? Math.round((correctCount / total) * 100) : 0;
-    const score = correctCount * 10;
-    setResult({ score, accuracy, timeTakenMs });
     setBusy(true);
     try {
-      await submitChallengeAttempt({
-        attemptId,
-        score,
-        accuracy,
-        timeTakenMs,
-        questionResults: questions.map((q, i) => ({ questionId: q.id, correct: finalAnswers[i] === q.correct, selectedOption: finalAnswers[i] != null ? String(finalAnswers[i]) : null })),
-      });
-    } catch {
-      // best-effort — the student still sees their own result even if the write fails
+      const questionResults = questions.map((q, i) => ({
+        questionId: q.id,
+        // finalAnswers[i] is an option INDEX (0=A, 1=B, ...) — the RPC
+        // wants the option LABEL, since that's what's actually stored on
+        // each question's options array.
+        selectedOption: finalAnswers[i] != null ? String.fromCharCode(65 + finalAnswers[i]) : '',
+        responseTimeMs: 0, // per-question timing isn't tracked in this flow yet — total time is what's scored
+      }));
+      const submitted = await submitChallengeAttempt({ attemptId, questionResults, timeTakenMs });
+      setResult(submitted);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not submit this attempt.');
     } finally {
       setBusy(false);
       go('results');

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AnswerFeedback, Button, IconButton, ProgressBar } from '../../components';
+import { Button, IconButton, ProgressBar } from '../../components';
 import { CloseIcon, Modal, QuestionDiagram } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
 
@@ -10,11 +10,19 @@ export interface ChallengeAttemptProps {
   onExit: () => void;
 }
 
+/**
+ * No instant "Correct!" / "Wrong, it was B" feedback here — the correct
+ * answer is genuinely not sent to the browser during play
+ * (get_challenge_questions_safe strips it), so there is nothing to show.
+ * A choice is picked, then locked in with "Next" — right/wrong only shows
+ * up on the Results screen, once submit_arena_attempt has scored the
+ * whole attempt server-side. This was an explicit trade-off, not an
+ * oversight: it closes a real answer-leak that existed before.
+ */
 export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: ChallengeAttemptProps) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [selected, setSelected] = useState<number | null>(null);
-  const [submitted, setSubmitted] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const startedAt = useRef(Date.now());
@@ -27,20 +35,15 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: Cha
     return () => clearInterval(t);
   }, []);
 
-  function submit() {
-    if (selected === null) return;
-    setSubmitted(true);
-  }
-
   function next() {
-    const newAnswers = { ...answers, [index]: selected ?? -1 };
+    if (selected === null) return;
+    const newAnswers = { ...answers, [index]: selected };
     setAnswers(newAnswers);
     if (index + 1 >= total) {
       onFinish(newAnswers, Date.now() - startedAt.current);
     } else {
       setIndex(index + 1);
       setSelected(null);
-      setSubmitted(false);
     }
   }
 
@@ -50,7 +53,6 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: Cha
   }
 
   if (!question) return null;
-  const isCorrect = selected === question.correct;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh', fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--arena-navy-deep)' }}>
@@ -83,43 +85,31 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: Cha
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
           {question.options.map((opt, i) => {
             const isSelected = selected === i;
-            const showCorrect = submitted && i === question.correct;
-            const showWrongPick = submitted && isSelected && i !== question.correct;
-            let border = 'var(--dark-border)', bg = 'var(--dark-bg-surface)';
-            if (!submitted && isSelected) { border = 'var(--dark-accent-blue)'; bg = 'var(--dark-bg-elevated)'; }
-            if (showCorrect) { border = 'var(--dark-success)'; bg = 'var(--dark-success-bg)'; }
-            if (showWrongPick) { border = 'var(--dark-danger)'; bg = 'var(--dark-danger-bg)'; }
+            const border = isSelected ? 'var(--dark-accent-blue)' : 'var(--dark-border)';
+            const bg = isSelected ? 'var(--dark-bg-elevated)' : 'var(--dark-bg-surface)';
             return (
-              <button key={i} disabled={submitted} onClick={() => setSelected(i)} style={{
+              <button key={i} onClick={() => setSelected(i)} style={{
                 textAlign: 'left', minHeight: 'var(--touch-min)', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `1.5px solid ${border}`,
-                background: bg, color: 'var(--dark-text-body)', fontSize: 16, cursor: submitted ? 'default' : 'pointer', fontFamily: 'inherit',
+                background: bg, color: 'var(--dark-text-body)', fontSize: 16, cursor: 'pointer', fontFamily: 'inherit',
                 display: 'flex', gap: 10, alignItems: 'center',
               }}>
                 <span style={{
                   width: 24, height: 24, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-                  border: `1.5px solid ${isSelected || showCorrect ? border : 'var(--dark-text-faint)'}`,
-                  background: (isSelected && !submitted) ? 'var(--dark-accent-blue)' : showCorrect ? 'var(--dark-success)' : showWrongPick ? 'var(--dark-danger)' : 'transparent',
-                  color: ((isSelected && !submitted) || showCorrect || showWrongPick) ? '#fff' : 'var(--dark-text-muted)',
-                }}>{showCorrect ? '✓' : showWrongPick ? '✕' : String.fromCharCode(65 + i)}</span>
+                  border: `1.5px solid ${isSelected ? border : 'var(--dark-text-faint)'}`,
+                  background: isSelected ? 'var(--dark-accent-blue)' : 'transparent',
+                  color: isSelected ? '#fff' : 'var(--dark-text-muted)',
+                }}>{String.fromCharCode(65 + i)}</span>
                 {opt}
               </button>
             );
           })}
         </div>
-
-        {submitted && (
-          <div style={{ marginTop: 20 }}>
-            <AnswerFeedback dark correct={isCorrect} title={isCorrect ? 'Correct' : `Correct answer: ${String.fromCharCode(65 + question.correct)}`} />
-          </div>
-        )}
       </div>
 
       <div className="app-footer-bar" style={{ padding: '16px 20px 24px', background: 'var(--dark-bg-canvas)' }}>
-        {!submitted ? (
-          <Button variant="darkAccent" size="lg" fullWidth disabled={selected === null} onClick={submit}>Submit</Button>
-        ) : (
-          <Button variant="darkAccent" size="lg" fullWidth onClick={next}>{index + 1 === total ? 'See Results' : 'Next'}</Button>
-        )}
+        <Button variant="darkAccent" size="lg" fullWidth disabled={selected === null} onClick={next}>
+          {index + 1 === total ? 'Finish' : 'Next'}
+        </Button>
       </div>
     </div>
   );
