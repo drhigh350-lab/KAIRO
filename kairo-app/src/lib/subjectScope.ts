@@ -5,9 +5,12 @@ export const SEEDED_SUBJECTS = ['English Language', 'Mathematics', 'Biology', 'C
 
 const aliases: Record<string, string> = {
   english: 'English Language',
+  englishlanguage: 'English Language',
+  useofenglish: 'English Language',
   eng: 'English Language',
   maths: 'Mathematics',
   math: 'Mathematics',
+  mathematics: 'Mathematics',
   biology: 'Biology',
   bio: 'Biology',
   chemistry: 'Chemistry',
@@ -18,12 +21,18 @@ const aliases: Record<string, string> = {
 
 export function canonicalSubject(value: string): string {
   const trimmed = value.trim();
-  return aliases[trimmed.toLowerCase()] || trimmed;
+  const compact = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return aliases[compact] || trimmed;
+}
+
+function comparableCourseName(value: string | null | undefined): string {
+  return String(value || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
 }
 
 /** The selected course is authoritative whenever it is one of KAIRO's known courses. */
 export function getCourseSubjects(targetCourse?: string | null, targetSubjects: string[] = []): string[] {
-  const course = courses.find((item) => item.name.toLowerCase() === String(targetCourse || '').trim().toLowerCase());
+  const requestedCourse = comparableCourseName(targetCourse);
+  const course = courses.find((item) => comparableCourseName(item.name) === requestedCourse);
   const source = course?.subjects?.length ? course.subjects : targetSubjects;
   return [...new Set(source.map(canonicalSubject))];
 }

@@ -67,7 +67,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys, allowedSubjects }: S
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title="Practice" tone="dark" />
       <div style={{ padding: '10px 20px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 16 }}>{allowedSubjects?.length ? 'Choose from the subjects for your target course.' : 'Choose a subject to practise.'}</div>
+        <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 16 }}>Choose a subject to practise.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--dark-border)', marginBottom: 20 }}>
           <span style={{ color: 'var(--dark-text-faint)', display: 'flex' }}><SearchIcon /></span>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search subjects" style={{
@@ -88,7 +88,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys, allowedSubjects }: S
           </div>
         )}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 8 }}>{query ? 'RESULTS' : allowedSubjects?.length ? 'YOUR COURSE SUBJECTS' : 'ALL SUBJECTS'}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 8 }}>{query ? 'RESULTS' : 'SUBJECTS'}</div>
           {filtered.map((s) => <Row key={s.key} s={s} active={selected === s.key} favourite={!!favourites[s.key]} onClick={() => setSelected(s.key)} onToggleFav={(e) => toggleFav(e, s.key)} />)}
         </div>
       </div>
