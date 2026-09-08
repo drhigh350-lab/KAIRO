@@ -1073,51 +1073,71 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
       </footer>
 
       {/* ─────────────────────────────────────────────────────────────
-          STICKY MOBILE ACTION BAR
+          PERSISTENT BOTTOM NAVBAR
           ───────────────────────────────────────────────────────────── */}
-      <div
-        id="sticky-mobile-cta"
+      <nav
+        id="persistent-bottom-navbar"
+        aria-label="Practice navigation"
         style={{
-          position: 'sticky',
+          position: 'fixed',
           bottom: 0,
-          zIndex: 40,
-          padding: '14px 20px 20px',
-          background: 'rgba(1, 39, 72, 0.95)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 10,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          background: 'rgba(3, 24, 53, 0.94)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+          boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.45)',
+          padding: '10px 16px',
         }}
       >
-        <div style={{ width: '100%', maxWidth: 440 }}>
-          <Button
-            id="btn-sticky-start"
-            variant="darkAccent"
-            size="lg"
-            fullWidth
-            onClick={onGetStarted}
-          >
-            START PRACTISING →
-          </Button>
-        </div>
-        <button
-          type="button"
-          onClick={onSignIn}
+        <div
           style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--dark-text-muted)',
-            fontSize: 13,
-            cursor: 'pointer',
-            padding: '2px 8px',
+            maxWidth: 680,
+            margin: '0 auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            width: '100%',
           }}
         >
-          I already have an account
-        </button>
-      </div>
+          <button
+            id="btn-navbar-signin"
+            type="button"
+            onClick={onSignIn}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--dark-text-muted)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+              padding: '8px 6px',
+              textAlign: 'left',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>Have an account?</span>
+            <span style={{ color: 'var(--dark-accent-blue)', fontWeight: 600 }}>Sign In</span>
+          </button>
+
+          <div style={{ flexShrink: 0 }}>
+            <Button
+              id="btn-navbar-start"
+              variant="darkAccent"
+              size="md"
+              onClick={onGetStarted}
+            >
+              START PRACTISING →
+            </Button>
+          </div>
+        </div>
+      </nav>
     </div>
   );
 }
