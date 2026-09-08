@@ -2731,6 +2731,7 @@ export interface DiagramPreviewQuestion {
   subject: string;
   topic: string;
   stem: string;
+  options: Array<{ label: string; text: string }>;
   imageUrl: string;
 }
 
@@ -2738,7 +2739,7 @@ export interface DiagramPreviewQuestion {
 export async function getDiagramQuestionPreview(limit = 6): Promise<{ total: number; questions: DiagramPreviewQuestion[] }> {
   const supabase = getSupabase();
   const { data, error } = await supabase.schema('kairo').from('questions')
-    .select('id, subject, topic, stem, image_url')
+    .select('id, subject, topic, stem, options, image_url')
     .not('image_url', 'is', null)
     .limit(Math.max(limit, 100));
   if (error) throw error;
@@ -2747,6 +2748,7 @@ export async function getDiagramQuestionPreview(limit = 6): Promise<{ total: num
     subject: row.subject as string,
     topic: row.topic as string,
     stem: row.stem as string,
+    options: Array.isArray(row.options) ? (row.options as Array<Record<string, unknown>>).map((option) => ({ label: String(option.label || ''), text: String(option.text || '') })) : [],
     imageUrl: normalizeDiagramUrl(row.image_url as string),
   }));
   return { total: questions.length, questions: limit >= 100 ? questions : questions.slice(0, limit) };

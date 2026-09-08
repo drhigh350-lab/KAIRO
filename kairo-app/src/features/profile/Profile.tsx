@@ -129,15 +129,28 @@ export function Profile() {
               </div>
               <span style={{ color: 'var(--dark-accent-blue)', fontSize: 12, fontWeight: 700 }}>{diagramPreview.total} available</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))', gap: 8, marginTop: 14, maxHeight: showAllDiagrams ? 620 : 170, overflowY: 'auto' }}>
-              {diagramPreview.questions.slice(0, showAllDiagrams ? diagramPreview.questions.length : 6).map((question) => (
-                <div key={question.id} style={{ borderRadius: 8, overflow: 'hidden', background: '#fff', border: '1px solid var(--dark-border)' }}>
-                  <img src={question.imageUrl} alt={`${question.subject} diagram question`} loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = 'none'; }} style={{ display: 'block', width: '100%', height: 76, objectFit: 'contain' }} />
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14, maxHeight: showAllDiagrams ? 760 : 420, overflowY: 'auto' }}>
+              {diagramPreview.questions.slice(0, showAllDiagrams ? diagramPreview.questions.length : 6).map((question, index) => (
+                <article key={question.id} style={{ borderRadius: 10, overflow: 'hidden', background: 'var(--dark-bg-elevated)', border: '1px solid var(--dark-border)' }}>
+                  <div style={{ padding: '11px 12px 8px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--dark-accent-blue)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{index + 1}. {question.subject}{question.topic ? ` · ${question.topic}` : ''}</div>
+                    <div style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--dark-text-body)', marginTop: 7, fontWeight: 600 }}>{question.stem}</div>
+                  </div>
+                  <div style={{ background: '#fff', padding: 8 }}>
+                    <img src={question.imageUrl} alt="Diagram for this question" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = 'none'; }} style={{ display: 'block', width: '100%', maxHeight: 190, objectFit: 'contain' }} />
+                  </div>
+                  {question.options.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '9px 12px 12px' }}>
+                      {question.options.map((option) => (
+                        <div key={`${question.id}-${option.label}`} style={{ fontSize: 12.5, lineHeight: 1.4, color: 'var(--dark-text-muted)' }}><strong style={{ color: 'var(--dark-text-body)' }}>{option.label}.</strong> {option.text}</div>
+                      ))}
+                    </div>
+                  )}
+                </article>
               ))}
             </div>
             {diagramPreview.total > 6 && <button type="button" onClick={() => setShowAllDiagrams((value) => !value)} style={{ marginTop: 12, border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-pill)', padding: '9px 14px', background: 'transparent', color: 'var(--dark-accent-blue)', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>{showAllDiagrams ? 'Show fewer diagrams' : `View all ${diagramPreview.total} diagrams`}</button>}
-            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', lineHeight: 1.45, marginTop: 12 }}>These diagrams will also appear during your normal practice sessions.</div>
+            <div style={{ fontSize: 12, color: 'var(--dark-text-muted)', lineHeight: 1.45, marginTop: 12 }}>Each preview now includes the complete question, answer choices, and its diagram.</div>
           </Card>
         </div>
       )}
