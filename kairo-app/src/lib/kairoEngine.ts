@@ -212,6 +212,7 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
   const kairo = createEngine('');
   await kairo.init();
   await kairo.connectSupabase(supabase, { email, password });
+  await purgeDeletedEmptyDiagramCache(kairo);
   await kairo.sync.sync();
   return kairo;
 }
@@ -251,6 +252,7 @@ export async function restoreSession(): Promise<boolean> {
       await kairo.init();
       // No email/password — connectSupabase() reuses the session getSession() already restored.
       await kairo.connectSupabase(supabase, {});
+      await purgeDeletedEmptyDiagramCache(kairo);
       // The profile is already hydrated at this point — a sync hiccup
       // right after a successful reconnect shouldn't undo it, so this
       // runs in the background rather than gating the restore's result.
@@ -286,6 +288,20 @@ function isAuthRejection(err: unknown): boolean {
   if (status === 401 || status === 403) return true;
   const message = describeError(err).toLowerCase();
   return message.includes('jwt') || message.includes('does not exist') || message.includes('not authenticated') || (message.includes('invalid') && message.includes('token'));
+}
+
+/** Remove the 50 empty-image questions deleted from Supabase from this browser's offline mirror. */
+async function purgeDeletedEmptyDiagramCache(kairo: Engine): Promise<void> {
+  const deletedIds = new Set(Array.from({ length: 50 }, (_, index) => `use_of_english_${2125 + index}`));
+  try {
+    const cachedQuestions = await kairo.store.getAll('queue');
+    await Promise.all(cachedQuestions
+      .filter((question: Engine) => deletedIds.has(String(question.queueId || question.id || question.questionId)))
+      .map((question: Engine) => kairo.store.delete('queue', question.queueId || question.id || question.questionId)));
+    await kairo.clearPrefetchedQueues?.();
+  } catch {
+    // Cache cleanup is best-effort and must never block authentication.
+  }
 }
 
 /**
@@ -356,6 +372,7 @@ export async function connectGoogleAccount(): Promise<GoogleSignInResult> {
   const kairo = createEngine(googleName);
   await kairo.init();
   const remoteProfile = await kairo.connectSupabase(supabase, {});
+  await purgeDeletedEmptyDiagramCache(kairo);
   await kairo.sync.sync();
   return { isNewStudent: remoteProfile.isNewStudent, name: remoteProfile.name || googleName };
 }
