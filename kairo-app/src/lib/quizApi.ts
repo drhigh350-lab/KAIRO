@@ -183,6 +183,7 @@ export interface MyQuiz {
   shareSlug: string | null;
   attemptCount: number;
   likeCount: number;
+  questionCount: number;
 }
 
 export async function getMyQuizzes(): Promise<MyQuiz[]> {
@@ -194,10 +195,17 @@ export async function getMyQuizzes(): Promise<MyQuiz[]> {
     .eq('creator_id', studentId)
     .order('created_at', { ascending: false });
   if (error) throw error;
+  const quizIds = (data || []).map((row) => row.id);
+  const { data: links } = quizIds.length
+    ? await supabase.schema('kairo').from('quiz_questions').select('quiz_id').in('quiz_id', quizIds)
+    : { data: [] as { quiz_id: string }[] };
+  const questionCounts = new Map<string, number>();
+  for (const link of links || []) questionCounts.set(link.quiz_id, (questionCounts.get(link.quiz_id) || 0) + 1);
   return (data || []).map((row) => ({
     id: row.id, title: row.title, subject: row.subject, status: row.status,
     moderationNotes: row.moderation_notes, shareSlug: row.share_slug,
     attemptCount: row.attempt_count, likeCount: row.like_count,
+    questionCount: questionCounts.get(row.id) || 0,
   }));
 }
 

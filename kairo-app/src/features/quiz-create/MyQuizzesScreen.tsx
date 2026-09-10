@@ -90,7 +90,7 @@ export function MyQuizzesScreen() {
               <div key={q.id} style={{ padding: 16, borderRadius: 'var(--radius-lg)', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: 'var(--dark-text-faint)' }}>{q.subject}</div>
+                    <div style={{ fontSize: 11, color: 'var(--dark-text-faint)' }}>{q.subject} · {q.questionCount} question{q.questionCount === 1 ? '' : 's'}</div>
                     <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--dark-text-heading)', marginTop: 2 }}>{q.title}</div>
                   </div>
                   <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: statusColor(q.status), padding: '3px 8px', borderRadius: 'var(--radius-pill)', background: `${statusColor(q.status)}22`, flexShrink: 0 }}>
@@ -123,7 +123,7 @@ export function MyQuizzesScreen() {
                       disabled={busyId === q.id}
                       style={{ padding: '8px 14px', borderRadius: 'var(--radius-pill)', border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: 'var(--arena-gold)', color: '#1a1200', opacity: busyId === q.id ? 0.5 : 1 }}
                     >
-                      {busyId === q.id ? 'Creating…' : 'Create Challenge'}
+                      {busyId === q.id ? 'Creating…' : 'Create Arena match'}
                     </button>
                   </div>
                 )}

@@ -28,6 +28,7 @@ export interface DbChallenge {
   subject: string | null;
   difficulty: string | null;
   question_ids: string[];
+  community_question_ids?: string[];
   scoring_formula: 'accuracy' | 'speed' | 'hybrid';
   starts_at: string;
   ends_at: string;
@@ -192,7 +193,7 @@ export function mapDbChallenge(db: DbChallenge): Challenge {
     difficulty: db.difficulty,
     status,
     timingLabel: timingLabel(status, db.starts_at, db.ends_at),
-    questionCount: db.question_ids?.length || 0,
+    questionCount: (db.question_ids?.length || 0) + (db.community_question_ids?.length || 0),
     questionIds: db.question_ids || [],
     scoringFormula: db.scoring_formula,
     accent: mapAccent(db.type),

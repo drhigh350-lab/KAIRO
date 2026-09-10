@@ -4,7 +4,7 @@ import { ScreenHeader } from '../learning/shared';
 import { ArenaTabs, ArenaBottomSpace } from '../challenges/ArenaTabs';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getArenaHomeSummary, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
+import { getArenaHomeSummary, getDailyArenaChallenge, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
 
 function activityLine(item: RecentActivityItem): string {
   const who = item.studentName ?? 'A Kairo student';
@@ -34,7 +34,7 @@ export function ArenaHomeScreen() {
   useEffect(() => {
     Promise.all([
       getArenaHomeSummary(),
-      listChallenges().then((rows) => rows.map(mapDbChallenge).find((c) => c.status === 'live') || null),
+      Promise.all([getDailyArenaChallenge(), listChallenges()]).then(([daily, rows]) => rows.map(mapDbChallenge).find((c) => c.id === daily?.id) || null),
       getTrendingChallenges(5),
       getRecentActivity(8),
     ])
@@ -71,7 +71,7 @@ export function ArenaHomeScreen() {
                 >
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--arena-gold)', letterSpacing: '.03em' }}>{today.theme}</div>
                   <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 4, fontFamily: 'var(--font-heading)' }}>{today.title}</div>
-                  <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{today.questionCount} questions · {today.timingLabel}</div>
+                  <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{today.questionCount} questions · 2 diagram questions · {today.timingLabel}</div>
                 </button>
               ) : (
                 <EmptyRow text="No live Arena match right now — check back soon." />

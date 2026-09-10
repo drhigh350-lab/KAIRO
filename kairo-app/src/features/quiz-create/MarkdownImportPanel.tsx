@@ -85,6 +85,14 @@ export function MarkdownImportPanel({ defaultSubject, onImported }: Props) {
         refs.push({ source: 'community', id: created.id, stem: created.stem });
       }
       onImported(refs);
+      setContent('');
+      setFileName('');
+      try {
+        sessionStorage.removeItem('kairo.arena.markdown_draft');
+        sessionStorage.removeItem('kairo.arena.markdown_filename');
+      } catch {
+        // Best-effort cleanup only.
+      }
       setMessage(`${refs.length} question${refs.length === 1 ? '' : 's'} submitted for moderation and added to this quiz.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not submit the imported questions.');

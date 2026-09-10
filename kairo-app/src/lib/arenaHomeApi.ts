@@ -18,6 +18,14 @@ export interface ArenaHomeSummary {
   arenaWinRate: number;
 }
 
+export async function getDailyArenaChallenge(): Promise<{ id: string } | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('get_or_create_daily_arena');
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row?.id ? { id: row.id } : null;
+}
+
 export async function getArenaHomeSummary(): Promise<ArenaHomeSummary | null> {
   const studentId = getCurrentStudentId();
   if (!studentId) return null;
