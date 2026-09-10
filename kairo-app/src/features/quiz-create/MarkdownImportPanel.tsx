@@ -13,7 +13,14 @@ export function MarkdownImportPanel({ defaultSubject, onImported }: Props) {
   const [fileName, setFileName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const parsed = useMemo(() => parseArenaMarkdown(content), [content]);
+  const parsed = useMemo(() => {
+    if (!content.trim()) return [];
+    try {
+      return parseArenaMarkdown(content);
+    } catch {
+      return [{ row: 1, subject: defaultSubject, topic: '', stem: '', options: [], explanation: '', distractorExplanations: {}, hint: '', imageUrl: '', difficulty: 'medium' as const, warnings: [], errors: ['KAIRO could not read this Markdown file. Check the template and try again.'] }];
+    }
+  }, [content, defaultSubject]);
   const valid = parsed.filter((q) => q.errors.length === 0);
 
   function downloadTemplate() {
@@ -28,9 +35,24 @@ export function MarkdownImportPanel({ defaultSubject, onImported }: Props) {
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
-    setFileName(file.name);
-    setContent(await file.text());
     setMessage(null);
+    if (!file.name.toLowerCase().endsWith('.md') && file.type !== 'text/markdown' && file.type !== 'text/plain') {
+      setFileName('');
+      setMessage('Please choose a Markdown file ending in .md.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setFileName('');
+      setMessage('This file is larger than 2 MB. Split it into smaller Markdown files and try again.');
+      return;
+    }
+    try {
+      setFileName(file.name);
+      setContent(await file.text());
+    } catch {
+      setFileName('');
+      setMessage('KAIRO could not read that file. Try saving it as UTF-8 Markdown.');
+    }
   }
 
   async function submitQuestions() {

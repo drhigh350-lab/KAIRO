@@ -1,14 +1,44 @@
-import { StrictMode } from 'react';
+import { Component, StrictMode, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './styles/global.css';
 import App from './App';
 
+class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(_error: unknown, _info: ErrorInfo) {
+    // Keep the boundary intentionally quiet in production; the user gets a
+    // recovery action instead of a blank document.
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24, background: '#071426', color: '#fff', fontFamily: 'system-ui, sans-serif', textAlign: 'center' }}>
+          <div>
+            <h1 style={{ fontSize: 22, margin: '0 0 10px' }}>KAIRO needs a refresh</h1>
+            <p style={{ color: '#b7c8d8', lineHeight: 1.5, maxWidth: 360 }}>That screen could not be loaded. Your draft text is still safe to paste again.</p>
+            <button type="button" onClick={() => window.location.reload()} style={{ border: 0, borderRadius: 999, padding: '12px 20px', background: '#e0a039', color: '#1a1200', fontWeight: 800, cursor: 'pointer' }}>Reload KAIRO</button>
+          </div>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AppErrorBoundary>
   </StrictMode>,
 );
 
