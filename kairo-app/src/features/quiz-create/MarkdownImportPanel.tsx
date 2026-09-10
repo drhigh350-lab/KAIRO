@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Card } from '../../components';
 import { createCommunityQuestion, type QuestionRef } from '../../lib/quizApi';
 import { ARENA_MARKDOWN_TEMPLATE, parseArenaMarkdown, type ParsedMarkdownQuestion } from './markdownImport';
@@ -9,8 +9,8 @@ interface Props {
 }
 
 export function MarkdownImportPanel({ defaultSubject, onImported }: Props) {
-  const [content, setContent] = useState('');
-  const [fileName, setFileName] = useState('');
+  const [content, setContent] = useState(() => { try { return sessionStorage.getItem('kairo.arena.markdown_draft') || ''; } catch { return ''; } });
+  const [fileName, setFileName] = useState(() => { try { return sessionStorage.getItem('kairo.arena.markdown_filename') || ''; } catch { return ''; } });
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const parsed = useMemo(() => {
@@ -22,6 +22,15 @@ export function MarkdownImportPanel({ defaultSubject, onImported }: Props) {
     }
   }, [content, defaultSubject]);
   const valid = parsed.filter((q) => q.errors.length === 0);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('kairo.arena.markdown_draft', content);
+      sessionStorage.setItem('kairo.arena.markdown_filename', fileName);
+    } catch {
+      // Draft persistence is best-effort on private browsing/storage-limited devices.
+    }
+  }, [content, fileName]);
 
   function downloadTemplate() {
     const blob = new Blob([ARENA_MARKDOWN_TEMPLATE], { type: 'text/markdown;charset=utf-8' });

@@ -46,12 +46,10 @@ createRoot(document.getElementById('root')!).render(
 // an active service worker) and for Web Push delivery — see public/sw.js.
 // Registered after the initial render rather than gating it.
 if ('serviceWorker' in navigator) {
-  let refreshing = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return;
-    refreshing = true;
-    window.location.reload();
-  });
+  // The service worker is only used for installability and push. Do not
+  // force a document reload when Chrome changes controllers: returning from
+  // the Android file picker can coincide with that event, which would wipe
+  // the in-memory quiz-import draft and look like the app restarted.
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js?v=kairo-profile-preview-20260908', { updateViaCache: 'none' }).then((registration) => {
       registration.update().catch(() => {
