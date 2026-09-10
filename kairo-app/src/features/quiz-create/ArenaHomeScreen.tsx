@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../learning/shared';
+import { ArenaTabs, ArenaBottomSpace } from '../challenges/ArenaTabs';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
 import { getArenaHomeSummary, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
@@ -121,6 +122,8 @@ export function ArenaHomeScreen() {
           </>
         )}
       </div>
+      <ArenaBottomSpace />
+      <ArenaTabs />
     </div>
   );
 }
