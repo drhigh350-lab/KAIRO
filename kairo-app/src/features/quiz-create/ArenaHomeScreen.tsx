@@ -71,7 +71,7 @@ export function ArenaHomeScreen() {
                 >
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--arena-gold)', letterSpacing: '.03em' }}>{today.theme}</div>
                   <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 4, fontFamily: 'var(--font-heading)' }}>{today.title}</div>
-                  <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{today.questionCount} questions · 2 diagram questions · {today.timingLabel}</div>
+                  <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{today.questionCount} questions · {today.timingLabel}</div>
                 </button>
               ) : (
                 <EmptyRow text="No live Arena match right now — check back soon." />

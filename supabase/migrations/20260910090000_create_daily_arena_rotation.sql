@@ -1,5 +1,6 @@
 -- KAIRO Arena: one server-created Daily Arena rotation per UTC day.
--- Each rotation contains 10 live official-bank questions: 2 with diagrams and 8 without.
+-- Each rotation contains ten live official-bank questions across Biology,
+-- Chemistry, Physics, and Mathematics.
 create or replace function kairo.get_or_create_daily_arena()
 returns kairo.challenges
 language plpgsql
@@ -15,20 +16,15 @@ begin
   select * into v_challenge from kairo.challenges where id = v_id;
   if v_challenge.id is not null then return v_challenge; end if;
 
-  with diagrams as (
-    select id, 1 as bucket
+  with selected as (
+    select id
     from kairo.questions
-    where lifecycle_state = 'live' and image_url is not null and btrim(image_url) <> ''
-    order by random() limit 2
-  ), standard as (
-    select id, 2 as bucket
-    from kairo.questions
-    where lifecycle_state = 'live' and (image_url is null or btrim(image_url) = '')
-    order by random() limit 8
-  ), selected as (
-    select * from diagrams union all select * from standard
+    where lifecycle_state = 'live'
+      and subject in ('Biology', 'Chemistry', 'Physics', 'Mathematics')
+    order by random()
+    limit 10
   )
-  select array_agg(id order by bucket, random()) into v_ids from selected;
+  select array_agg(id order by random()) into v_ids from selected;
 
   if coalesce(array_length(v_ids, 1), 0) < 10 then
     raise exception 'not enough live questions to build the Daily Arena';
@@ -41,7 +37,7 @@ begin
   ) values (
     v_id, 'daily', 'KAIRO Daily Arena', 'Daily Arena', v_ids, '{}', 'hybrid',
     v_day at time zone 'utc', (v_day + 1) at time zone 'utc', true, true, 'live', null,
-    'public', true, 'Ten questions every day — including two diagram questions from the KAIRO bank.',
+    'public', true, 'Ten questions refreshed daily from the KAIRO question bank.',
     null, '{}', 'mixed', true
   ) on conflict (id) do nothing;
 
@@ -51,3 +47,7 @@ end;
 $$;
 
 grant execute on function kairo.get_or_create_daily_arena() to anon, authenticated;
+
+update kairo.challenges
+set description = 'Ten questions refreshed daily from the KAIRO question bank.'
+where id = 'daily_arena_' || to_char((now() at time zone 'utc')::date, 'YYYYMMDD');

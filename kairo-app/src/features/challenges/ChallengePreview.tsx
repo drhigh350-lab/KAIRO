@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card } from '../../components';
 import { ScreenHeader } from '../learning/shared';
-import type { Challenge, ChallengeQuestion } from './data';
-import { getChallengeQuestions, getChallengeLeaderboard, getCompletedCount } from '../../lib/challengesApi';
+import type { Challenge } from './data';
+import { getChallengeLeaderboard, getCompletedCount } from '../../lib/challengesApi';
 import type { ChallengeLeaderboardRow } from '../../lib/challengesApi';
 
 export interface ChallengePreviewProps {
@@ -23,18 +23,12 @@ const scoringLabel: Record<Challenge['scoringFormula'], string> = { accuracy: 'A
 export function ChallengePreview({ challenge, challengeId, alreadyCompleted, busy, onBack, onJoin, onViewResult, onGoToCbt, error }: ChallengePreviewProps) {
   const isMockUtme = challenge.type === 'mock_utme';
   const [completedCount, setCompletedCount] = useState<number | null>(null);
-  const [diagramQuestions, setDiagramQuestions] = useState<ChallengeQuestion[]>([]);
   const [leaderboard, setLeaderboard] = useState<ChallengeLeaderboardRow[]>([]);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     getCompletedCount(challengeId).then(setCompletedCount).catch(() => setCompletedCount(null));
     getChallengeLeaderboard(challengeId, 5).then(setLeaderboard).catch(() => setLeaderboard([]));
-    if (challenge.questionCount > 0) {
-      getChallengeQuestions(challengeId)
-        .then((questions) => setDiagramQuestions(questions.filter((question) => !!question.imageUrl)))
-        .catch(() => setDiagramQuestions([]));
-    }
   }, [challengeId, challenge.questionCount]);
 
   const live = challenge.status === 'live';
@@ -64,21 +58,6 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
           <ArenaStat label="Players completed" value={completedCount == null ? '—' : completedCount.toLocaleString()} />
           <ArenaStat label="Format" value={isMockUtme ? 'CBT simulation' : 'Arena match'} />
         </div>
-
-        {diagramQuestions.length > 0 && (
-          <Card style={{ background: 'var(--arena-blue-surface)', border: '1px solid rgba(201,162,39,.3)', borderRadius: 14, boxShadow: 'none', padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <div style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>Diagram questions included</div>
-              <span style={{ color: 'var(--arena-gold)', fontSize: 12, fontWeight: 800 }}>{diagramQuestions.length}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
-              {diagramQuestions.slice(0, 3).map((question) => (
-                <img key={question.id} src={question.imageUrl || undefined} alt="Diagram question preview" loading="lazy" decoding="async" style={{ width: '100%', height: 72, objectFit: 'contain', borderRadius: 8, background: '#fff', padding: 4 }} />
-              ))}
-            </div>
-            <div style={{ color: 'var(--arena-blue-soft)', fontSize: 11, marginTop: 10 }}>The full diagram set will appear as you move through the challenge.</div>
-          </Card>
-        )}
 
         <Card style={{ background: 'var(--arena-blue-surface)', border: '1px solid rgba(152,176,196,.14)', borderRadius: 14, boxShadow: 'none', padding: 16 }}>
           <div style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>How Arena works</div>
