@@ -4,8 +4,8 @@ export function ArenaTabs() {
   const navigate = useNavigate();
   const location = useLocation();
   const tabs = [
-    { label: 'Home', icon: '⌂', active: location.pathname === '/home', onClick: () => navigate('/home') },
-    { label: 'Discover', icon: '◈', active: location.pathname.startsWith('/challenges'), onClick: () => navigate('/challenges') },
+    { label: 'Home', icon: '⌂', active: location.pathname === '/arena', onClick: () => navigate('/arena') },
+    { label: 'Discover', icon: '◈', active: location.pathname.startsWith('/discover'), onClick: () => navigate('/discover') },
     { label: 'Trophies', icon: '♛', active: location.pathname === '/profile', onClick: () => navigate('/profile') },
   ];
   return (

@@ -220,6 +220,19 @@ export function HomeDashboard() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
           </Card>
 
+          <Card onClick={() => navigate('/quiz-create/my-quizzes')} style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(201,162,39,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--arena-gold)" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--dark-text-heading)' }}>Create a Quiz</div>
+              <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 2, lineHeight: 1.4 }}>
+                Build a quiz from the official bank or your own questions.
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
+          </Card>
+
           {latestBadge && (
             <div style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--dark-accent-blue)" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z" /></svg>

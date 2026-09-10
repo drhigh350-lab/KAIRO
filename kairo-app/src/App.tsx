@@ -19,6 +19,10 @@ import { EditProfile } from './features/profile/EditProfile';
 import { NotificationSettings } from './features/profile/NotificationSettings';
 import { Leaderboard } from './features/profile/Leaderboard';
 import { ChallengesFlow } from './features/challenges/ChallengesFlow';
+import { CreateQuizFlow } from './features/quiz-create/CreateQuizFlow';
+import { MyQuizzesScreen } from './features/quiz-create/MyQuizzesScreen';
+import { DiscoverScreen } from './features/quiz-create/DiscoverScreen';
+import { ArenaHomeScreen } from './features/quiz-create/ArenaHomeScreen';
 import { LearnLesson } from './features/learn/LearnLesson';
 import { LearnHome } from './features/learn/LearnHome';
 import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
@@ -37,7 +41,7 @@ import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecomme
 // out"-looking screen even though their Supabase auth session was still
 // sitting in localStorage the whole time — this is what read as "my
 // progress reset" / "I have to sign in again" on every refresh.
-const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/review', '/profile', '/leaderboard', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior'];
+const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/review', '/profile', '/leaderboard', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior', '/quiz-create', '/discover', '/arena'];
 
 // Real multi-column desktop layouts exist only for these browsing/hub
 // screens (see AppShell's `wide` prop). Exact matches, not prefixes:
@@ -159,6 +163,10 @@ export default function App() {
                 of only ever living nested under /profile. */}
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/challenges/*" element={<ChallengesFlow />} />
+            <Route path="/quiz-create" element={<CreateQuizFlow />} />
+            <Route path="/quiz-create/my-quizzes" element={<MyQuizzesScreen />} />
+            <Route path="/discover" element={<DiscoverScreen />} />
+            <Route path="/arena" element={<ArenaHomeScreen />} />
             <Route path="/learn" element={<LearnHome />} />
             <Route path="/learn/:conceptId" element={<LearnLesson />} />
             <Route path="/rapid-fire" element={<RapidFireFlow />} />
