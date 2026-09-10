@@ -10,7 +10,7 @@ function activityLine(item: RecentActivityItem): string {
   const who = item.studentName ?? 'A Kairo student';
   if (item.eventType === 'challenge_won') {
     const score = item.payload.score;
-    return `${who} won a challenge${typeof score === 'number' ? ` scoring ${score}` : ''}`;
+    return `${who} won an Arena match${typeof score === 'number' ? ` scoring ${score}` : ''}`;
   }
   return `${who} was active`;
 }
@@ -60,7 +60,7 @@ export function ArenaHomeScreen() {
             )}
 
             <section style={{ marginBottom: 24 }}>
-              <SectionLabel>TODAY'S CHALLENGE</SectionLabel>
+              <SectionLabel>TODAY IN ARENA</SectionLabel>
               {today ? (
                 <button
                   onClick={() => navigate(`/challenges/${today.id}`)}
@@ -74,7 +74,7 @@ export function ArenaHomeScreen() {
                   <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{today.questionCount} questions · {today.timingLabel}</div>
                 </button>
               ) : (
-                <EmptyRow text="No live challenge right now — check back soon." />
+                <EmptyRow text="No live Arena match right now — check back soon." />
               )}
             </section>
 

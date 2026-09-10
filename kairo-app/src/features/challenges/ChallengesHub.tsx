@@ -17,7 +17,7 @@ async function shareChallenge(challenge: Challenge) {
   const text = `Come compete with me on Kairo — "${challenge.title}" is ${challenge.status === 'live' ? 'live now' : 'starting soon'}.`;
   if (navigator.share) {
     try {
-      await navigator.share({ title: 'Kairo Challenge', text, url });
+      await navigator.share({ title: 'KAIRO Arena', text, url });
     } catch {
       // Share sheet dismissed — not an error worth surfacing.
     }
@@ -77,7 +77,7 @@ function ChallengeCard({ challenge, onSelect, onShared }: { challenge: Challenge
             color: onGradient ? '#fff' : 'var(--dark-text-heading)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
           }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.5l6.8-3.9M8.6 13.5l6.8 3.9" /></svg>
-            Challenge Friends
+            Invite to Arena
           </button>
         )}
       </div>
@@ -103,11 +103,11 @@ export function ChallengesHub({ loading, challenges, onBack, onSelect }: Challen
           Invite link copied — share it with a friend.
         </div>
       )}
-      <ScreenHeader onBack={onBack} title="Challenges" right={streak?.momentum ? <StreakBadge dark days={streak.momentum} /> : undefined} tone="dark" />
+      <ScreenHeader onBack={onBack} title="Arena" right={streak?.momentum ? <StreakBadge dark days={streak.momentum} /> : undefined} tone="dark" />
 
       <div style={{ padding: '0 20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 22 }}>
         {loading && (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40 }}>Loading challenges…</div>
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40 }}>Loading Arena…</div>
         )}
 
         {!loading && challenges.length === 0 && (

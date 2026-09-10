@@ -6,9 +6,10 @@ import { createQuiz, REAL_SUBJECTS, type QuestionRef } from '../../lib/quizApi';
 import { OfficialQuestionPicker } from './OfficialQuestionPicker';
 import { WriteQuestionForm } from './WriteQuestionForm';
 import { MyQuestionsPicker } from './MyQuestionsPicker';
+import { MarkdownImportPanel } from './MarkdownImportPanel';
 
 type Step = 1 | 2 | 3;
-type QuestionTab = 'official' | 'write' | 'mine';
+type QuestionTab = 'official' | 'write' | 'mine' | 'import';
 
 const STEP_LABELS: Record<Step, string> = { 1: 'Basics', 2: 'Questions', 3: 'Review' };
 const DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed'] as const;
@@ -133,6 +134,7 @@ export function CreateQuizFlow() {
               <button onClick={() => setQuestionTab('official')} style={{ ...pillStyle(questionTab === 'official'), flex: 1 }}>Official Bank</button>
               <button onClick={() => setQuestionTab('mine')} style={{ ...pillStyle(questionTab === 'mine'), flex: 1 }}>My Questions</button>
               <button onClick={() => setQuestionTab('write')} style={{ ...pillStyle(questionTab === 'write'), flex: 1 }}>Write New</button>
+              <button onClick={() => setQuestionTab('import')} style={{ ...pillStyle(questionTab === 'import'), flex: 1 }}>Import MD</button>
             </div>
 
             {questionTab === 'official' && <OfficialQuestionPicker subject={subject} selected={selected} onToggle={toggleQuestion} />}
@@ -142,6 +144,15 @@ export function CreateQuizFlow() {
                 defaultSubject={subject}
                 onCreated={(ref) => {
                   toggleQuestion(ref);
+                  setQuestionTab('mine');
+                }}
+              />
+            )}
+            {questionTab === 'import' && (
+              <MarkdownImportPanel
+                defaultSubject={subject}
+                onImported={(refs) => {
+                  setSelected((prev) => [...prev, ...refs.filter((ref) => !prev.some((item) => item.id === ref.id))]);
                   setQuestionTab('mine');
                 }}
               />

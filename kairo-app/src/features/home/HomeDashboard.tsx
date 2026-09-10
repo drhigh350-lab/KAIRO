@@ -212,9 +212,9 @@ export function HomeDashboard() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" /></svg>
             </div>
             <div style={{ flex: 1 }}>
-              <div role="group" aria-label="Arena mode" onClick={(event) => event.stopPropagation()} style={{ display: 'inline-flex', gap: 3, padding: 3, borderRadius: 'var(--radius-pill)', background: 'var(--dark-bg-canvas)', border: '1px solid var(--dark-border)' }}>
-                <button type="button" aria-pressed="false" onClick={() => navigate('/challenges')} style={{ border: 0, borderRadius: 'var(--radius-pill)', padding: '5px 10px', background: 'transparent', color: 'var(--dark-text-muted)', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Challenges</button>
-                <button type="button" aria-pressed="true" onClick={() => navigate('/arena')} style={{ border: 0, borderRadius: 'var(--radius-pill)', padding: '5px 10px', background: 'var(--dark-accent-blue)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Arena</button>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--dark-accent-blue)', fontSize: 13, fontWeight: 800, letterSpacing: '.02em' }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--arena-gold)', boxShadow: '0 0 0 4px rgba(201,162,39,.12)' }} />
+                KAIRO ARENA
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 7, lineHeight: 1.4 }}>
                 {liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.'}
