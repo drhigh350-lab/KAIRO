@@ -7,7 +7,7 @@ import { ChallengeAttempt } from './ChallengeAttempt';
 import { ChallengeResults } from './ChallengeResults';
 import type { Challenge, ChallengeQuestion } from './data';
 import {
-  listChallenges, getMyAttempt, joinChallenge, joinChallengeAsGuest, getGuestAttempt, startGuestSession, getGuestToken, getCurrentStudentId, getChallengeQuestions, submitChallengeAttempt, submitGuestChallengeAttempt, trackArenaEvent,
+  listChallenges, getPublicChallenge, getMyAttempt, joinChallenge, joinChallengeAsGuest, getGuestAttempt, startGuestSession, getGuestToken, getCurrentStudentId, getChallengeQuestions, submitChallengeAttempt, submitGuestChallengeAttempt, trackArenaEvent,
   mapDbChallenge, type DbChallenge, type DbChallengeAttempt, type SubmitAttemptResult,
 } from '../../lib/challengesApi';
 import { useBackIntercept } from '../../lib/useBackIntercept';
@@ -31,17 +31,26 @@ export function ChallengesFlow() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    const shared = location.pathname.match(/^\/arena\/challenge\/([^/]+)$/);
+    if (shared) {
+      getPublicChallenge(shared[1])
+        .then((challenge) => {
+          if (!challenge) throw new Error('This Arena match is unavailable, expired, or the link is incorrect.');
+          setDbChallenges([challenge]);
+          selectChallenge(shared[1], challenge);
+        })
+        .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load this Arena match.'));
+      return;
+    }
     listChallenges()
       .then(setDbChallenges)
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load challenges.'));
   }, []);
 
-  // Deep link from a "Challenge a Friend" share (ChallengesHub) —
-  // /challenges/<id> jumps straight to that challenge's preview instead of
-  // leaving a friend who followed the link stuck picking it out of the hub.
+  // Authenticated /challenges/<id> links still resolve from the hub list.
   useEffect(() => {
     if (!dbChallenges || screen !== 'hub') return;
-    const match = location.pathname.match(/^\/(?:challenges|arena\/challenge)\/([^/]+)$/);
+    const match = location.pathname.match(/^\/challenges\/([^/]+)$/);
     if (match) selectChallenge(match[1]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbChallenges]);
@@ -76,8 +85,8 @@ export function ChallengesFlow() {
   const challenges: Challenge[] = (dbChallenges || []).map(mapDbChallenge);
   const selected: Challenge | null = selectedDb ? mapDbChallenge(selectedDb) : null;
 
-  async function selectChallenge(id: string) {
-    const db = (dbChallenges || []).find((c) => c.id === id);
+  async function selectChallenge(id: string, directDb?: DbChallenge) {
+    const db = directDb || (dbChallenges || []).find((c) => c.id === id);
     if (!db) { setLoadError('This Arena match is unavailable, expired, or the link is incorrect.'); return; }
     setSelectedDb(db);
     trackArenaEvent('arena_viewed', { challenge_id: id }).catch(() => {});

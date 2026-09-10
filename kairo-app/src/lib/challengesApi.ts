@@ -151,6 +151,16 @@ export async function listChallenges(): Promise<DbChallenge[]> {
   return data || [];
 }
 
+export async function getPublicChallenge(challengeId: string): Promise<DbChallenge | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('get_public_challenge', {
+    p_challenge_id: challengeId,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row || null;
+}
+
 function mapStatus(status: DbChallenge['status']): ChallengeStatus {
   if (status === 'live') return 'live';
   if (status === 'scheduled') return 'upcoming';
