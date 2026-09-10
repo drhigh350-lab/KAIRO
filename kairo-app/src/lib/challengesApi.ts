@@ -65,6 +65,62 @@ export function getCurrentStudentId(): string | null {
   return id && id !== 'pending' ? id : null;
 }
 const currentStudentId = getCurrentStudentId;
+const GUEST_TOKEN_KEY = 'kairo.arena.guest_token';
+
+export function getGuestToken(): string | null {
+  try { return localStorage.getItem(GUEST_TOKEN_KEY); } catch { return null; }
+}
+
+export async function startGuestSession(nickname: string): Promise<{ token: string; studentId: string }> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('start_guest_session', { p_nickname: nickname.trim() });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.token || !row?.student_id) throw new Error('Could not start a guest Arena session.');
+  localStorage.setItem(GUEST_TOKEN_KEY, row.token);
+  return { token: row.token, studentId: row.student_id };
+}
+
+async function requireGuestToken(): Promise<string> {
+  const token = getGuestToken();
+  if (!token) throw new Error('Start a guest Arena session first.');
+  return token;
+}
+
+export async function getGuestAttempt(attemptId: string): Promise<DbChallengeAttempt | null> {
+  const token = getGuestToken();
+  if (!token) return null;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('guest_get_attempt', { p_token: token, p_attempt_id: attemptId });
+  if (error) return null;
+  return data || null;
+}
+
+export async function joinChallengeAsGuest(challengeId: string): Promise<DbChallengeAttempt> {
+  const token = await requireGuestToken();
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('guest_join_challenge', { p_token: token, p_challenge_id: challengeId });
+  if (error) throw error;
+  const { data: attempt, error: attemptError } = await supabase.schema('kairo').rpc('guest_get_attempt', { p_token: token, p_attempt_id: data });
+  if (attemptError || !attempt) throw attemptError || new Error('Could not load the guest Arena attempt.');
+  return attempt;
+}
+
+export async function submitGuestChallengeAttempt({ attemptId, questionResults, timeTakenMs }: SubmitAttemptArgs): Promise<SubmitAttemptResult> {
+  const token = await requireGuestToken();
+  const supabase = getSupabase();
+  const { data, error } = await supabase.schema('kairo').rpc('guest_submit_attempt', {
+    p_token: token,
+    p_attempt_id: attemptId,
+    p_question_results: questionResults.map((r) => ({ question_id: r.questionId, selected_option: r.selectedOption, response_time_ms: r.responseTimeMs })),
+    p_time_taken_ms: timeTakenMs,
+  });
+  if (error) throw error;
+  const answerKey: Record<string, string> = {};
+  const { data: attemptRow } = await supabase.schema('kairo').rpc('guest_get_attempt', { p_token: token, p_attempt_id: attemptId });
+  for (const r of (attemptRow?.question_results as { question_id: string; correct_option: string }[]) || []) answerKey[r.question_id] = r.correct_option;
+  return { score: data.score, total: data.total, accuracyPct: data.accuracy_pct, timeTakenMs: data.time_taken_ms, rankInChallenge: data.rank_in_challenge, participantCount: data.participant_count, betterThanPct: data.better_than_pct, isWin: data.is_win, isFirstAttempt: data.is_first_attempt, attemptNumber: data.attempt_number, previousBestScore: data.previous_best_score, improvedBy: data.improved_by, answerKey };
+}
 
 export async function listChallenges(): Promise<DbChallenge[]> {
   const supabase = getSupabase();

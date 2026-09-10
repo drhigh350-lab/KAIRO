@@ -63,7 +63,7 @@ export function ArenaHomeScreen() {
               <SectionLabel>TODAY IN ARENA</SectionLabel>
               {today ? (
                 <button
-                  onClick={() => navigate(`/challenges/${today.id}`)}
+                  onClick={() => navigate(`/arena/challenge/${today.id}`)}
                   style={{
                     width: '100%', textAlign: 'left', padding: 16, borderRadius: 'var(--radius-lg)', cursor: 'pointer', fontFamily: 'inherit',
                     background: 'linear-gradient(135deg, rgba(201,162,39,0.15), rgba(201,162,39,0.04))', border: '1px solid rgba(201,162,39,0.35)',
@@ -87,7 +87,7 @@ export function ArenaHomeScreen() {
                   {trending.map((c, i) => (
                     <button
                       key={c.id}
-                      onClick={() => navigate(`/challenges/${c.id}`)}
+                      onClick={() => navigate(`/arena/challenge/${c.id}`)}
                       style={{
                         width: '100%', textAlign: 'left', padding: 12, borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'inherit',
                         background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', display: 'flex', alignItems: 'center', gap: 10,

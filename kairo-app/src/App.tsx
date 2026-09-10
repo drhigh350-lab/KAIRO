@@ -141,6 +141,8 @@ export default function App() {
               general-purpose auth gateway anymore (see OnboardingFlow's
               own doc comment). */}
           <Route path="/onboarding/*" element={<OnboardingFlow />} />
+          {/* Public Arena entry: guests can open a shared match link, create a temporary session, and play before registering. */}
+          <Route path="/arena/challenge/:challengeId" element={<ChallengesFlow />} />
 
           <Route element={<RequireOnboarded />}>
             <Route element={<AppTabs />}>

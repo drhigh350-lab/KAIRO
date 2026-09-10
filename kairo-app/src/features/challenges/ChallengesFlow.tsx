@@ -7,7 +7,7 @@ import { ChallengeAttempt } from './ChallengeAttempt';
 import { ChallengeResults } from './ChallengeResults';
 import type { Challenge, ChallengeQuestion } from './data';
 import {
-  listChallenges, getMyAttempt, joinChallenge, getChallengeQuestions, submitChallengeAttempt,
+  listChallenges, getMyAttempt, joinChallenge, joinChallengeAsGuest, getGuestAttempt, startGuestSession, getGuestToken, getCurrentStudentId, getChallengeQuestions, submitChallengeAttempt, submitGuestChallengeAttempt,
   mapDbChallenge, type DbChallenge, type DbChallengeAttempt, type SubmitAttemptResult,
 } from '../../lib/challengesApi';
 import { useBackIntercept } from '../../lib/useBackIntercept';
@@ -41,7 +41,7 @@ export function ChallengesFlow() {
   // leaving a friend who followed the link stuck picking it out of the hub.
   useEffect(() => {
     if (!dbChallenges || screen !== 'hub') return;
-    const match = location.pathname.match(/^\/challenges\/([^/]+)$/);
+    const match = location.pathname.match(/^\/(?:challenges|arena\/challenge)\/([^/]+)$/);
     if (match) selectChallenge(match[1]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbChallenges]);
@@ -87,7 +87,11 @@ export function ChallengesFlow() {
     go('preview');
     setBusy(true);
     try {
-      const attempt = await getMyAttempt(id);
+      const attempt = getCurrentStudentId() ? await getMyAttempt(id) : await (async () => {
+        const saved = localStorage.getItem('kairo.arena.guest_attempt_id');
+        const guestAttempt = saved ? await getGuestAttempt(saved) : null;
+        return guestAttempt?.challenge_id === id ? guestAttempt : null;
+      })();
       setMyAttempt(attempt);
     } catch {
       setMyAttempt(null);
@@ -100,12 +104,25 @@ export function ChallengesFlow() {
     if (!selectedDb) return;
     setBusy(true);
     try {
+      if (!getCurrentStudentId() && !getGuestToken()) {
+        const nickname = window.prompt('Choose a name for the Arena leaderboard');
+        if (!nickname?.trim()) throw new Error('A display name is required to enter Arena.');
+        await startGuestSession(nickname);
+      }
       // Unlimited replays: joinChallenge always creates a fresh attempt row
       // now (see join_arena_challenge) rather than reusing an in-progress
       // one — only the FIRST ever attempt at a challenge counts toward the
       // leaderboard (counts_toward_leaderboard, set server-side).
-      const attempt = myAttempt && !myAttempt.completed_at ? myAttempt : await joinChallenge(selectedDb.id);
+      const attempt = myAttempt && !myAttempt.completed_at ? myAttempt : getCurrentStudentId() ? await joinChallenge(selectedDb.id) : await joinChallengeAsGuest(selectedDb.id);
+      if (!getCurrentStudentId()) localStorage.setItem('kairo.arena.guest_attempt_id', attempt.id);
       const qs = await getChallengeQuestions(selectedDb.id);
+      const restoredAnswers: Record<number, number> = {};
+      const storedResults = (attempt.question_results as { question_id: string; selected_option?: string | null }[]) || [];
+      qs.forEach((q, index) => {
+        const stored = storedResults.find((row) => row.question_id === q.id);
+        if (stored?.selected_option) restoredAnswers[index] = stored.selected_option.toUpperCase().charCodeAt(0) - 65;
+      });
+      setAnswers(restoredAnswers);
       setAttemptId(attempt.id);
       setQuestions(qs);
       go('getReady');
@@ -167,7 +184,9 @@ export function ChallengesFlow() {
         selectedOption: finalAnswers[i] != null ? String.fromCharCode(65 + finalAnswers[i]) : '',
         responseTimeMs: 0, // per-question timing isn't tracked in this flow yet — total time is what's scored
       }));
-      const submitted = await submitChallengeAttempt({ attemptId, questionResults, timeTakenMs });
+      const submitted = getCurrentStudentId()
+        ? await submitChallengeAttempt({ attemptId, questionResults, timeTakenMs })
+        : await submitGuestChallengeAttempt({ attemptId, questionResults, timeTakenMs });
       setResult(submitted);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not submit this attempt.');
@@ -216,6 +235,7 @@ export function ChallengesFlow() {
         questions={questions}
         onFinish={handleFinish}
         onExit={toHub}
+        initialAnswers={answers}
       />
     );
   }

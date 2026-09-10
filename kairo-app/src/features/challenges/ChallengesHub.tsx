@@ -13,7 +13,7 @@ import { getStreakStatus } from '../../lib/kairoEngine';
  * challenge... framed as 'come compete' rather than 'look what I did'."
  */
 async function shareChallenge(challenge: Challenge) {
-  const url = `${window.location.origin}/challenges/${challenge.id}`;
+  const url = `${window.location.origin}/arena/challenge/${challenge.id}`;
   const text = `Come compete with me on Kairo — "${challenge.title}" is ${challenge.status === 'live' ? 'live now' : 'starting soon'}.`;
   if (navigator.share) {
     try {

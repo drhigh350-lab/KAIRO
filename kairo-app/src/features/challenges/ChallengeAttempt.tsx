@@ -8,6 +8,7 @@ export interface ChallengeAttemptProps {
   questions: ChallengeQuestion[];
   onFinish: (answers: Record<number, number>, timeTakenMs: number) => void;
   onExit: () => void;
+  initialAnswers?: Record<number, number>;
 }
 
 /**
@@ -19,10 +20,11 @@ export interface ChallengeAttemptProps {
  * whole attempt server-side. This was an explicit trade-off, not an
  * oversight: it closes a real answer-leak that existed before.
  */
-export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: ChallengeAttemptProps) {
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [selected, setSelected] = useState<number | null>(null);
+export function ChallengeAttempt({ challenge, questions, onFinish, onExit, initialAnswers = {} }: ChallengeAttemptProps) {
+  const firstUnanswered = Object.keys(initialAnswers).map(Number).length ? Math.min(questions.length - 1, Math.max(...Object.keys(initialAnswers).map(Number)) + 1) : 0;
+  const [index, setIndex] = useState(firstUnanswered);
+  const [answers, setAnswers] = useState<Record<number, number>>(initialAnswers);
+  const [selected, setSelected] = useState<number | null>(initialAnswers[firstUnanswered] ?? null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const startedAt = useRef(Date.now());
@@ -39,6 +41,7 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit }: Cha
     if (selected === null) return;
     const newAnswers = { ...answers, [index]: selected };
     setAnswers(newAnswers);
+    try { localStorage.setItem(`kairo.arena.answers.${challenge.id}`, JSON.stringify(newAnswers)); } catch { /* storage is optional */ }
     if (index + 1 >= total) {
       onFinish(newAnswers, Date.now() - startedAt.current);
     } else {

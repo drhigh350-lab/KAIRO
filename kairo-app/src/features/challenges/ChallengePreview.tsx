@@ -45,7 +45,7 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
       <div style={{ padding: '16px 20px 120px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="arena-top-card" style={{ padding: 18, borderRadius: 14, border: '1px solid rgba(201,162,39,.38)', background: 'linear-gradient(145deg, rgba(201,162,39,.15), rgba(9,71,110,.65))' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 11, color: 'var(--arena-gold)', fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>{live ? "Today's Challenge" : challenge.theme}</div>
+          <div style={{ fontSize: 11, color: 'var(--arena-gold)', fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>{live ? "Today's Arena" : challenge.theme}</div>
             <Badge tone={live ? 'success' : 'darkNeutral'}>{live ? 'Live now' : challenge.timingLabel}</Badge>
           </div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 25, lineHeight: 1.15, color: '#fff', margin: '14px 0 0', fontWeight: 800 }}>{challenge.title}</h1>
@@ -61,7 +61,7 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
           <ArenaStat label="Questions" value={String(challenge.questionCount)} />
           <ArenaStat label="Scored on" value={scoringLabel[challenge.scoringFormula]} />
           <ArenaStat label="Players completed" value={completedCount == null ? '—' : completedCount.toLocaleString()} />
-          <ArenaStat label="Format" value={isMockUtme ? 'CBT simulation' : 'Challenge'} />
+          <ArenaStat label="Format" value={isMockUtme ? 'CBT simulation' : 'Arena match'} />
         </div>
 
         {diagramQuestions.length > 0 && (
@@ -110,8 +110,8 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
             <Button variant="secondary" size="lg" fullWidth disabled>{primaryLabel}</Button>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button type="button" onClick={() => { const text = `${challenge.title} — think you can beat me? ${window.location.origin}/challenges/${challengeId}`; if (navigator.share) navigator.share({ title: challenge.title, text, url: `${window.location.origin}/challenges/${challengeId}` }).catch(() => {}); else navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ flex: 1, border: 'none', borderRadius: 999, padding: '11px 10px', background: '#25D366', color: '#fff', fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer' }}>{copied ? 'Copied ✓' : 'Share Challenge'}</button>
-            <button type="button" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/challenges/${challengeId}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ border: '1px solid rgba(152,176,196,.25)', borderRadius: 999, padding: '11px 14px', background: 'transparent', color: 'var(--arena-blue-soft)', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>Copy</button>
+          <button type="button" onClick={() => { const url = `${window.location.origin}/arena/challenge/${challengeId}`; const text = `${challenge.title} — think you can beat me? ${url}`; if (navigator.share) navigator.share({ title: challenge.title, text, url }).catch(() => {}); else navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ flex: 1, border: 'none', borderRadius: 999, padding: '11px 10px', background: '#25D366', color: '#fff', fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer' }}>{copied ? 'Copied ✓' : 'Share Arena'}</button>
+            <button type="button" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/arena/challenge/${challengeId}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); }} style={{ border: '1px solid rgba(152,176,196,.25)', borderRadius: 999, padding: '11px 14px', background: 'transparent', color: 'var(--arena-blue-soft)', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>Copy</button>
           </div>
           <div style={{ textAlign: 'center', color: 'var(--arena-blue-soft)', fontSize: 11, marginTop: 12 }}>Powered by TECHMED · KAIRO Arena</div>
         </div>
