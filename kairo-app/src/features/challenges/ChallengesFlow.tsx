@@ -7,7 +7,7 @@ import { ChallengeAttempt } from './ChallengeAttempt';
 import { ChallengeResults } from './ChallengeResults';
 import type { Challenge, ChallengeQuestion } from './data';
 import {
-  listChallenges, getMyAttempt, joinChallenge, joinChallengeAsGuest, getGuestAttempt, startGuestSession, getGuestToken, getCurrentStudentId, getChallengeQuestions, submitChallengeAttempt, submitGuestChallengeAttempt,
+  listChallenges, getMyAttempt, joinChallenge, joinChallengeAsGuest, getGuestAttempt, startGuestSession, getGuestToken, getCurrentStudentId, getChallengeQuestions, submitChallengeAttempt, submitGuestChallengeAttempt, trackArenaEvent,
   mapDbChallenge, type DbChallenge, type DbChallengeAttempt, type SubmitAttemptResult,
 } from '../../lib/challengesApi';
 import { useBackIntercept } from '../../lib/useBackIntercept';
@@ -78,8 +78,9 @@ export function ChallengesFlow() {
 
   async function selectChallenge(id: string) {
     const db = (dbChallenges || []).find((c) => c.id === id);
-    if (!db) return;
+    if (!db) { setLoadError('This Arena match is unavailable, expired, or the link is incorrect.'); return; }
     setSelectedDb(db);
+    trackArenaEvent('arena_viewed', { challenge_id: id }).catch(() => {});
     setMyAttempt(null);
     // Show the Arena preview immediately. The attempt lookup is secondary
     // metadata and must never leave the student staring at a blank hub while
@@ -116,6 +117,7 @@ export function ChallengesFlow() {
       const attempt = myAttempt && !myAttempt.completed_at ? myAttempt : getCurrentStudentId() ? await joinChallenge(selectedDb.id) : await joinChallengeAsGuest(selectedDb.id);
       if (!getCurrentStudentId()) localStorage.setItem('kairo.arena.guest_attempt_id', attempt.id);
       const qs = await getChallengeQuestions(selectedDb.id);
+      trackArenaEvent('arena_started', { challenge_id: selectedDb.id, attempt_id: attempt.id, guest: !getCurrentStudentId() }).catch(() => {});
       const restoredAnswers: Record<number, number> = {};
       const storedResults = (attempt.question_results as { question_id: string; selected_option?: string | null }[]) || [];
       qs.forEach((q, index) => {
@@ -187,6 +189,7 @@ export function ChallengesFlow() {
       const submitted = getCurrentStudentId()
         ? await submitChallengeAttempt({ attemptId, questionResults, timeTakenMs })
         : await submitGuestChallengeAttempt({ attemptId, questionResults, timeTakenMs });
+      trackArenaEvent('arena_completed', { challenge_id: selectedDb?.id, attempt_id: attemptId, score: submitted.score, accuracy_pct: submitted.accuracyPct, guest: !getCurrentStudentId() }).catch(() => {});
       setResult(submitted);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not submit this attempt.');
@@ -220,6 +223,7 @@ export function ChallengesFlow() {
         onJoin={handleJoin}
         onViewResult={handleViewResult}
         onGoToCbt={() => navigate('/cbt')}
+        error={loadError}
       />
     );
   }

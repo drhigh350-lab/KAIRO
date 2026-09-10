@@ -14,12 +14,13 @@ export interface ChallengePreviewProps {
   onJoin: () => void;
   onViewResult: () => void;
   onGoToCbt: () => void;
+  error?: string | null;
 }
 
 const scoringLabel: Record<Challenge['scoringFormula'], string> = { accuracy: 'Accuracy', speed: 'Speed', hybrid: 'Accuracy + speed' };
 
 /** Arena-style challenge landing screen, adapted to KAIRO's existing authenticated challenge API. */
-export function ChallengePreview({ challenge, challengeId, alreadyCompleted, busy, onBack, onJoin, onViewResult, onGoToCbt }: ChallengePreviewProps) {
+export function ChallengePreview({ challenge, challengeId, alreadyCompleted, busy, onBack, onJoin, onViewResult, onGoToCbt, error }: ChallengePreviewProps) {
   const isMockUtme = challenge.type === 'mock_utme';
   const [completedCount, setCompletedCount] = useState<number | null>(null);
   const [diagramQuestions, setDiagramQuestions] = useState<ChallengeQuestion[]>([]);
@@ -87,6 +88,10 @@ export function ChallengePreview({ challenge, challengeId, alreadyCompleted, bus
             <Rule number="03" text="Review your result and keep practising your weak areas." />
           </div>
         </Card>
+
+        {error && <Card style={{ background: 'rgba(221,92,92,.1)', border: '1px solid rgba(221,92,92,.4)', borderRadius: 14, boxShadow: 'none', padding: 14 }}>
+          <div style={{ color: '#ffd7d7', fontSize: 13, lineHeight: 1.5 }}>{error}</div>
+        </Card>}
 
         {leaderboard.length > 0 && (
           <Card style={{ background: 'var(--arena-blue-surface)', border: '1px solid rgba(152,176,196,.14)', borderRadius: 14, boxShadow: 'none', padding: 16 }}>

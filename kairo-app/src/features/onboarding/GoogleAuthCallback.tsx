@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KaiMark } from './shared';
 import { connectGoogleAccount, describeError } from '../../lib/kairoEngine';
+import { claimStoredGuestSession } from '../../lib/challengesApi';
 
 /** Lands here after the Google OAuth redirect completes — routes a first-time student into onboarding (pre-filled with their Google name), or a returning one straight home. */
 export function GoogleAuthCallback() {
@@ -10,7 +11,8 @@ export function GoogleAuthCallback() {
 
   useEffect(() => {
     connectGoogleAccount()
-      .then(({ isNewStudent, name }) => {
+      .then(async ({ isNewStudent, name }) => {
+        await claimStoredGuestSession().catch(() => false);
         if (isNewStudent) {
           navigate('/onboarding', { replace: true, state: { googleName: name || 'there' } });
         } else {

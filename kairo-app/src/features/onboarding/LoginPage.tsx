@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { SignIn } from './SignIn';
 import { CheckYourInbox } from './CheckYourInbox';
 import { getEngine, isOnboarded, beginOnboarding } from '../../lib/kairoEngine';
+import { claimStoredGuestSession } from '../../lib/challengesApi';
 
 /**
  * The real, dedicated /login URL — SignIn used to be one internal screen
@@ -26,7 +27,8 @@ export function LoginPage() {
     <SignIn
       onBack={() => navigate('/')}
       initialEmail={initialEmail}
-      onSignedIn={() => {
+      onSignedIn={async () => {
+        await claimStoredGuestSession().catch(() => false);
         const profile = getEngine()?.profile;
         if (isOnboarded()) {
           navigate('/dashboard', {

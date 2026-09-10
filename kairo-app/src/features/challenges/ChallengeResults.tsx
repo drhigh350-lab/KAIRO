@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AnswerFeedback, Badge, Button, Card } from '../../components';
 import { InlineToast, StatTile } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
-import { getChallengeLeaderboard, getCompletedCount, getCurrentStudentId, getQuestionExplanations, type ChallengeLeaderboardRow, type SubmitAttemptResult } from '../../lib/challengesApi';
+import { getChallengeLeaderboard, getCompletedCount, getCurrentStudentId, getQuestionExplanations, trackArenaEvent, type ChallengeLeaderboardRow, type SubmitAttemptResult } from '../../lib/challengesApi';
 
 export interface ChallengeResultsProps {
   challenge: Challenge;
@@ -85,6 +85,7 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
         : `You showed up and finished it — that's the part that actually matters. Most students improve by their 2nd attempt on this one.`;
 
   function share() {
+    trackArenaEvent('arena_result_shared', { challenge_id: challengeId, score, accuracy_pct: accuracyPct }).catch(() => {});
     const shareData = {
       title: challenge.title,
       text: `I scored ${score} points (${accuracyPct}% accuracy) on ${challenge.title} on Kairo!`,
@@ -207,7 +208,7 @@ export function ChallengeResults({ challenge, challengeId, questions, answers, r
 
       <div style={{ padding: '0 20px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Button variant="secondary" size="lg" fullWidth onClick={() => navigate('/practice', { state: { entry: 'weak' } })}>Practice {challenge.theme}</Button>
-        <Button variant="darkAccent" size="lg" fullWidth onClick={onBackToHub}>Back to Challenges</Button>
+        <Button variant="darkAccent" size="lg" fullWidth onClick={onBackToHub}>Back to Arena</Button>
       </div>
     </div>
   );

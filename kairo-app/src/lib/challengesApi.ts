@@ -71,6 +71,27 @@ export function getGuestToken(): string | null {
   try { return localStorage.getItem(GUEST_TOKEN_KEY); } catch { return null; }
 }
 
+export async function claimStoredGuestSession(): Promise<boolean> {
+  const token = getGuestToken();
+  if (!token) return false;
+  const supabase = getSupabase();
+  const { data: userData } = await supabase.auth.getUser();
+  const authUserId = userData.user?.id;
+  if (!authUserId) return false;
+  const { error } = await supabase.schema('kairo').rpc('claim_guest_session', { p_token: token, p_auth_user_id: authUserId });
+  if (error) return false;
+  localStorage.removeItem(GUEST_TOKEN_KEY);
+  localStorage.removeItem('kairo.arena.guest_attempt_id');
+  return true;
+}
+
+export async function trackArenaEvent(eventType: string, payload: Record<string, unknown> = {}): Promise<void> {
+  const studentId = getCurrentStudentId();
+  if (!studentId) return;
+  const supabase = getSupabase();
+  await supabase.schema('kairo').from('activity_events').insert({ student_id: studentId, event_type: eventType, payload });
+}
+
 export async function startGuestSession(nickname: string): Promise<{ token: string; studentId: string }> {
   const supabase = getSupabase();
   const { data, error } = await supabase.schema('kairo').rpc('start_guest_session', { p_nickname: nickname.trim() });
