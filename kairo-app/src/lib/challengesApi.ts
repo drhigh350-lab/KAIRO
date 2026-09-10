@@ -146,7 +146,7 @@ export async function submitGuestChallengeAttempt({ attemptId, questionResults, 
 
 export async function listChallenges(): Promise<DbChallenge[]> {
   const supabase = getSupabase();
-  const { data, error } = await supabase.schema('kairo').from('challenges').select('*').order('starts_at', { ascending: true });
+  const { data, error } = await supabase.schema('kairo').from('challenges').select('*').neq('status', 'archived').order('starts_at', { ascending: true });
   if (error) throw error;
   return data || [];
 }

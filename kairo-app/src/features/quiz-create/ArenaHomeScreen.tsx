@@ -4,7 +4,7 @@ import { ScreenHeader } from '../learning/shared';
 import { ArenaTabs, ArenaBottomSpace } from '../challenges/ArenaTabs';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getArenaHomeSummary, getDailyArenaChallenge, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
+import { getArenaHomeSummary, getDailyArenaChallenges, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
 
 function activityLine(item: RecentActivityItem): string {
   const who = item.studentName ?? 'A Kairo student';
@@ -26,7 +26,7 @@ function timeAgo(iso: string): string {
 export function ArenaHomeScreen() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<ArenaHomeSummary | null>(null);
-  const [today, setToday] = useState<Challenge | null>(null);
+  const [today, setToday] = useState<Challenge[]>([]);
   const [trending, setTrending] = useState<TrendingChallenge[]>([]);
   const [activity, setActivity] = useState<RecentActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,10 @@ export function ArenaHomeScreen() {
   useEffect(() => {
     Promise.all([
       getArenaHomeSummary(),
-      Promise.all([getDailyArenaChallenge(), listChallenges()]).then(([daily, rows]) => rows.map(mapDbChallenge).find((c) => c.id === daily?.id) || null),
+      Promise.all([getDailyArenaChallenges(), listChallenges()]).then(([daily, rows]) => {
+        const mapped = rows.map(mapDbChallenge);
+        return daily.map(({ id }) => mapped.find((challenge) => challenge.id === id)).filter((challenge): challenge is Challenge => !!challenge);
+      }),
       getTrendingChallenges(5),
       getRecentActivity(8),
     ])
@@ -61,19 +64,20 @@ export function ArenaHomeScreen() {
 
             <section style={{ marginBottom: 24 }}>
               <SectionLabel>TODAY IN ARENA</SectionLabel>
-              {today ? (
+              {today.length > 0 ? today.map((challenge) => (
                 <button
-                  onClick={() => navigate(`/arena/challenge/${today.id}`)}
+                  key={challenge.id}
+                  onClick={() => navigate(`/arena/challenge/${challenge.id}`)}
                   style={{
                     width: '100%', textAlign: 'left', padding: 16, borderRadius: 'var(--radius-lg)', cursor: 'pointer', fontFamily: 'inherit',
                     background: 'linear-gradient(135deg, rgba(201,162,39,0.15), rgba(201,162,39,0.04))', border: '1px solid rgba(201,162,39,0.35)',
                   }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--arena-gold)', letterSpacing: '.03em' }}>{today.theme}</div>
-                  <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 4, fontFamily: 'var(--font-heading)' }}>{today.title}</div>
-                  <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{today.questionCount} questions · {today.timingLabel}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--arena-gold)', letterSpacing: '.03em' }}>{challenge.theme}</div>
+                  <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--dark-text-heading)', marginTop: 4, fontFamily: 'var(--font-heading)' }}>{challenge.title}</div>
+                  <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 6 }}>{challenge.questionCount} questions · {challenge.timingLabel}</div>
                 </button>
-              ) : (
+              )) : (
                 <EmptyRow text="No live Arena match right now — check back soon." />
               )}
             </section>

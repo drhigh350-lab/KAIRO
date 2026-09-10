@@ -18,12 +18,15 @@ export interface ArenaHomeSummary {
   arenaWinRate: number;
 }
 
-export async function getDailyArenaChallenge(): Promise<{ id: string } | null> {
+export async function getDailyArenaChallenges(): Promise<{ id: string; track: 'medical' | 'engineering' }[]> {
   const supabase = getSupabase();
-  const { data, error } = await supabase.schema('kairo').rpc('get_or_create_daily_arena');
-  if (error) throw error;
-  const row = Array.isArray(data) ? data[0] : data;
-  return row?.id ? { id: row.id } : null;
+  const rows = await Promise.all((['medical', 'engineering'] as const).map(async (track) => {
+    const { data, error } = await supabase.schema('kairo').rpc('get_or_create_daily_arena', { p_track: track });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return row?.id ? { id: row.id, track } : null;
+  }));
+  return rows.filter((row): row is { id: string; track: 'medical' | 'engineering' } => !!row);
 }
 
 export async function getArenaHomeSummary(): Promise<ArenaHomeSummary | null> {
