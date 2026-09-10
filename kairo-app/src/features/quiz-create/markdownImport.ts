@@ -19,7 +19,7 @@ const SUBJECTS = new Set(['Biology', 'Chemistry', 'Mathematics', 'Physics', 'Use
 const DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 
 function value(block: string, label: string): string {
-  const match = block.match(new RegExp(`^${label}\\s*:\\s*(.+)$`, 'imim'));
+  const match = block.match(new RegExp(`^${label}\\s*:\\s*(.+)$`, 'im'));
   return match?.[1]?.trim() || '';
 }
 
