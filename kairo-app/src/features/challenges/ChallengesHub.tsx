@@ -86,9 +86,9 @@ function ChallengeCard({ challenge, onSelect, onShared }: { challenge: Challenge
 }
 
 export function ChallengesHub({ loading, challenges, onBack, onSelect }: ChallengesHubProps) {
-  const live = challenges.filter((c) => c.status === 'live');
-  const upcoming = challenges.filter((c) => c.status === 'upcoming');
-  const ended = challenges.filter((c) => c.status === 'ended');
+  const available = challenges.filter((c) => c.questionCount > 0);
+  const live = available.filter((c) => c.status === 'live');
+  const upcoming = available.filter((c) => c.status === 'upcoming');
   const streak = getStreakStatus();
   const [toast, setToast] = useState(false);
   function handleShared() {
@@ -110,7 +110,7 @@ export function ChallengesHub({ loading, challenges, onBack, onSelect }: Challen
           <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40 }}>Loading Arena…</div>
         )}
 
-        {!loading && challenges.length === 0 && (
+        {!loading && available.length === 0 && (
           <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 40, lineHeight: 1.5 }}>
             Nothing scheduled right now — check back soon.
           </div>
@@ -134,14 +134,6 @@ export function ChallengesHub({ loading, challenges, onBack, onSelect }: Challen
           </div>
         )}
 
-        {!loading && ended.length > 0 && (
-          <div>
-            <SectionLabel>Recently Concluded</SectionLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-              {ended.map((c) => <ChallengeCard key={c.id} challenge={c} onSelect={onSelect} onShared={handleShared} />)}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
