@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton, ProgressBar } from '../../components';
+import { MathText } from '../../components/MathText';
 import { CloseIcon, Modal, QuestionDiagram } from '../learning/shared';
 import type { Challenge, ChallengeQuestion } from './data';
 
@@ -82,7 +83,7 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit, initi
 
       <div style={{ padding: '22px 20px', flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{challenge.theme}</div>
-        <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
+        <MathText text={question.stem} style={{ display: 'block', fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }} />
         <QuestionDiagram imageUrl={question.imageUrl} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
@@ -102,7 +103,7 @@ export function ChallengeAttempt({ challenge, questions, onFinish, onExit, initi
                   background: isSelected ? 'var(--dark-accent-blue)' : 'transparent',
                   color: isSelected ? '#fff' : 'var(--dark-text-muted)',
                 }}>{String.fromCharCode(65 + i)}</span>
-                {opt}
+                <MathText text={opt} />
               </button>
             );
           })}

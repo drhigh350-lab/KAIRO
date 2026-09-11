@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ProgressBar, AnswerFeedback, Button, IconButton, Badge } from '../../components';
+import { MathText } from '../../components/MathText';
 import {
   BookmarkIcon, CalcIcon, OverflowIcon, KaiPanel, ConfidenceRating,
   InlineToast, Modal, OverflowMenu, MiniCalculator, QuestionDiagram, type ConfidenceLevel,
@@ -289,7 +290,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
 
       <div style={{ padding: '22px 20px', flex: 1 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-accent-blue)', letterSpacing: '.03em', textTransform: 'uppercase' }}>{question.subject} · {question.topic}</div>
-        <div style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }}>{question.stem}</div>
+        <MathText text={question.stem} style={{ display: 'block', fontSize: 18, lineHeight: 1.55, color: 'var(--dark-text-body)', marginTop: 16, fontWeight: 500 }} />
         <QuestionDiagram imageUrl={question.imageUrl} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
@@ -319,7 +320,7 @@ export function PracticeQuestion({ question, index, total, onNext, onExit, onAns
                   background: (isSelected && !submitted) ? 'var(--dark-accent-blue)' : showCorrect ? 'var(--dark-success)' : showWrongPick ? 'var(--dark-danger)' : 'transparent',
                   color: ((isSelected && !submitted) || showCorrect || showWrongPick) ? '#fff' : 'var(--dark-text-muted)',
                 }}>{showCorrect ? '✓' : (showWrongPick && !hideElim) ? '✕' : String.fromCharCode(65 + i)}</span>
-                {opt}
+                <MathText text={opt} />
               </button>
             );
           })}
