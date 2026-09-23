@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScreenHeader } from '../learning/shared';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { getDiscoverQuizzes, getDiscoverChallenges, type DiscoverQuiz, type DiscoverChallenge } from '../../lib/discoverApi';
 import { REAL_SUBJECTS } from '../../lib/quizApi';
 
@@ -19,16 +20,22 @@ export function DiscoverScreen() {
   const [subject, setSubject] = useState<string | null>(null);
   const [quizzes, setQuizzes] = useState<DiscoverQuiz[]>([]);
   const [challenges, setChallenges] = useState<DiscoverChallenge[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { state, start, retry, succeed, fail } = useAsyncState();
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoading(true);
+  const loadDiscover = () => {
+    start();
+    setError(null);
     Promise.all([
       getDiscoverQuizzes(subject ?? undefined),
       getDiscoverChallenges(subject ?? undefined),
     ])
-      .then(([q, c]) => { setQuizzes(q); setChallenges(c); })
-      .finally(() => setLoading(false));
+      .then(([q, c]) => { setQuizzes(q); setChallenges(c); succeed(); })
+      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load discover content.'); fail(); });
+  };
+
+  useEffect(() => {
+    loadDiscover();
   }, [subject]);
 
   return (
@@ -43,8 +50,13 @@ export function DiscoverScreen() {
       </div>
 
       <div style={{ padding: '0 20px 40px', flex: 1 }}>
-        {loading ? (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', textAlign: 'center', padding: '40px 0' }}>Loading…</div>
+        {state !== 'success' ? (
+          <KairoStateView
+            state={state === 'idle' ? 'loading' : state}
+            loadingMessage="Preparing discover content…"
+            errorMessage={error ?? 'Could not load discover content.'}
+            onRetry={() => { retry(); loadDiscover(); }}
+          />
         ) : (
           <>
             <section style={{ marginBottom: 28 }}>

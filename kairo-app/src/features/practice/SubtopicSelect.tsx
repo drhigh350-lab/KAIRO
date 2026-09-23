@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ScreenHeader, OptionRow } from '../learning/shared';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import type { Subject } from './data';
 import { getRealSubtopics, type SubtopicInfo } from '../../lib/kairoEngine';
 
@@ -14,11 +15,19 @@ export interface SubtopicSelectProps {
 export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: SubtopicSelectProps) {
   const [subtopics, setSubtopics] = useState<SubtopicInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { state, start, retry, succeed, fail } = useAsyncState();
+
+  const loadSubtopics = () => {
+    start();
+    setSubtopics(null);
+    setError(null);
+    getRealSubtopics(subject.label, topic)
+      .then((nextSubtopics) => { setSubtopics(nextSubtopics); succeed(); })
+      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load subtopics.'); fail(); });
+  };
 
   useEffect(() => {
-    getRealSubtopics(subject.label, topic)
-      .then(setSubtopics)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load subtopics.'));
+    loadSubtopics();
   }, [subject.label, topic]);
 
   return (
@@ -26,9 +35,18 @@ export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: Subto
       <ScreenHeader onBack={onBack} title={topic} tone="dark" />
       <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 18 }}>Narrow it down, or practise the whole topic.</div>
-        {error && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>{error}</div>}
-        {!error && subtopics === null && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>Loading…</div>}
-        {subtopics?.map((s) => (
+        {state !== 'success' ? (
+          <KairoStateView
+            state={state === 'idle' ? 'loading' : state}
+            loadingMessage="Preparing your subtopics…"
+            errorMessage={error ?? 'Could not load subtopics.'}
+            onRetry={() => { retry(); loadSubtopics(); }}
+          />
+        ) : subtopics?.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>
+            No subtopics available yet for {topic}.
+          </div>
+        ) : subtopics?.map((s) => (
           <OptionRow
             key={s.subtopic}
             label={s.subtopic}

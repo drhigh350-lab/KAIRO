@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ScreenHeader, OptionRow } from '../learning/shared';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import type { Subject } from './data';
 import { getRealTopics, type TopicInfo } from '../../lib/kairoEngine';
 
@@ -12,11 +13,19 @@ export interface TopicSelectProps {
 export function TopicSelect({ subject, onBack, onPick }: TopicSelectProps) {
   const [topics, setTopics] = useState<TopicInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { state, start, retry, succeed, fail } = useAsyncState();
+
+  const loadTopics = () => {
+    start();
+    setTopics(null);
+    setError(null);
+    getRealTopics(subject.label)
+      .then((nextTopics) => { setTopics(nextTopics); succeed(); })
+      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load topics.'); fail(); });
+  };
 
   useEffect(() => {
-    getRealTopics(subject.label)
-      .then(setTopics)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load topics.'));
+    loadTopics();
   }, [subject.label]);
 
   return (
@@ -24,9 +33,15 @@ export function TopicSelect({ subject, onBack, onPick }: TopicSelectProps) {
       <ScreenHeader onBack={onBack} title={subject.label} tone="dark" />
       <div style={{ padding: '10px 20px 24px', flex: 1 }}>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 18 }}>Pick a topic.</div>
-        {error && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>{error}</div>}
-        {!error && topics === null && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>Loading topics…</div>}
-        {!error && topics !== null && topics.length === 0 && (
+        {state !== 'success' ? (
+          <KairoStateView
+            state={state === 'idle' ? 'loading' : state}
+            loadingMessage="Preparing your topics…"
+            errorMessage={error ?? 'Could not load topics.'}
+            onRetry={() => { retry(); loadTopics(); }}
+          />
+        ) : topics !== null && topics.length === 0 && (
+
           <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.5 }}>
             No topics available yet for {subject.label}.
           </div>
