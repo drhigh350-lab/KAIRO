@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 
 /** Closes an overlay (modal/menu) on the Escape key, for the lifetime of the overlay. */
 function useEscapeToClose(onClose: () => void) {
@@ -111,32 +112,47 @@ export function KaiPanel({ note, onAction, tone = 'light', comingSoon = false }:
   // unchanged, just contained.
   const [popupOpen, setPopupOpen] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const mounted = useRef(true);
+  const teachState = useAsyncState('idle', 6000);
   const actions = ['Explain again', 'Give another example', 'Simplify', 'Teach from scratch', 'Show formula', 'Show memory trick'];
   const showButton = comingSoon || !!onAction;
 
-  async function handleActionClick(a: string) {
-    if (!onAction || loading) return;
+  useEffect(() => () => {
+    mounted.current = false;
+    requestId.current += 1;
+  }, []);
+
+  async function handleActionClick(a: string, isRetry = false) {
+    if (!onAction || teachState.state === 'loading' || (!isRetry && teachState.state === 'retry') || !teachState.isOnline) {
+      if (!teachState.isOnline) teachState.setState('offline');
+      return;
+    }
+    const currentRequest = ++requestId.current;
     setActiveAction(a);
-    setLoading(true);
-    setError(null);
     setResult(null);
+    teachState.start();
     try {
       const text = await onAction(a);
-      if (text) setResult(text);
-      else setError("Kai couldn't get to that just now — try again.");
-    } catch (err) {
-      // Temporarily surfaces the real failure reason (from
-      // generateKaiTextWithDiagnostics) instead of a generic message —
-      // needed while tracking down why some calls never reach Supabase's
-      // own logs at all.
-      setError(err instanceof Error ? err.message : "Kai couldn't get to that just now — try again.");
-    } finally {
-      setLoading(false);
+      if (!mounted.current || currentRequest !== requestId.current) return;
+      if (text?.trim()) {
+        setResult(text.trim());
+        teachState.succeed();
+      } else {
+        teachState.setState('success');
+      }
+    } catch {
+      if (mounted.current && currentRequest === requestId.current) teachState.fail();
     }
   }
+
+  const retryAction = () => {
+    if (activeAction) {
+      teachState.retry();
+      void handleActionClick(activeAction, true);
+    }
+  };
 
   if (!note && !showButton) return null;
 
@@ -172,22 +188,34 @@ export function KaiPanel({ note, onAction, tone = 'light', comingSoon = false }:
       {showButton && popupOpen && !comingSoon && (
         <Modal onClose={() => setPopupOpen(false)} tone={tone}>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: dark ? 'var(--dark-text-heading)' : 'var(--text-heading)', marginBottom: 14 }}>Ask Kai</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {actions.map((a) => (
-              <button type="button" key={a} disabled={loading} onClick={() => handleActionClick(a)} style={{
+              <button type="button" key={a} disabled={teachState.state === 'loading' || teachState.state === 'retry'} onClick={() => void handleActionClick(a)} style={{
                 fontSize: 12, fontWeight: 600, color: dark ? 'var(--dark-text-heading)' : 'var(--kairo-navy-900)', background: dark ? 'var(--dark-bg-surface)' : '#fff', border: `1px solid ${activeAction === a ? (dark ? 'var(--dark-accent-blue)' : 'var(--kairo-blue-500)') : (dark ? 'var(--dark-border)' : 'var(--color-border-subtle)')}`,
-                padding: '8px 12px', borderRadius: 'var(--radius-pill)', cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
-                opacity: loading && activeAction !== a ? 0.5 : 1,
-              }}>{loading && activeAction === a ? 'Thinking…' : a}</button>
+                padding: '8px 12px', borderRadius: 'var(--radius-pill)', cursor: teachState.state === 'loading' ? 'default' : 'pointer', fontFamily: 'inherit', minHeight: 'var(--touch-min)',
+                opacity: (teachState.state === 'loading' || teachState.state === 'retry') && activeAction !== a ? 0.5 : 1,
+              }}>{(teachState.state === 'loading' || teachState.state === 'retry') && activeAction === a ? 'Thinking…' : a}</button>
             ))}
           </div>
-          {(result || error) && (
+          {teachState.state !== 'idle' && teachState.state !== 'success' ? (
+            <KairoStateView
+              state={teachState.state}
+              compact
+              loadingMessage="Kai is thinking…"
+              slowMessage="Kai is taking longer than usual."
+              errorMessage="Kai could not prepare that explanation."
+              offlineMessage="Kai is unavailable offline, but your question and answer are still here."
+              onRetry={retryAction}
+            />
+          ) : result ? (
             <div style={{
               marginTop: 12, padding: 12, borderRadius: 'var(--radius-md)', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-line',
               background: dark ? 'var(--dark-bg-surface)' : '#fff', border: `1px solid ${dark ? 'var(--dark-border)' : 'var(--color-border-subtle)'}`,
-              color: error ? 'var(--dark-danger, #e5484d)' : (dark ? 'var(--dark-text-body)' : 'var(--text-body)'),
-            }}>{error || result}</div>
-          )}
+              color: dark ? 'var(--dark-text-body)' : 'var(--text-body)',
+            }}>{result}</div>
+          ) : teachState.state === 'success' && activeAction ? (
+            <div role="status" style={{ marginTop: 12, padding: 12, borderRadius: 'var(--radius-md)', fontSize: 13, lineHeight: 1.55, background: dark ? 'var(--dark-bg-surface)' : '#fff', color: dark ? 'var(--dark-text-muted)' : 'var(--text-muted)' }}>Kai did not have an explanation for that request. Try another option.</div>
+          ) : null}
         </Modal>
       )}
     </div>
