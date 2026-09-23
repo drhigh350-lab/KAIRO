@@ -92,6 +92,40 @@ export function KairoStateView({
   );
 }
 
-export function KairoLoading({ message = 'Preparing your KAIRO experience…', detail, compact = false }: { message?: string; detail?: string; compact?: boolean }) {
-  return <KairoStateView state="loading" loadingMessage={message} slowMessage={message} errorMessage={message} offlineMessage={detail ?? 'Your saved progress is safe.'} compact={compact} />;
+export interface KairoLoadingProps {
+  message?: string;
+  detail?: string;
+  compact?: boolean;
+  slowAfterMs?: number;
+  onRetry?: () => void;
+  onContinueOffline?: () => void;
+}
+
+export function KairoLoading({
+  message = 'Preparing your KAIRO experience…',
+  detail,
+  compact = false,
+  slowAfterMs,
+  onRetry,
+  onContinueOffline,
+}: KairoLoadingProps) {
+  const { state, setState } = useAsyncState('loading', slowAfterMs);
+
+  const handleRetry = () => {
+    setState('loading');
+    onRetry?.();
+  };
+
+  return (
+    <KairoStateView
+      state={state === 'idle' || state === 'success' ? 'loading' : state}
+      loadingMessage={message}
+      slowMessage="This is taking longer than usual."
+      errorMessage="We couldn’t prepare this yet."
+      offlineMessage={detail ?? 'You’re offline. Your saved progress is safe on this device.'}
+      onRetry={handleRetry}
+      onContinueOffline={onContinueOffline}
+      compact={compact}
+    />
+  );
 }

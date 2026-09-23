@@ -10,7 +10,7 @@ import { getCbtSessionSnapshot, clearSessionSnapshot } from '../../lib/sessionRe
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
-import { KairoLoading } from '../learning/shared';
+import { KairoLoading } from '../../components/feedback/AsyncState';
 import { getCourseSubjects } from '../../lib/subjectScope';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review';

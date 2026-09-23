@@ -13,7 +13,7 @@ import { getEngine, startSuggestedSession, startDashboardSession, reportDashboar
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
-import { KairoLoading } from '../learning/shared';
+import { KairoLoading } from '../../components/feedback/AsyncState';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 import { recordVerificationResult } from '../../lib/planner/plannerApi';

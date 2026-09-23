@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { KairoMark } from '../../components/brand/Logo';
 
 /** Closes an overlay (modal/menu) on the Escape key, for the lifetime of the overlay. */
 function useEscapeToClose(onClose: () => void) {
@@ -550,16 +549,6 @@ export function KairoPointsInfo({ iconColor = 'var(--dark-text-faint)' }: { icon
 }
 
 
-export function KairoLoading({ message = 'KAIRO is getting things ready', detail }: { message?: string; detail?: string }) {
-  return (
-    <div className="kairo-loading-state" role="status" aria-live="polite">
-      <div className="kairo-loading-mark" aria-hidden="true"><KairoMark tone="white" size={88} /></div>
-      <div className="kairo-loading-message">{message}</div>
-      {detail && <div className="kairo-loading-detail">{detail}</div>}
-      <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>
-    </div>
-  );
-}
 
 export function KairoPressable({ children, className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode; className?: string }) {
   return <button {...props} className={`kairo-pressable ${className}`} />;
