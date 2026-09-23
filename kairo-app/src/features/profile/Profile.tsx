@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Button, Card, ProgressBar } from '../../components';
 import { ScreenHeader, ChevronRight, KairoScoreInfo, KairoPointsInfo, Modal } from '../learning/shared';
 import { getProfileSummary, getPrestigeProgress, getBadgeVault, getDiagramQuestionPreview, isOnboarded, signOutAndDisconnect, type DiagramPreviewQuestion } from '../../lib/kairoEngine';
 import { BadgeVaultRow, BadgeVaultSheet } from './BadgeVault';
 import { InsightsHub } from './ProfileInsights';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 
 export function Profile() {
   const navigate = useNavigate();
@@ -12,6 +13,8 @@ export function Profile() {
   const [openTrackKey, setOpenTrackKey] = useState<string | null>(null);
   const [diagramPreview, setDiagramPreview] = useState<{ total: number; questions: DiagramPreviewQuestion[] } | null>(null);
   const [showAllDiagrams, setShowAllDiagrams] = useState(false);
+  const { state: diagramState, setState: setDiagramState } = useAsyncState();
+  const diagramRequestId = useRef(0);
   const profile = getProfileSummary();
   const prestige = getPrestigeProgress();
   const vault = getBadgeVault();
@@ -24,9 +27,26 @@ export function Profile() {
   const allBadges = vault ? [vault.tracks.consistency, vault.tracks.resilience, vault.tracks.execution, ...vault.subjects] : [];
   const onboarded = isOnboarded();
 
+  const loadDiagramPreview = useCallback(async (isRetry = false) => {
+    const requestId = ++diagramRequestId.current;
+    setDiagramState(isRetry ? 'retry' : 'loading');
+    try {
+      const preview = await getDiagramQuestionPreview(100);
+      if (requestId !== diagramRequestId.current) return;
+      setDiagramPreview(preview);
+      setDiagramState('success');
+    } catch {
+      if (requestId !== diagramRequestId.current) return;
+      setDiagramState(typeof navigator === 'undefined' || navigator.onLine ? 'error' : 'offline');
+    }
+  }, [setDiagramState]);
+
   useEffect(() => {
-    getDiagramQuestionPreview(100).then(setDiagramPreview).catch(() => setDiagramPreview(null));
-  }, []);
+    void loadDiagramPreview();
+    return () => {
+      diagramRequestId.current += 1;
+    };
+  }, [loadDiagramPreview]);
 
   const firstName = profile?.name || 'there';
   const daysToGo = profile?.examDate ? Math.max(0, Math.ceil((profile.examDate - Date.now()) / 86400000)) : null;
@@ -116,10 +136,22 @@ export function Profile() {
         )}
       </div>
 
-      {/* 2) The Insights Hub — Weekly Drop, Actionable Carousel, Subject Health, Monthly Checkpoint (see ProfileInsights.tsx) */}
+      {/* 2) The Insights Hub �� Weekly Drop, Actionable Carousel, Subject Health, Monthly Checkpoint (see ProfileInsights.tsx) */}
       <InsightsHub />
 
-      {diagramPreview && diagramPreview.questions.length > 0 && (
+      {diagramState !== 'idle' && diagramState !== 'success' && (
+        <div style={{ padding: '0 20px' }}>
+          <KairoStateView
+            state={diagramState}
+            loadingMessage="Preparing your diagram questions…"
+            errorMessage="We couldn’t load diagram questions."
+            onRetry={() => void loadDiagramPreview(true)}
+            onContinueOffline={() => setDiagramState('success')}
+          />
+        </div>
+      )}
+
+      {diagramState === 'success' && diagramPreview && diagramPreview.questions.length > 0 && (
         <div style={{ padding: '0 20px' }}>
           <Card style={{ background: 'var(--dark-bg-surface)', border: '1px solid var(--dark-border)', boxShadow: 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
