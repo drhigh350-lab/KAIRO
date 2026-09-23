@@ -48,7 +48,13 @@ export function useAsyncState(initial: AsyncState = 'idle', slowAfterMs = 7000) 
     if (!isOnline && (state === 'loading' || state === 'slow' || state === 'retry')) setState('offline');
   }, [isOnline, state]);
 
-  return { state, setState, isOnline };
+  const start = () => setState('loading');
+  const retry = () => setState('retry');
+  const succeed = () => setState('success');
+  const fail = () => setState('error');
+  const reset = () => setState('idle');
+
+  return { state, setState, isOnline, start, retry, succeed, fail, reset };
 }
 
 export function KairoStateView({
