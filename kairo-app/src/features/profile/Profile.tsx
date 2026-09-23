@@ -136,7 +136,7 @@ export function Profile() {
         )}
       </div>
 
-      {/* 2) The Insights Hub �� Weekly Drop, Actionable Carousel, Subject Health, Monthly Checkpoint (see ProfileInsights.tsx) */}
+      {/* 2) The Insights Hub — Weekly Drop, Actionable Carousel, Subject Health, Monthly Checkpoint (see ProfileInsights.tsx) */}
       <InsightsHub />
 
       {diagramState !== 'idle' && diagramState !== 'success' && (
