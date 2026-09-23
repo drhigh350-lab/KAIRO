@@ -442,6 +442,14 @@ export async function signOutAndDisconnect(): Promise<void> {
   contentLoadedAt = 0;
   contentLoadPromise = null;
   mistakePatchesLoaded = false;
+  // Same reason as the caches above: this in-memory set is loaded once per
+  // session and returned on every later read. Left behind on sign-out, the
+  // next student to sign in on this device (a different account, or the same
+  // one after a real logout) would see the previous account's bookmarks in
+  // Review's Vault until a full page reload — progress that "doesn't reset"
+  // when it should. Cleared here so the next ensureBookmarksLoaded() re-reads
+  // the correct student's rows from Supabase.
+  bookmarkedQuestionIds = null;
 }
 
 // Only these five subjects have a seeded live question bank today (verified

@@ -1,36 +1,47 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
-import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
 import { LoginPage } from './features/onboarding/LoginPage';
 import { SignupPage } from './features/onboarding/SignupPage';
 import { GoogleAuthCallback } from './features/onboarding/GoogleAuthCallback';
 import { ResetPasswordCallback } from './features/onboarding/ResetPassword';
-import { PrivacyPage } from './features/legal/PrivacyPage';
-import { TermsPage } from './features/legal/TermsPage';
-import { HomeDashboard } from './features/home/HomeDashboard';
-import { PracticeFlow } from './features/practice/PracticeFlow';
-import { CbtFlow } from './features/cbt/CbtFlow';
-import { Review } from './features/review/Review';
-import { Profile } from './features/profile/Profile';
-import { EditProfile } from './features/profile/EditProfile';
-import { NotificationSettings } from './features/profile/NotificationSettings';
-import { Leaderboard } from './features/profile/Leaderboard';
-import { ChallengesFlow } from './features/challenges/ChallengesFlow';
-import { CreateQuizFlow } from './features/quiz-create/CreateQuizFlow';
-import { MyQuizzesScreen } from './features/quiz-create/MyQuizzesScreen';
-import { DiscoverScreen } from './features/quiz-create/DiscoverScreen';
-import { ArenaHomeScreen } from './features/quiz-create/ArenaHomeScreen';
-import { LearnLesson } from './features/learn/LearnLesson';
-import { LearnHome } from './features/learn/LearnHome';
-import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
-import { PlannerFlow } from './features/planner/PlannerFlow';
-import { StreakSavior } from './features/home/StreakSavior';
-import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoStateView, useAsyncState } from './components/feedback/AsyncState';
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
+
+// Code-splitting: every screen below used to be imported eagerly, so the
+// browser had to download and parse the entire app — Practice, CBT, the
+// whole Quiz Arena, Learn, Planner, Challenges, charts, and each screen's
+// own dependencies — before it could paint even the splash or a login form.
+// On a mid-range phone over a Nigerian mobile connection that's the "takes
+// forever to load" the students feel. Only the boot/auth surface (Splash,
+// Login, Signup, the OAuth/reset callbacks) stays eager; everything a
+// signed-in student reaches is loaded on demand, in its own chunk, the
+// first time its route is visited. The named exports are adapted to the
+// default-export shape React.lazy expects.
+const OnboardingFlow = lazy(() => import('./features/onboarding/OnboardingFlow').then((m) => ({ default: m.OnboardingFlow })));
+const PrivacyPage = lazy(() => import('./features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const TermsPage = lazy(() => import('./features/legal/TermsPage').then((m) => ({ default: m.TermsPage })));
+const HomeDashboard = lazy(() => import('./features/home/HomeDashboard').then((m) => ({ default: m.HomeDashboard })));
+const PracticeFlow = lazy(() => import('./features/practice/PracticeFlow').then((m) => ({ default: m.PracticeFlow })));
+const CbtFlow = lazy(() => import('./features/cbt/CbtFlow').then((m) => ({ default: m.CbtFlow })));
+const Review = lazy(() => import('./features/review/Review').then((m) => ({ default: m.Review })));
+const Profile = lazy(() => import('./features/profile/Profile').then((m) => ({ default: m.Profile })));
+const EditProfile = lazy(() => import('./features/profile/EditProfile').then((m) => ({ default: m.EditProfile })));
+const NotificationSettings = lazy(() => import('./features/profile/NotificationSettings').then((m) => ({ default: m.NotificationSettings })));
+const Leaderboard = lazy(() => import('./features/profile/Leaderboard').then((m) => ({ default: m.Leaderboard })));
+const ChallengesFlow = lazy(() => import('./features/challenges/ChallengesFlow').then((m) => ({ default: m.ChallengesFlow })));
+const CreateQuizFlow = lazy(() => import('./features/quiz-create/CreateQuizFlow').then((m) => ({ default: m.CreateQuizFlow })));
+const MyQuizzesScreen = lazy(() => import('./features/quiz-create/MyQuizzesScreen').then((m) => ({ default: m.MyQuizzesScreen })));
+const DiscoverScreen = lazy(() => import('./features/quiz-create/DiscoverScreen').then((m) => ({ default: m.DiscoverScreen })));
+const ArenaHomeScreen = lazy(() => import('./features/quiz-create/ArenaHomeScreen').then((m) => ({ default: m.ArenaHomeScreen })));
+const LearnLesson = lazy(() => import('./features/learn/LearnLesson').then((m) => ({ default: m.LearnLesson })));
+const LearnHome = lazy(() => import('./features/learn/LearnHome').then((m) => ({ default: m.LearnHome })));
+const RapidFireFlow = lazy(() => import('./features/rapidfire/RapidFireFlow').then((m) => ({ default: m.RapidFireFlow })));
+const PlannerFlow = lazy(() => import('./features/planner/PlannerFlow').then((m) => ({ default: m.PlannerFlow })));
+const StreakSavior = lazy(() => import('./features/home/StreakSavior').then((m) => ({ default: m.StreakSavior })));
+const NotificationCenter = lazy(() => import('./features/notifications/NotificationCenter').then((m) => ({ default: m.NotificationCenter })));
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
 // themselves before deciding where to go — this list is every *other*
@@ -131,9 +142,21 @@ export default function App() {
 
   return (
     <AppShell wide={wide}>
-      {ready && <NotificationCenter />}
+      {ready && (
+        <Suspense fallback={null}>
+          <NotificationCenter />
+        </Suspense>
+      )}
       {ready ? (
-        <Routes>
+        <Suspense
+          fallback={
+            <KairoStateView
+              state="loading"
+              loadingMessage="Loading…"
+            />
+          }
+        >
+          <Routes>
           <Route path="/" element={<Splash />} />
           {/* Real, dedicated, indexable auth routes — Sign In/Sign Up used
               to be internal screen states inside OnboardingFlow, reachable
@@ -188,7 +211,8 @@ export default function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       ) : (
         <KairoStateView
           state={boot.state === 'idle' || boot.state === 'success' ? 'loading' : boot.state}
