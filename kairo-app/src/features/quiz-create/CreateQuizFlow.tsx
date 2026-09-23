@@ -55,7 +55,7 @@ export function CreateQuizFlow() {
       });
       navigate('/quiz-create/my-quizzes', { state: { justCreated: true } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create this quiz.');
+      setError('This quiz could not be created. Your draft is still here; please try again.');
     } finally {
       setSubmitting(false);
     }

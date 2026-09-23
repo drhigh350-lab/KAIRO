@@ -39,12 +39,12 @@ export function ChallengesFlow() {
           setDbChallenges([challenge]);
           selectChallenge(shared[1], challenge);
         })
-        .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load this Arena match.'));
+        .catch(() => setLoadError('This Arena match could not be loaded. Please try again.'));
       return;
     }
     listChallenges()
       .then(setDbChallenges)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load challenges.'));
+      .catch(() => setLoadError('Arena matches could not be loaded. Please try again.'));
   }, []);
 
   // Authenticated /challenges/<id> links still resolve from the hub list.

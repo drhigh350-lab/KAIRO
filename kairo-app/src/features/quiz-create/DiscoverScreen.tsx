@@ -31,7 +31,7 @@ export function DiscoverScreen() {
       getDiscoverChallenges(subject ?? undefined),
     ])
       .then(([q, c]) => { setQuizzes(q); setChallenges(c); succeed(); })
-      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load discover content.'); fail(); });
+      .catch((err) => { setError('Discover content could not be loaded. Please try again.'); fail(); });
   };
 
   useEffect(() => {

@@ -23,7 +23,7 @@ export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: Subto
     setError(null);
     getRealSubtopics(subject.label, topic)
       .then((nextSubtopics) => { setSubtopics(nextSubtopics); succeed(); })
-      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load subtopics.'); fail(); });
+      .catch((err) => { setError('Subtopics could not be loaded. Please try again.'); fail(); });
   };
 
   useEffect(() => {

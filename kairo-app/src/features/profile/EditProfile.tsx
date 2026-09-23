@@ -51,7 +51,7 @@ export function EditProfile() {
       });
       navigate(-1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save your changes.');
+      setError('Your changes could not be saved. Please try again.');
     } finally {
       setSaving(false);
     }

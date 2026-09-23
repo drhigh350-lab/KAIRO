@@ -21,7 +21,7 @@ export function TopicSelect({ subject, onBack, onPick }: TopicSelectProps) {
     setError(null);
     getRealTopics(subject.label)
       .then((nextTopics) => { setTopics(nextTopics); succeed(); })
-      .catch((err) => { setError(err instanceof Error ? err.message : 'Could not load topics.'); fail(); });
+      .catch((err) => { setError('Topics could not be loaded. Please try again.'); fail(); });
   };
 
   useEffect(() => {

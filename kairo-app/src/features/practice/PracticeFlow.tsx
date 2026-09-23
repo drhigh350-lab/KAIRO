@@ -254,7 +254,7 @@ export function PracticeFlow() {
       })
       .catch((err) => {
         if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
-        setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.');
+        setEngineLoadError('Kairo could not start this session. Your saved progress is safe.');
         sessionState.fail();
       });
   }
@@ -506,7 +506,7 @@ export function PracticeFlow() {
       })
       .catch((err) => {
         if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
-        setEngineLoadError(err instanceof Error ? err.message : 'Could not resume your session.');
+        setEngineLoadError('Kairo could not resume this session. Your saved progress is safe.');
         sessionState.fail();
       });
   }

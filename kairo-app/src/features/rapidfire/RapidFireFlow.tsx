@@ -43,7 +43,7 @@ export function RapidFireFlow() {
       setTimePerQuestionSec(started.timePerQuestionSec);
       setScreen('play');
     } catch (err) {
-      setStartError(err instanceof Error ? err.message : 'Could not start Rapid Fire.');
+      setStartError('Kairo could not start Rapid Fire right now. Please try again.');
     } finally {
       setStarting(false);
     }
