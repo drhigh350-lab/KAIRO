@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, ProgressBar, Button } from '../../components';
 import {
@@ -8,6 +8,7 @@ import {
 } from '../../lib/kairoEngine';
 import { isWeeklyDropUnlocked, daysUntilNextDrop } from '../../lib/weeklyDrop';
 import { isMonthlyCheckpointUnlocked, daysUntilMonthlyCheckpoint } from '../../lib/monthlyCheckpoint';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 
 /** Routes an Action Card's CTA to a real Practice session — kept here (not in kairoEngine.ts) since navigation is a UI-layer concern. */
 function launchCta(navigate: ReturnType<typeof useNavigate>, cta: ActionableInsightCta) {
@@ -407,7 +408,43 @@ function ReadinessDimensionRow({ dimension }: { dimension: ReadinessDimension })
  */
 export function InsightsHub() {
   const navigate = useNavigate();
-  const actionCards = getActionableInsightCards();
+  const { state, setState } = useAsyncState();
+  const [actionCards, setActionCards] = useState<ActionableInsightCard[]>([]);
+  const requestId = useRef(0);
+
+  const loadInsights = useCallback((isRetry = false) => {
+    const currentRequestId = ++requestId.current;
+    setState(isRetry ? 'retry' : 'loading');
+
+    try {
+      const cards = getActionableInsightCards();
+      if (currentRequestId !== requestId.current) return;
+      setActionCards(cards);
+      setState('success');
+    } catch {
+      if (currentRequestId !== requestId.current) return;
+      setState(typeof navigator === 'undefined' || navigator.onLine ? 'error' : 'offline');
+    }
+  }, [setState]);
+
+  useEffect(() => {
+    loadInsights();
+    return () => {
+      requestId.current += 1;
+    };
+  }, [loadInsights]);
+
+  if (state !== 'success') {
+    return (
+      <KairoStateView
+        state={state === 'idle' ? 'loading' : state}
+        loadingMessage="Preparing your insights…"
+        errorMessage="We couldn’t prepare your insights."
+        onRetry={() => loadInsights(true)}
+        onContinueOffline={() => setState('success')}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
