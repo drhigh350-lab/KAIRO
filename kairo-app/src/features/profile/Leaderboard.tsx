@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Switch } from '../../components';
 import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
@@ -25,22 +25,29 @@ export function Leaderboard() {
   const [universities, setUniversities] = useState<UniversityRankingRow[]>([]);
   const { state, setState } = useAsyncState('idle');
   const signedIn = !!getConsentSummary();
+  const requestIdRef = useRef(0);
 
   const loadLeaderboard = useCallback(async (isRetry = false) => {
     if (!optedIn) return;
+    const requestId = ++requestIdRef.current;
+    const isCurrentRequest = () => requestId === requestIdRef.current;
     setState(isRetry ? 'retry' : 'loading');
     try {
       const [seg, uni] = await Promise.all([getSegmentLeaderboard(20), getUniversityRankings(20)]);
+      if (!isCurrentRequest()) return;
       setSegment(seg);
       setUniversities(uni);
       setState('success');
     } catch {
-      setState('error');
+      if (isCurrentRequest()) setState('error');
     }
   }, [optedIn, setState]);
 
   useEffect(() => {
     void loadLeaderboard();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [loadLeaderboard]);
 
   async function toggle() {
