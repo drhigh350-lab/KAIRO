@@ -13,7 +13,7 @@ import { getEngine, startSuggestedSession, startDashboardSession, reportDashboar
 import { toUiQuestion, selectedOptionLabel, type EngineFlatQuestion } from '../../lib/engineAdapter';
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
-import { KairoLoading } from '../../components/feedback/AsyncState';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { generateKaiText } from '../../lib/kaiAi';
 import { saveSessionSnapshot, clearSessionSnapshot, getPracticeSessionSnapshot, type PracticeSessionSnapshot } from '../../lib/sessionResume';
 import { recordVerificationResult } from '../../lib/planner/plannerApi';
@@ -217,21 +217,58 @@ export function PracticeFlow() {
   // starts (Mixed Practice / a weak-topic boost) — tells PracticeQuestion
   // to show completion percentage instead of "Question N of Total".
   const [showPercent, setShowPercent] = useState(false);
+  const [engineEmptyMessage, setEngineEmptyMessage] = useState<string | null>(null);
+  const sessionState = useAsyncState('idle');
+  const sessionRequestRef = useRef(0);
+  const mountedRef = useRef(true);
+  const retrySessionRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      sessionRequestRef.current += 1;
+    };
+  }, []);
+
+  function runQuestionRequest(
+    loader: () => Promise<{ questions: EngineFlatQuestion[] }>,
+    onQuestions: (questions: EngineFlatQuestion[]) => void,
+    emptyMessage: string,
+  ) {
+    const requestId = ++sessionRequestRef.current;
+    sessionState.start();
+    setEngineQuestions(null);
+    setEngineLoadError(null);
+    setEngineEmptyMessage(null);
+    retrySessionRef.current = () => runQuestionRequest(loader, onQuestions, emptyMessage);
+    loader()
+      .then(({ questions }) => {
+        if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
+        if (questions.length === 0) {
+          setEngineEmptyMessage(emptyMessage);
+          sessionState.succeed();
+          return;
+        }
+        onQuestions(questions);
+        sessionState.succeed();
+      })
+      .catch((err) => {
+        if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
+        setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.');
+        sessionState.fail();
+      });
+  }
 
   /** Recommended-by-Kairo session (Practice Module §2.2) — zero-input, real DDE-style queue. Shared by the initial-mount auto-start (arriving via entry:'suggested') and Practice Home's own "Start Session" tap. */
   function startSuggested(anchorConceptId?: string | null) {
-    setEngineQuestions(null);
-    setEngineLoadError(null);
-    startSuggestedSession(5, anchorConceptId)
-      .then(({ questions }) => {
-        if (questions.length === 0) {
-          setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
-        } else {
-          setEngineQuestions(questions);
-          persistFreshSnapshot('suggested', subjects[0], null, null, 'adaptive', questions);
-        }
-      })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    runQuestionRequest(
+      () => startSuggestedSession(5, anchorConceptId),
+      (questions) => {
+        setEngineQuestions(questions);
+        persistFreshSnapshot('suggested', subjects[0], null, null, 'adaptive', questions);
+      },
+      "Kairo couldn't find any questions to start with just yet.",
+    );
   }
 
   useEffect(() => {
@@ -259,20 +296,16 @@ export function PracticeFlow() {
    */
   const startedDashboard = useRef(false);
   function startDashboard(option: DashboardOption) {
-    setEngineQuestions(null);
-    setEngineLoadError(null);
-    startDashboardSession(option)
-      .then(({ questions }) => {
-        if (questions.length === 0) {
-          setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
-        } else {
-          setEngineQuestions(questions);
-          const subj = subjects.find((s) => s.label === option.subject) ?? subjects[0];
-          persistFreshSnapshot('dashboard', subj, option.topic ?? null, null, 'adaptive', questions,
-            { dashboardMeta: { type: option.type, subject: option.subject } });
-        }
-      })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    runQuestionRequest(
+      () => startDashboardSession(option),
+      (questions) => {
+        setEngineQuestions(questions);
+        const subj = subjects.find((s) => s.label === option.subject) ?? subjects[0];
+        persistFreshSnapshot('dashboard', subj, option.topic ?? null, null, 'adaptive', questions,
+          { dashboardMeta: { type: option.type, subject: option.subject } });
+      },
+      "Kairo couldn't find any questions to start with just yet.",
+    );
   }
 
   useEffect(() => {
@@ -334,22 +367,18 @@ export function PracticeFlow() {
 
   /** Profile Action Cards' "Launch Speed/Theory Drill" CTA — same auto-start-on-mount pattern as 'verify' above. A Velocity Matrix drill carries its own strict timer (drillTimerSec) — applied via the same Custom Timer pacing PracticeHub's own picker would set. */
   function startDrill(category: 'calculation' | 'theory', subjects?: string[], timerSec?: number) {
-    setEngineQuestions(null);
-    setEngineLoadError(null);
     if (timerSec) {
       setPacing('custom');
       setCustomTimerSec(timerSec);
     }
-    startHeuristicDrillSession(category, 10, subjects)
-      .then(({ questions }) => {
-        if (questions.length === 0) {
-          setEngineLoadError("Kairo couldn't find any questions for this drill yet.");
-        } else {
-          setEngineQuestions(questions);
-          persistFreshSnapshot('drill', { key: 'drill', label: 'Drill' }, null, null, 'adaptive', questions);
-        }
-      })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    runQuestionRequest(
+      () => startHeuristicDrillSession(category, 10, subjects),
+      (questions) => {
+        setEngineQuestions(questions);
+        persistFreshSnapshot('drill', { key: 'drill', label: 'Drill' }, null, null, 'adaptive', questions);
+      },
+      "Kairo couldn't find any questions for this drill yet.",
+    );
   }
 
   const startedDrill = useRef(false);
@@ -384,19 +413,15 @@ export function PracticeFlow() {
       resumeSession(existing);
       return;
     }
-    setEngineQuestions(null);
-    setEngineLoadError(null);
     setShowPercent(true); // a 60-question queue reads better as completion % than "Question 37 of 60"
-    startEnduranceSession(60)
-      .then(({ questions }) => {
-        if (questions.length === 0) {
-          setEngineLoadError("Kairo couldn't find enough questions for an endurance session yet.");
-        } else {
-          setEngineQuestions(questions);
-          persistFreshSnapshot('endurance', { key: 'endurance', label: 'Endurance' }, null, null, 'adaptive', questions);
-        }
-      })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    runQuestionRequest(
+      () => startEnduranceSession(60),
+      (questions) => {
+        setEngineQuestions(questions);
+        persistFreshSnapshot('endurance', { key: 'endurance', label: 'Endurance' }, null, null, 'adaptive', questions);
+      },
+      "Kairo couldn't find enough questions for an endurance session yet.",
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -409,18 +434,14 @@ export function PracticeFlow() {
    * would see the previous selection, not the one just picked.
    */
   function startEngineCustomSession(subjectFilter: string[], includeFading: boolean, limit: number, difficultyChoice?: string) {
-    setEngineQuestions(null);
-    setEngineLoadError(null);
-    startCustomSession({ subjects: subjectFilter, includeFading, limit: limit || 10, difficulty: difficultyChoice })
-      .then(({ questions }) => {
-        if (questions.length === 0) {
-          setEngineLoadError("Kairo couldn't find any questions to start with just yet.");
-        } else {
-          setEngineQuestions(questions);
-          persistFreshSnapshot(entryFlow, activeSubject, null, null, difficultyChoice ?? null, questions);
-        }
-      })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    runQuestionRequest(
+      () => startCustomSession({ subjects: subjectFilter, includeFading, limit: limit || 10, difficulty: difficultyChoice }),
+      (questions) => {
+        setEngineQuestions(questions);
+        persistFreshSnapshot(entryFlow, activeSubject, null, null, difficultyChoice ?? null, questions);
+      },
+      "Kairo couldn't find any questions to start with just yet.",
+    );
   }
 
   /**
@@ -433,25 +454,24 @@ export function PracticeFlow() {
    * previous selection.
    */
   function startTopicSession(subjectLabel: string, topicName: string, subtopicName?: string, limitOverride?: number, difficultyOverride?: string, isVerification = false) {
-    setEngineQuestions(null);
-    setEngineLoadError(null);
-    startTopicPracticeSession(subjectLabel, topicName, subtopicName, limitOverride ?? (length || 10), difficultyOverride ?? (difficulty ?? undefined), isVerification)
-      .then(({ questions }) => {
-        if (questions.length === 0) {
-          setEngineLoadError("Kairo couldn't find any questions for this topic yet.");
-        } else {
-          setEngineQuestions(questions);
-          persistFreshSnapshot(entryFlow, { key: subjectLabel, label: subjectLabel }, topicName, subtopicName ?? null, difficultyOverride ?? difficulty ?? null, questions,
-            isVerification ? { plannerTopicKey: plannerTopicKeyRef.current } : undefined);
-        }
-      })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not start your session.'));
+    runQuestionRequest(
+      () => startTopicPracticeSession(subjectLabel, topicName, subtopicName, limitOverride ?? (length || 10), difficultyOverride ?? (difficulty ?? undefined), isVerification),
+      (questions) => {
+        setEngineQuestions(questions);
+        persistFreshSnapshot(entryFlow, { key: subjectLabel, label: subjectLabel }, topicName, subtopicName ?? null, difficultyOverride ?? difficulty ?? null, questions,
+          isVerification ? { plannerTopicKey: plannerTopicKeyRef.current } : undefined);
+      },
+      "Kairo couldn't find any questions for this topic yet.",
+    );
   }
 
   /** Quick Resume (Practice Module §2.5/§3.2) — reconstructs the exact question set and position from a snapshot saved after a prior answer, rather than starting a fresh recommendation. Sets the screen directly rather than going through go() since a mount-time auto-resume (Batch 1, see the 'suggested'/'verify'/'drill'/'endurance' effects below) has no real "previous screen" to push onto history yet. */
   function resumeSession(snapshot: PracticeSessionSnapshot) {
     setEngineQuestions(null);
     setEngineLoadError(null);
+    setEngineEmptyMessage(null);
+    const requestId = ++sessionRequestRef.current;
+    sessionState.start();
     setShowPercent(false);
     setEntryFlow(snapshot.entryFlow);
     setSubject({ key: snapshot.subjectKey, label: snapshot.subjectLabel });
@@ -470,17 +490,25 @@ export function PracticeFlow() {
     // would silently no-op on a resumed session's completion.
     if (snapshot.plannerTopicKey) plannerTopicKeyRef.current = snapshot.plannerTopicKey;
     if (snapshot.dashboardMeta) dashboardOutcomeMetaRef.current = snapshot.dashboardMeta;
+    retrySessionRef.current = () => resumeSession(snapshot);
     resumePracticeQuestions(snapshot.loadSubjectLabel, snapshot.questionIds)
       .then((questions) => {
+        if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
         if (questions.length === 0 || snapshot.qIndex >= questions.length) {
           setEngineLoadError("This session couldn't be resumed — some of its questions are no longer available.");
+          sessionState.fail();
           clearSessionSnapshot(getEngine()?.profile?.studentId, 'practice');
           setResumeSnapshot(null);
           return;
         }
         setEngineQuestions(questions);
+        sessionState.succeed();
       })
-      .catch((err) => setEngineLoadError(err instanceof Error ? err.message : 'Could not resume your session.'));
+      .catch((err) => {
+        if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
+        setEngineLoadError(err instanceof Error ? err.message : 'Could not resume your session.');
+        sessionState.fail();
+      });
   }
 
   /**
@@ -956,14 +984,35 @@ export function PracticeFlow() {
   if (screen === 'practiceQuestion') {
     if (engineLoadError) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
-          <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>{engineLoadError}</div>
-          <button type="button" onClick={toHome} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Home</button>
-        </div>
+        <KairoStateView
+          state={sessionState.state === 'offline' ? 'offline' : 'error'}
+          errorMessage={engineLoadError}
+          onRetry={() => retrySessionRef.current?.()}
+          onContinueOffline={toHome}
+        />
+      );
+    }
+    if (engineEmptyMessage) {
+      return (
+        <KairoStateView state="success">
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '0 24px', textAlign: 'center', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
+            <div style={{ fontSize: 14, color: 'var(--dark-text-muted)' }}>{engineEmptyMessage}</div>
+            <button type="button" onClick={toHome} style={{ background: 'none', border: 'none', color: 'var(--dark-accent-blue)', fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 'var(--touch-min)' }}>Back to Home</button>
+          </div>
+        </KairoStateView>
       );
     }
     if (!engineQuestions) {
-      return <KairoLoading message="Preparing your questions" detail="KAIRO is selecting the best practice set for you." />;
+      return (
+        <KairoStateView
+          state={sessionState.state === 'idle' ? 'loading' : sessionState.state === 'offline' ? 'offline' : sessionState.state === 'error' ? 'error' : sessionState.state === 'success' ? 'loading' : sessionState.state}
+          loadingMessage="Preparing your questions"
+          slowMessage="This is taking longer than usual."
+          offlineMessage="You’re offline. Any saved practice progress is safe on this device."
+          onRetry={() => retrySessionRef.current?.()}
+          onContinueOffline={toHome}
+        />
+      );
     }
     return (
       <PracticeQuestion
