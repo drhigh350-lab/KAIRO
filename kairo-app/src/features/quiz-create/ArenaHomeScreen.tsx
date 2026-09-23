@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { ScreenHeader } from '../learning/shared';
 import { ArenaTabs, ArenaBottomSpace } from '../challenges/ArenaTabs';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
@@ -29,29 +30,36 @@ export function ArenaHomeScreen() {
   const [today, setToday] = useState<Challenge[]>([]);
   const [trending, setTrending] = useState<TrendingChallenge[]>([]);
   const [activity, setActivity] = useState<RecentActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { state, setState } = useAsyncState('idle');
 
-  useEffect(() => {
-    Promise.all([
-      getArenaHomeSummary(),
-      Promise.all([getDailyArenaChallenges(), listChallenges()]).then(([daily, rows]) => {
-        const mapped = rows.map(mapDbChallenge);
-        return daily.map(({ id }) => mapped.find((challenge) => challenge.id === id)).filter((challenge): challenge is Challenge => !!challenge);
-      }),
-      getTrendingChallenges(5),
-      getRecentActivity(8),
-    ])
-      .then(([s, t, tr, a]) => { setSummary(s); setToday(t); setTrending(tr); setActivity(a); })
-      .finally(() => setLoading(false));
-  }, []);
+  const loadArena = useCallback(async (isRetry = false) => {
+    setState(isRetry ? 'retry' : 'loading');
+    try {
+      const [s, t, tr, a] = await Promise.all([
+        getArenaHomeSummary(),
+        Promise.all([getDailyArenaChallenges(), listChallenges()]).then(([daily, rows]) => {
+          const mapped = rows.map(mapDbChallenge);
+          return daily.map(({ id }) => mapped.find((challenge) => challenge.id === id)).filter((challenge): challenge is Challenge => !!challenge);
+        }),
+        getTrendingChallenges(5),
+        getRecentActivity(8),
+      ]);
+      setSummary(s); setToday(t); setTrending(tr); setActivity(a);
+      setState('success');
+    } catch {
+      setState('error');
+    }
+  }, [setState]);
+
+  useEffect(() => { void loadArena(); }, [loadArena]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={() => navigate('/home')} title="Arena" tone="dark" />
 
       <div style={{ padding: '0 20px 40px', flex: 1 }}>
-        {loading ? (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', textAlign: 'center', padding: '40px 0' }}>Loading…</div>
+        {state !== 'success' && state !== 'idle' ? (
+          <KairoStateView state={state} loadingMessage="Preparing Arena…" errorMessage="We couldn’t load Arena right now." onRetry={() => void loadArena(true)} />
         ) : (
           <>
             {summary && (

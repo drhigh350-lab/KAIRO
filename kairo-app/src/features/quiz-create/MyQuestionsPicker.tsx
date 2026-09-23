@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { getMyCommunityQuestions, type MyCommunityQuestion, type QuestionRef } from '../../lib/quizApi';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -13,13 +14,23 @@ export function MyQuestionsPicker({
   onToggle: (ref: QuestionRef) => void;
 }) {
   const [questions, setQuestions] = useState<MyCommunityQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { state, setState } = useAsyncState('idle');
 
-  useEffect(() => {
-    getMyCommunityQuestions().then(setQuestions).finally(() => setLoading(false));
-  }, []);
+  const loadQuestions = useCallback(async (isRetry = false) => {
+    setState(isRetry ? 'retry' : 'loading');
+    try {
+      setQuestions(await getMyCommunityQuestions());
+      setState('success');
+    } catch {
+      setState('error');
+    }
+  }, [setState]);
 
-  if (loading) return <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', padding: '20px 0', textAlign: 'center' }}>Loading…</div>;
+  useEffect(() => { void loadQuestions(); }, [loadQuestions]);
+
+  if (state !== 'success' && state !== 'idle') {
+    return <KairoStateView state={state} loadingMessage="Preparing your saved questions…" errorMessage="We couldn’t load your saved questions." onRetry={() => void loadQuestions(true)} />;
+  }
   if (questions.length === 0) {
     return <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', padding: '20px 0', textAlign: 'center' }}>You haven't written any questions yet — try "Write New".</div>;
   }

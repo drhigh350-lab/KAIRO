@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Switch } from '../../components';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { ScreenHeader } from '../learning/shared';
 import {
   getConsentSummary, setLeaderboardOptIn, getSegmentLeaderboard, getUniversityRankings,
@@ -20,27 +21,27 @@ export function Leaderboard() {
   const navigate = useNavigate();
   const [optedIn, setOptedIn] = useState(() => !!getConsentSummary()?.leaderboardOptIn);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [segment, setSegment] = useState<SegmentLeaderboardRow[]>([]);
   const [universities, setUniversities] = useState<UniversityRankingRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { state, setState } = useAsyncState('idle');
   const signedIn = !!getConsentSummary();
 
-  useEffect(() => {
+  const loadLeaderboard = useCallback(async (isRetry = false) => {
     if (!optedIn) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all([getSegmentLeaderboard(20), getUniversityRankings(20)])
-      .then(([seg, uni]) => {
-        if (cancelled) return;
-        setSegment(seg);
-        setUniversities(uni);
-      })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load the leaderboard.'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [optedIn]);
+    setState(isRetry ? 'retry' : 'loading');
+    try {
+      const [seg, uni] = await Promise.all([getSegmentLeaderboard(20), getUniversityRankings(20)]);
+      setSegment(seg);
+      setUniversities(uni);
+      setState('success');
+    } catch {
+      setState('error');
+    }
+  }, [optedIn, setState]);
+
+  useEffect(() => {
+    void loadLeaderboard();
+  }, [loadLeaderboard]);
 
   async function toggle() {
     setBusy(true);
@@ -76,14 +77,11 @@ export function Leaderboard() {
           </div>
         </Card>
 
-        {optedIn && loading && (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', padding: '20px 0' }}>Loading…</div>
-        )}
-        {optedIn && error && (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', padding: '20px 0' }}>{error}</div>
+        {optedIn && state !== 'success' && state !== 'idle' && (
+          <KairoStateView state={state} loadingMessage="Preparing your leaderboard…" errorMessage="We couldn’t load the leaderboard." onRetry={() => void loadLeaderboard(true)} />
         )}
 
-        {optedIn && !loading && !error && (
+        {optedIn && state === 'success' && (
           <>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 10 }}>YOUR SEGMENT</div>
