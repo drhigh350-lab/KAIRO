@@ -66,26 +66,37 @@ export function KairoStateView({
   if (state === 'success') return <>{children}</>;
 
   const isBusy = state === 'loading' || state === 'retry';
-  const title = state === 'slow' ? slowMessage : state === 'offline' ? 'You’re offline' : state === 'error' ? errorMessage : loadingMessage;
-  const detail = state === 'slow'
-    ? 'Your saved progress is safe. You can keep waiting or try again.'
-    : state === 'error'
-      ? 'Your saved progress is safe. Please try again.'
+  const title = state === 'retry'
+    ? 'Retrying…'
+    : state === 'slow'
+      ? slowMessage
       : state === 'offline'
-        ? offlineMessage
-        : 'Your saved progress is safe while KAIRO gets things ready.';
+        ? 'You’re offline'
+        : state === 'error'
+          ? errorMessage
+          : loadingMessage;
+  const detail = state === 'retry'
+    ? 'Your saved progress is safe while KAIRO tries again.'
+    : state === 'slow'
+      ? 'Your saved progress is safe. You can keep waiting or try again.'
+      : state === 'error'
+        ? 'Your saved progress is safe. Please try again.'
+        : state === 'offline'
+          ? offlineMessage
+          : 'Your saved progress is safe while KAIRO gets things ready.';
+  const liveMode = state === 'error' || state === 'offline' ? 'assertive' : 'polite';
 
   return (
-    <section className={`kairo-state-view${compact ? ' kairo-state-view--compact' : ''}`} aria-live="polite" aria-busy={isBusy}>
+    <section className={`kairo-state-view${compact ? ' kairo-state-view--compact' : ''}`} role="status" aria-live={liveMode} aria-busy={isBusy}>
       <div className="kairo-state-mark" aria-hidden="true"><KairoMark tone="white" size={56} /></div>
       <h2>{title}</h2>
       <p>{detail}</p>
-      {isBusy && <div className="kairo-loading-dots" aria-label="In progress"><span /><span /><span /></div>}
+      {isBusy && <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>}
       {(state === 'slow' || state === 'error' || state === 'offline') && (
         <div className="kairo-state-actions">
           {state !== 'offline' && onRetry && <Button variant="darkAccent" size="sm" onClick={onRetry}>{retryLabel}</Button>}
           {state === 'offline' && onContinueOffline && <Button variant="darkAccent" size="sm" onClick={onContinueOffline}>Continue Offline</Button>}
-          {state === 'offline' && onRetry && <Button variant="ghost" size="sm" onClick={onRetry}>Try Again</Button>}
+          {state === 'offline' && onRetry && <Button variant="ghost" size="sm" onClick={onRetry}>{retryLabel}</Button>}
         </div>
       )}
     </section>
