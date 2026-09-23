@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { Input, Button } from '../../components';
 import { KaiMark, OrDivider, GoogleButton } from './shared';
 import { signInAndConnect, signInWithGoogle, requestPasswordReset, describeError, isEmailNotConfirmed } from '../../lib/kairoEngine';
@@ -20,6 +21,9 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp, onNeedsEmailVerificat
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const signInState = useAsyncState('idle', 7000);
+  const googleState = useAsyncState('idle', 7000);
+  const requestId = useRef(0);
   // Batch 4 (pre-launch bug fix): "Forgot password?" previously pointed
   // nowhere (href="#", no handler) — this drives a real
   // resetPasswordForEmail() call, using whatever email is already typed.
@@ -28,19 +32,27 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp, onNeedsEmailVerificat
   const canSubmit = email.trim() && password.length > 0 && !submitting;
 
   async function handleSubmit() {
+    if (submitting || !signInState.isOnline) {
+      if (!signInState.isOnline) signInState.setState('offline');
+      return;
+    }
+    const currentRequest = ++requestId.current;
     setError('');
     setSubmitting(true);
+    signInState.start();
     try {
       await signInAndConnect({ email: email.trim(), password });
-      onSignedIn();
-    } catch (err) {
-      if (isEmailNotConfirmed(err)) {
-        onNeedsEmailVerification(email.trim());
-      } else {
-        setError(describeError(err));
+      if (currentRequest === requestId.current) {
+        signInState.succeed();
+        onSignedIn();
       }
+    } catch (err) {
+      if (currentRequest !== requestId.current) return;
+      signInState.fail();
+      if (isEmailNotConfirmed(err)) onNeedsEmailVerification(email.trim());
+      else setError(describeError(err));
     } finally {
-      setSubmitting(false);
+      if (currentRequest === requestId.current) setSubmitting(false);
     }
   }
 
@@ -61,13 +73,21 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp, onNeedsEmailVerificat
   }
 
   async function handleGoogle() {
-    if (googleSubmitting) return;
+    if (googleSubmitting || !googleState.isOnline) {
+      if (!googleState.isOnline) googleState.setState('offline');
+      return;
+    }
+    const currentRequest = ++requestId.current;
     setError('');
     setGoogleSubmitting(true);
+    googleState.start();
     try {
       await signInWithGoogle();
+      if (currentRequest === requestId.current) googleState.succeed();
       // Success navigates the whole browser away to Google — nothing left to do here.
     } catch (err) {
+      if (currentRequest !== requestId.current) return;
+      googleState.fail();
       setError(describeError(err));
       setGoogleSubmitting(false);
     }
@@ -102,8 +122,10 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp, onNeedsEmailVerificat
           )}
         </div>
         {resetError && <div style={{ fontSize: 12.5, color: 'var(--dark-danger)', marginTop: -8 }}>{resetError}</div>}
+        {signInState.state !== 'idle' && signInState.state !== 'success' && <KairoStateView state={signInState.state} compact loadingMessage="Signing you in…" slowMessage="Sign-in is taking longer than usual." errorMessage="We couldn’t sign you in right now." offlineMessage="You’re offline. Your saved progress is safe." onRetry={() => void handleSubmit()} />}
         <Button variant="darkAccent" size="lg" fullWidth disabled={!canSubmit} onClick={handleSubmit}>{submitting ? 'Signing in…' : 'Sign In'}</Button>
         <OrDivider tone="dark" />
+        {googleState.state !== 'idle' && googleState.state !== 'success' && <KairoStateView state={googleState.state} compact loadingMessage="Connecting to Google…" slowMessage="Google sign-in is taking longer than usual." errorMessage="Google sign-in could not start." offlineMessage="You’re offline. Reconnect before signing in with Google." onRetry={() => void handleGoogle()} />}
         <GoogleButton tone="dark" onClick={handleGoogle}>{googleSubmitting ? 'Connecting…' : 'Continue with Google'}</GoogleButton>
       </div>
       <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--dark-text-muted)', marginTop: 'auto' }}>

@@ -29,7 +29,7 @@ import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { PlannerFlow } from './features/planner/PlannerFlow';
 import { StreakSavior } from './features/home/StreakSavior';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
-import { KairoLoading } from './components/feedback/AsyncState';
+import { KairoStateView, useAsyncState } from './components/feedback/AsyncState';
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
@@ -53,17 +53,29 @@ const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/re
 const WIDE_ROUTES = ['/home', '/dashboard', '/profile', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
-function useBootRestore(): boolean {
+function useBootRestore() {
+  const restoreState = useAsyncState('loading', 9000);
   const [ready, setReady] = useState(() => {
     const needsRestore = ROUTES_NEEDING_RESTORE.some((p) => window.location.pathname.startsWith(p));
     return !needsRestore || !!getEngine();
   });
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    if (ready) return;
+    if (ready) {
+      restoreState.succeed();
+      return;
+    }
     let cancelled = false;
-    restoreSession().catch(() => false).finally(() => {
-      if (!cancelled) setReady(true);
+    restoreState.start();
+    restoreSession().then((restored) => {
+      if (!cancelled) {
+        restoreState.succeed();
+        setReady(true);
+      }
+      return restored;
+    }).catch(() => {
+      if (!cancelled) restoreState.fail();
     });
     return () => {
       cancelled = true;
@@ -72,13 +84,9 @@ function useBootRestore(): boolean {
     // whatever path the browser actually loaded, not on every client-side
     // route change (the in-memory engine survives those just fine).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryCount]);
 
-  return ready;
-}
-
-function BootScreen() {
-  return <KairoLoading />;
+  return { ready, state: restoreState.state, retry: () => { setReady(false); restoreState.retry(); setRetryCount((count) => count + 1); } };
 }
 
 /**
@@ -103,7 +111,8 @@ function RequireOnboarded() {
 }
 
 export default function App() {
-  const ready = useBootRestore();
+  const boot = useBootRestore();
+  const { ready } = boot;
   const location = useLocation();
   const wide = WIDE_ROUTES.includes(location.pathname);
 
@@ -181,7 +190,15 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       ) : (
-        <BootScreen />
+        <KairoStateView
+          state={boot.state === 'idle' || boot.state === 'success' ? 'loading' : boot.state}
+          loadingMessage="Restoring your KAIRO session…"
+          slowMessage="Session restoration is taking longer than usual."
+          errorMessage="We couldn’t restore your session right now."
+          offlineMessage="You’re offline. Your saved progress is safe on this device."
+          onRetry={boot.retry}
+          onContinueOffline={() => setTimeout(() => window.location.assign('/login'), 0)}
+        />
       )}
     </AppShell>
   );
