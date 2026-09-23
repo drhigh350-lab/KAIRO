@@ -10,7 +10,7 @@ import { getCbtSessionSnapshot, clearSessionSnapshot } from '../../lib/sessionRe
 import { useBackIntercept } from '../../lib/useBackIntercept';
 import { useSetBottomNavHidden } from '../../layout/AppTabs';
 import { goHomeOrStreakSavior } from '../../lib/streakSavior';
-import { KairoLoading } from '../../components/feedback/AsyncState';
+import { KairoStateView, useAsyncState, type AsyncState } from '../../components/feedback/AsyncState';
 import { getCourseSubjects } from '../../lib/subjectScope';
 
 type Screen = 'setup' | 'instructions' | 'starting' | 'exam' | 'summary' | 'review';
@@ -63,11 +63,21 @@ export function CbtFlow() {
   const [resumeState, setResumeState] = useState<{ answers: Record<number, string>; flagged: Record<number, boolean>; current: number } | null>(null);
   const [results, setResults] = useState<CbtResults | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const startState = useAsyncState('idle', 9000);
+  const resumeStateAsync = useAsyncState('idle', 9000);
+  const submitState = useAsyncState('idle', 9000);
+  const mounted = useRef(true);
+  const submitStarted = useRef(false);
+  const [resumeFailed, setResumeFailed] = useState(false);
 
   const [examType, setExamType] = useState<CbtExamType>('full');
   const [subject, setSubject] = useState(availableSubjects[1] || availableSubjects[0]);
   const [customSubjects, setCustomSubjects] = useState<string[]>(availableSubjects);
   const [customTotalPreset, setCustomTotalPreset] = useState(80);
+
+  useEffect(() => () => {
+    mounted.current = false;
+  }, []);
 
   // Anti-Refresh Wipeout (Batch 1): rebuild the live exam from the
   // snapshot rather than silently discarding it and sending the student
@@ -78,6 +88,7 @@ export function CbtFlow() {
   useEffect(() => {
     const snapshot = getCbtSessionSnapshot(studentId);
     if (snapshot) {
+      resumeStateAsync.start();
       resumeCbtExam({
         subjects: snapshot.subjects,
         totalTimeMin: snapshot.totalTimeMin,
@@ -90,10 +101,15 @@ export function CbtFlow() {
       })
         .then((resumed) => {
           if (!resumed) {
-            clearSessionSnapshot(studentId, 'cbt');
-            setScreen('setup');
+            if (mounted.current) {
+              resumeStateAsync.fail();
+              setResumeFailed(true);
+            }
             return;
           }
+          if (!mounted.current) return;
+          resumeStateAsync.succeed();
+          setResumeFailed(false);
           setPaper(resumed.paper);
           setTotalTimeMin(resumed.totalTimeMin);
           setStartTime(resumed.startTime);
@@ -101,12 +117,15 @@ export function CbtFlow() {
           setScreen('exam');
         })
         .catch(() => {
-          clearSessionSnapshot(studentId, 'cbt');
-          setScreen('setup');
+          if (mounted.current) {
+            resumeStateAsync.fail();
+            setResumeFailed(true);
+          }
         });
       return;
     }
     if (isSmartPatchRef.current) {
+      startState.start();
       startSmartPatchSession()
         .then((started) => {
           if (!started) {
@@ -152,8 +171,10 @@ export function CbtFlow() {
   });
 
   async function handleBegin() {
+    if (startState.state === 'loading' || startState.state === 'retry') return;
     setStartError(null);
     setScreen('starting');
+    startState.start();
     try {
       let started;
       if (examType === 'subject') {
@@ -176,18 +197,30 @@ export function CbtFlow() {
       setTotalTimeMin(started.totalTimeMin);
       setStartTime(started.startTime);
       setResumeState(null);
+      startState.succeed();
       setScreen('exam');
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : 'Could not start the exam.');
+    } catch {
+      startState.fail();
+      setStartError('Kairo could not prepare this exam right now. Your existing exam progress is safe.');
       setScreen('setup');
     }
   }
 
   async function handleSubmit() {
-    const finished = await finishCbtExam();
-    clearSessionSnapshot(studentId, 'cbt');
-    setResults(finished);
-    setScreen('summary');
+    if (submitStarted.current || submitState.state === 'loading' || submitState.state === 'retry') return;
+    submitStarted.current = true;
+    submitState.start();
+    try {
+      const finished = await finishCbtExam();
+      if (!mounted.current) return;
+      submitState.succeed();
+      clearSessionSnapshot(studentId, 'cbt');
+      setResults(finished);
+      setScreen('summary');
+    } catch {
+      submitStarted.current = false;
+      if (mounted.current) submitState.fail();
+    }
   }
 
   if (screen === 'setup') {
@@ -219,7 +252,23 @@ export function CbtFlow() {
     return <ExamInstructions onBack={() => setScreen('setup')} onBegin={handleBegin} />;
   }
   if (screen === 'starting') {
-    return <KairoLoading message="Preparing your exam" detail="KAIRO is assembling your question paper and checking the timing." />;
+    const startingState: Exclude<AsyncState, 'idle'> = (resumeFailed ? resumeStateAsync.state : startState.state) === 'idle'
+      ? 'loading'
+      : (resumeFailed ? resumeStateAsync.state : startState.state) as Exclude<AsyncState, 'idle'>;
+    return (
+      <KairoStateView
+        state={startingState}
+        loadingMessage="Preparing your exam…"
+        slowMessage="Preparing your exam is taking longer than usual."
+        errorMessage="We could not restore this exam yet. Your saved attempt is still safe."
+        offlineMessage="You are offline. Your saved exam will remain available when the question catalog is ready."
+        onRetry={() => {
+          if (resumeFailed) window.location.reload();
+          else void handleBegin();
+        }}
+        onContinueOffline={() => setScreen('setup')}
+      />
+    );
   }
   if (screen === 'exam') {
     return (
@@ -232,6 +281,7 @@ export function CbtFlow() {
         initialFlagged={resumeState?.flagged}
         initialCurrent={resumeState?.current}
         onSubmit={handleSubmit}
+        submitState={submitState.state}
         onExit={toHome}
       />
     );

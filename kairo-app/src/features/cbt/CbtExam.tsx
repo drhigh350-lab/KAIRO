@@ -3,6 +3,7 @@ import { Button, IconButton } from '../../components';
 import { CalcIcon, CloseIcon, FlagIcon, InlineToast, MiniCalculator, Modal, QuestionDiagram } from '../learning/shared';
 import { submitCbtAnswer, toggleCbtFlag, getCbtSubjectTimes, type CbtPaperQuestion } from '../../lib/kairoEngine';
 import { saveSessionSnapshot } from '../../lib/sessionResume';
+import { KairoStateView, type AsyncState } from '../../components/feedback/AsyncState';
 
 export interface CbtExamProps {
   paper: CbtPaperQuestion[];
@@ -15,9 +16,10 @@ export interface CbtExamProps {
   initialCurrent?: number;
   onSubmit: () => void;
   onExit?: () => void;
+  submitState?: AsyncState;
 }
 
-export function CbtExam({ paper, totalTimeMin, startTime, studentId, initialAnswers, initialFlagged, initialCurrent, onSubmit, onExit }: CbtExamProps) {
+export function CbtExam({ paper, totalTimeMin, startTime, studentId, initialAnswers, initialFlagged, initialCurrent, onSubmit, onExit, submitState = 'success' }: CbtExamProps) {
   const [current, setCurrent] = useState(initialCurrent ?? 0);
   const [answers, setAnswers] = useState<Record<number, string>>(initialAnswers ?? {});
   const [flagged, setFlagged] = useState<Record<number, boolean>>(initialFlagged ?? {});
@@ -93,6 +95,18 @@ export function CbtExam({ paper, totalTimeMin, startTime, studentId, initialAnsw
   const timeLow = secondsLeft <= 300;
 
   if (!q) return null;
+  if (submitState !== 'success' && submitState !== 'idle') {
+    return (
+      <KairoStateView
+        state={submitState}
+        loadingMessage="Saving your exam…"
+        slowMessage="Saving your exam is taking longer than usual."
+        errorMessage="Your exam is still saved on this device."
+        offlineMessage="You are offline. Your completed exam is saved and can be submitted when you reconnect."
+        onRetry={onSubmit}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', position: 'relative', background: 'var(--dark-bg-canvas)' }}>
