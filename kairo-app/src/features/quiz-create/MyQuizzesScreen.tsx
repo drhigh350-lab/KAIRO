@@ -39,6 +39,7 @@ export function MyQuizzesScreen() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   async function handleApprove(quiz: MyQuiz) {
+    if (busyId) return;
     setBusyId(quiz.id);
     try {
       await reviewQuiz(quiz.id, true, 'Self-approved for testing');
@@ -49,6 +50,7 @@ export function MyQuizzesScreen() {
   }
 
   async function handleCreateChallenge(quiz: MyQuiz) {
+    if (busyId) return;
     setBusyId(quiz.id);
     try {
       const challenge = await createChallengeFromQuiz(quiz.id, quiz.title);

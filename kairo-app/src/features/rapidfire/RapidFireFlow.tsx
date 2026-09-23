@@ -30,6 +30,7 @@ export function RapidFireFlow() {
   const toHome = () => navigate('/home');
 
   async function handleStart() {
+    if (starting) return;
     setStarting(true);
     setStartError(null);
     try {

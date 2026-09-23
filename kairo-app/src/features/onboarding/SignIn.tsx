@@ -57,6 +57,7 @@ export function SignIn({ onBack, onSignedIn, onGoToSignUp, onNeedsEmailVerificat
   }
 
   async function handleForgotPassword() {
+    if (resetState === 'sending') return;
     if (!email.trim()) {
       setResetError('Enter your email above first, then tap Forgot password.');
       return;
