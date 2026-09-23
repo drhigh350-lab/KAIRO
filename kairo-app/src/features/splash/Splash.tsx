@@ -19,6 +19,7 @@ export function Splash() {
 
   useEffect(() => {
     let cancelled = false;
+    const startedAt = Date.now();
     restoreSession().catch(() => false).then((restored) => {
       if (cancelled) return;
       if (!restored) {
@@ -33,7 +34,10 @@ export function Splash() {
       // examDate/targetCourse set yet) restores successfully too, and
       // previously landed straight on a blank Home instead of picking
       // back up where they left off.
-      const minDelay = new Promise((resolve) => setTimeout(resolve, 1400));
+      // Keep a tiny branded beat only when restoration was effectively
+      // instantaneous. Never add 1.4s after a real network/IndexedDB wait.
+      const remainingBrandTime = Math.max(0, 350 - (Date.now() - startedAt));
+      const minDelay = new Promise((resolve) => setTimeout(resolve, remainingBrandTime));
       minDelay.then(() => {
         if (!cancelled) navigate(isOnboarded() ? '/dashboard' : '/onboarding', { replace: true });
       });

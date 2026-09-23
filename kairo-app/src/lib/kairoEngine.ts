@@ -10,6 +10,24 @@ type Engine = any;
 
 let engine: Engine | null = null;
 
+/** Prevent a stalled network/IndexedDB promise from trapping a student in a loading state forever. */
+export class KairoTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KairoTimeoutError';
+  }
+}
+
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new KairoTimeoutError(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 export function getEngine(): Engine | null {
   return engine;
 }
@@ -27,8 +45,12 @@ export async function triggerRecommendationPrefetch(): Promise<void> {
   const kairo = getEngine();
   if (!kairo) return;
   try {
+    // Do not compete with the first dashboard paint on low-end devices or a
+    // degraded mobile connection. One queue is enough to make the next tap
+    // resilient; later visits can gradually refill the offline cache.
+    await new Promise((resolve) => setTimeout(resolve, 750));
     await ensureContentLoaded(kairo.profile.targetSubjects || []);
-    await kairo.prefetchRecommendationQueues({ queueCount: 4, questionsPerQueue: 10 });
+    await kairo.prefetchRecommendationQueues({ queueCount: 1, questionsPerQueue: 10 });
   } catch {
     // Offline, not signed in yet, or nothing to prefetch — fine, this is
     // opportunistic by design.
@@ -245,19 +267,21 @@ export async function restoreSession(): Promise<boolean> {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) return false;
+      return await withTimeout((async () => {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) return false;
 
-      const kairo = createEngine('');
-      await kairo.init();
-      // No email/password — connectSupabase() reuses the session getSession() already restored.
-      await kairo.connectSupabase(supabase, {});
-      await purgeDeletedEmptyDiagramCache(kairo);
-      // The profile is already hydrated at this point — a sync hiccup
-      // right after a successful reconnect shouldn't undo it, so this
-      // runs in the background rather than gating the restore's result.
-      kairo.sync.sync().catch(() => {});
-      return true;
+        const kairo = createEngine('');
+        await kairo.init();
+        // No email/password — connectSupabase() reuses the session getSession() already restored.
+        await kairo.connectSupabase(supabase, {});
+        await purgeDeletedEmptyDiagramCache(kairo);
+        // The profile is already hydrated at this point — a sync hiccup
+        // right after a successful reconnect shouldn't undo it, so this
+        // runs in the background rather than gating the restore's result.
+        kairo.sync.sync().catch(() => {});
+        return true;
+      })(), 12_000, 'KAIRO could not restore the session in time.');
     } catch (err) {
       if (isAuthRejection(err)) {
         await clearStaleSession(supabase);
@@ -464,12 +488,12 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   // by the next Practice/CBT/recommendation entry point. When offline, keep
   // using the last successfully synchronized IndexedDB mirror instead.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-  contentLoadPromise = (async () => {
+  contentLoadPromise = withTimeout((async () => {
     await ensureMistakePatchesLoaded();
     await kairo.loadContentCatalog({ subjects: target });
     contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
     contentLoadedAt = Date.now();
-  })();
+  })(), 15_000, 'KAIRO could not load practice content in time.');
   try {
     await contentLoadPromise;
   } finally {
@@ -1338,6 +1362,39 @@ export async function updateProfileDetails(details: ProfileEditDetails): Promise
 export function getInsightsSummary(): Engine | null {
   const kairo = getEngine();
   return kairo ? kairo.insights.getDashboardInsights() : null;
+}
+
+export interface ReadinessDimension {
+  key: string;
+  label: string;
+  value: number | null;
+  confidence: 'insufficient' | 'emerging' | 'developing' | 'reliable' | 'high-confidence';
+  evidenceCount: number;
+  summary: string;
+  unit?: string;
+  averageResponseMs?: number | null;
+}
+
+export interface ReadinessProfile {
+  targetScore: number | null;
+  targetSubjects: string[];
+  overall: {
+    confidence: ReadinessDimension['confidence'];
+    demonstratedScore: number | null;
+    targetScore: number | null;
+    status: 'evidence-backed-estimate' | 'insufficient-evidence';
+    summary: string;
+  };
+  dimensions: ReadinessDimension[];
+  risks: { subject: string; risk: number; accuracy: number | null; evidenceCount: number; confidence: ReadinessDimension['confidence'] }[];
+  nextEvidence: string;
+  evidence: { attempts: number; concepts: number; repeatedConcepts: number; retainedConcepts: number; completedSessions: number; enduranceSessions: number; generatedAt: number };
+}
+
+/** Evidence-based readiness profile — never a single opaque score. */
+export function getReadinessProfile(): ReadinessProfile | null {
+  const kairo = getEngine();
+  return kairo ? kairo.getReadinessProfile() as ReadinessProfile : null;
 }
 
 /** Real "sessions this week" + reinforced/fading concepts and Kai's own reflective narrative for Insights' weekly card. */

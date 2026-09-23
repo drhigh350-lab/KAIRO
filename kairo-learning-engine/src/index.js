@@ -62,6 +62,7 @@ import { ChallengesModule } from "./challenges/ChallengesModule.js";
 import { InsightsModule } from "./insights/InsightsModule.js";
 import { NotificationEngine } from "./notifications/NotificationEngine.js";
 import { ProfileSettings } from "./profile/ProfileSettings.js";
+import { calculateReadinessProfile } from "./insights/ReadinessProfile.js";
 import { AdminCMS } from "./admin/AdminCMS.js";
 import { Question } from "./qim/Question.js";
 import { QuestionRelationshipGraph } from "./qim/QuestionRelationshipGraph.js";
@@ -931,6 +932,15 @@ export class KairoEngine {
       topic: concept?.topic || null,
       reason: concept ? preview.explainTopPick(concept, this.profile.macroState, this.profile.examDate) : null
     };
+  }
+
+  /** Read-only evidence snapshot for student-facing readiness surfaces. */
+  getReadinessProfile() {
+    return calculateReadinessProfile({
+      profile: this.profile,
+      concepts: Array.from(this.graph.nodes.values()),
+      sessions: this.profile.sessions || [],
+    });
   }
 
   /**

@@ -5,9 +5,10 @@ import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus } from '../../lib/kairoEngine';
+import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompletedTodaysRecommendation, getStreakStatus, getPendingRepairsCount, loadReviewData } from '../../lib/kairoEngine';
 import { getPinnedDashboardOptions } from '../../lib/dailyRecommendation';
 import { InstallAppBanner } from './InstallAppBanner';
+import { MissionControl } from './MissionControl';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -98,6 +99,22 @@ export function HomeDashboard() {
   const earnedBadges: EarnedBadge[] = getEngine()?.getBadges()?.earned ?? [];
   const latestBadge = earnedBadges.length ? earnedBadges[earnedBadges.length - 1] : null;
   const [todayProgress, setTodayProgress] = useState(getTodayProgress());
+  const [pendingRepairs, setPendingRepairs] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadReviewData()
+      .then(() => {
+        if (!cancelled) setPendingRepairs(getPendingRepairsCount());
+      })
+      .catch(() => {
+        // Keep Mission Control useful when review content is unavailable
+        // offline; the loading state is not a reason to block the dashboard.
+        if (!cancelled) setPendingRepairs(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Home is one of only three places the total Kairo Score is allowed to
   // show (with Profile and Insights) — everywhere else shows session-scoped
   // gained points instead, so this doesn't repeat a slow-moving 0-100
@@ -188,6 +205,17 @@ export function HomeDashboard() {
             chips={['≈5 min', 'Adaptive']}
             ctaLabel="Start practicing"
             onStart={primaryOption ? handlePrimaryStart : () => navigate('/practice', { state: { entry: 'suggested' } })}
+          />
+
+          <MissionControl
+            primaryOption={primaryOption}
+            pendingRepairs={pendingRepairs}
+            questionsToday={todayProgress.questionsToday}
+            dailyGoal={todayProgress.dailyGoal}
+            daysToGo={daysToGo}
+            onStartRecommendation={primaryOption ? handlePrimaryStart : () => navigate('/practice', { state: { entry: 'suggested' } })}
+            onOpenReview={() => navigate('/review')}
+            onOpenPlanner={() => navigate('/planner')}
           />
 
           <div>

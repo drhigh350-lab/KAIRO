@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, ProgressBar, Button } from '../../components';
 import {
   getActionableInsightCards, getWeeklyDrop, getSubjectHealth, getMonthlyCheckpoint, getProfileSummary,
-  type ActionableInsightCard, type ActionableInsightCta, type WeeklyDrop, type MonthlyCheckpoint,
+  getReadinessProfile,
+  type ActionableInsightCard, type ActionableInsightCta, type WeeklyDrop, type MonthlyCheckpoint, type ReadinessDimension,
 } from '../../lib/kairoEngine';
 import { isWeeklyDropUnlocked, daysUntilNextDrop } from '../../lib/weeklyDrop';
 import { isMonthlyCheckpointUnlocked, daysUntilMonthlyCheckpoint } from '../../lib/monthlyCheckpoint';
@@ -339,6 +340,63 @@ function SubjectHealthSection() {
   );
 }
 
+function confidenceLabel(confidence: ReadinessDimension['confidence']): string {
+  return confidence === 'high-confidence' ? 'High confidence' : confidence.charAt(0).toUpperCase() + confidence.slice(1);
+}
+
+function ReadinessProfileSection() {
+  const readiness = getReadinessProfile();
+  if (!readiness) return null;
+
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <div style={{ borderRadius: 'var(--radius-lg)', padding: 22, background: 'linear-gradient(160deg, var(--dark-bg-elevated), var(--dark-bg-surface))', border: '1px solid var(--dark-border)' }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.08em', color: 'var(--dark-accent-blue)', textTransform: 'uppercase' }}>Readiness Profile</div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--dark-text-heading)', marginTop: 8, lineHeight: 1.3 }}>
+          {readiness.overall.status === 'evidence-backed-estimate' ? `Demonstrated performance: around ${readiness.overall.demonstratedScore}` : 'KAIRO is still learning your baseline'}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', lineHeight: 1.55, marginTop: 8 }}>{readiness.overall.summary}</div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+          <span style={{ padding: '6px 10px', borderRadius: 'var(--radius-pill)', background: 'rgba(46,124,246,0.14)', color: 'var(--dark-accent-blue)', fontSize: 12, fontWeight: 700 }}>{readiness.targetScore != null ? `Target ${readiness.targetScore}` : 'Target score not set'}</span>
+          <span style={{ padding: '6px 10px', borderRadius: 'var(--radius-pill)', background: 'var(--dark-bg-canvas)', color: 'var(--dark-text-muted)', fontSize: 12 }}>{readiness.evidence.attempts} attempts · {readiness.evidence.completedSessions} sessions</span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 18 }}>
+          {readiness.dimensions.map((dimension) => <ReadinessDimensionRow key={dimension.key} dimension={dimension} />)}
+        </div>
+
+        {readiness.risks.length > 0 && (
+          <div style={{ marginTop: 18, paddingTop: 15, borderTop: '1px solid var(--dark-border)' }}>
+            <div style={{ fontSize: 11, color: 'var(--dark-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 800 }}>Largest current risks</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 9 }}>
+              {readiness.risks.map((risk) => <span key={risk.subject} style={{ padding: '6px 9px', borderRadius: 'var(--radius-pill)', background: 'rgba(224,90,90,0.12)', color: 'var(--dark-danger)', fontSize: 12, fontWeight: 700 }}>{risk.subject}</span>)}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: 16, padding: 12, borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.035)', color: 'var(--dark-text-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
+          <strong style={{ color: 'var(--dark-text-body)' }}>What KAIRO needs next: </strong>{readiness.nextEvidence}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReadinessDimensionRow({ dimension }: { dimension: ReadinessDimension }) {
+  const value = dimension.value == null ? '—' : `${dimension.value}${dimension.unit === '%' ? '%' : ''}`;
+  return (
+    <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--dark-bg-canvas)', border: '1px solid var(--dark-border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--dark-text-muted)' }}>{dimension.label}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 800, color: dimension.value == null ? 'var(--dark-text-faint)' : 'var(--dark-text-heading)' }}>{value}</span>
+      </div>
+      <div style={{ fontSize: 10.5, color: 'var(--dark-accent-blue)', fontWeight: 700, marginTop: 6 }}>{confidenceLabel(dimension.confidence)} · {dimension.evidenceCount} evidence</div>
+      <div style={{ fontSize: 11.5, color: 'var(--dark-text-faint)', lineHeight: 1.4, marginTop: 5 }}>{dimension.summary}</div>
+    </div>
+  );
+}
+
 /**
  * The Insights Hub — item 2 of Profile's vertical stack (Batch 6): Weekly
  * Drop, the Actionable Insights carousel, Subject Health, then the
@@ -356,6 +414,7 @@ export function InsightsHub() {
       <div style={{ padding: '0 20px', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: 'var(--dark-text-heading)' }}>
         Insights
       </div>
+      <ReadinessProfileSection />
       <WeeklyDropSection />
       {actionCards.length > 0 && (
         <ActionCardCarousel cards={actionCards} onAction={(card) => launchCta(navigate, card.cta)} />

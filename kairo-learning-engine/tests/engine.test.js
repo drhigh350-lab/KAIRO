@@ -12,6 +12,7 @@ import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
 import { PlannerBridge } from "../src/engine/PlannerBridge.js";
 import { LocalStore, STORES } from "../src/data/LocalStore.js";
 import { EliteScore } from "../src/engine/EliteScore.js";
+import { calculateReadinessProfile } from "../src/insights/ReadinessProfile.js";
 
 let passCount = 0;
 let failCount = 0;
@@ -3427,6 +3428,47 @@ await test('CBTExamMode.startFromQuestionIds builds a real, fresh, correctly-ord
 
   const missing = engine.cbt.startFromQuestionIds(['sb7_q1', 'does_not_exist'], { subjects: ['Chemistry'], totalTimeMin: 12 });
   assertEqual(missing, null, 'Aborts cleanly (rather than building a paper with a gap) when any id fails to resolve');
+});
+
+await test('Readiness Profile stays explicitly insufficient when evidence is sparse', async () => {
+  const result = calculateReadinessProfile({
+    profile: { targetUTMEScore: 300, targetSubjects: ['Biology'] },
+    concepts: [],
+    sessions: [],
+    now: Date.now(),
+  });
+  assertEqual(result.overall.status, 'insufficient-evidence', 'Overall readiness must not appear before strong evidence exists');
+  assertEqual(result.overall.demonstratedScore, null, 'Sparse evidence must not produce a guessed score');
+  assertEqual(result.dimensions.find((d) => d.key === 'accuracy').confidence, 'insufficient', 'Accuracy should be labelled insufficient without attempts');
+});
+
+await test('Readiness Profile requires realistic CBT evidence before estimating target performance', async () => {
+  const now = Date.now();
+  const concepts = Array.from({ length: 5 }, (_, index) => ({
+    id: `readiness_${index}`,
+    subject: 'Biology',
+    topic: `Topic ${index}`,
+    retentionState: 'held',
+    attemptHistory: [
+      { correct: true, responseTimeMs: 5000, timestamp: now - 3 * 86400000, questionId: `q_${index}_1` },
+      { correct: true, responseTimeMs: 5000, timestamp: now, questionId: `q_${index}_2` },
+    ],
+  }));
+  const sessions = Array.from({ length: 3 }, (_, index) => ({
+    mode: 'cbt_exam',
+    completedAt: now - (2 - index) * 86400000,
+    questionsAnswered: 40,
+    correctCount: 35,
+  }));
+  const result = calculateReadinessProfile({
+    profile: { targetUTMEScore: 300, targetSubjects: ['Biology'] },
+    concepts,
+    sessions,
+    now,
+  });
+  assertEqual(result.overall.status, 'insufficient-evidence', 'Five concepts and CBT sessions still need a broader attempt sample');
+  assert(result.evidence.enduranceSessions === 3, 'Long CBT sessions should count as endurance evidence');
+  assert(result.dimensions.find((d) => d.key === 'retention').value === 100, 'Delayed retrieval should contribute to retention');
 });
 
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed`);
