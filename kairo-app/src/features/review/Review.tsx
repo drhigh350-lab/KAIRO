@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card } from '../../components';
+import { Badge, Button, Card, KairoStateView, useAsyncState } from '../../components';
 import { InlineToast } from '../learning/shared';
 import { CbtReview } from '../cbt/CbtReview';
 import {
@@ -155,17 +155,38 @@ export function Review() {
   const [selectedSessionReview, setSelectedSessionReview] = useState<SessionQuestionReview[] | null>(null);
   const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const asyncState = useAsyncState('loading');
 
-  useEffect(() => {
-    loadReviewData().then(() => {
+  const loadData = useCallback(async () => {
+    const currentRequest = ++requestId.current;
+    asyncState.start();
+    try {
+      await loadReviewData();
+      const [recentMistakes, savedBookmarks, sessionHistory] = await Promise.all([
+        getRecentMistakes(20).catch(() => [] as MistakeTicket[]),
+        getBookmarkedQuestions(20).catch(() => [] as BookmarkedQuestion[]),
+        getSessionHistory(20).catch(() => [] as SessionHistoryEntry[]),
+      ]);
+      if (currentRequest !== requestId.current) return;
       setPendingCount(getPendingRepairsCount());
       setWeakTopics(getWeakTopicsForReview());
+      setMistakes(recentMistakes);
+      setBookmarks(savedBookmarks);
+      setHistory(sessionHistory);
       setDataLoaded(true);
-    });
-    getRecentMistakes(20).then(setMistakes).catch(() => setMistakes([]));
-    getBookmarkedQuestions(20).then(setBookmarks).catch(() => setBookmarks([]));
-    getSessionHistory(20).then(setHistory).catch(() => setHistory([]));
+      asyncState.succeed();
+    } catch {
+      if (currentRequest === requestId.current) asyncState.fail();
+    }
+  // The request id owns freshness; keeping this callback stable prevents retry effects from looping.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    void loadData();
+    return () => { requestId.current += 1; };
+  }, [loadData]);
 
   function handleUnderstand(ticket: MistakeTicket) {
     setSavingTicket(ticket.questionId);
@@ -216,6 +237,19 @@ export function Review() {
     } catch {
       getBookmarkedQuestions(20).then(setBookmarks).catch(() => {});
     }
+  }
+
+  if (asyncState.state !== 'success') {
+    return (
+      <KairoStateView
+        state={asyncState.state === 'idle' ? 'loading' : asyncState.state}
+        loadingMessage="Preparing your review…"
+        slowMessage="Your review is taking longer than usual."
+        errorMessage="We couldn’t load your review data."
+        onRetry={() => void loadData()}
+        onContinueOffline={() => asyncState.succeed()}
+      />
+    );
   }
 
   if (selectedCbtReview) {

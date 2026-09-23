@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { KairoStateView, useAsyncState } from '../../components';
 import { PlannerSetup } from './PlannerSetup';
 import { PlannerHome } from './PlannerHome';
 import { getSubjects } from '../../lib/planner/syllabus';
@@ -18,24 +19,41 @@ export function PlannerFlow() {
   const [state, setState] = useState<PlannerState | null>(null);
   const [pinned, setPinned] = useState<DueTopic | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const requestId = useRef(0);
+  const asyncState = useAsyncState('loading');
 
-  async function refresh() {
-    const current = await loadCurrentPlan();
-    if (!current) {
-      setPlan(null);
-      setScreen('setup');
-      return;
+  const refresh = useCallback(async () => {
+    const currentRequest = ++requestId.current;
+    asyncState.start();
+    try {
+      const current = await loadCurrentPlan();
+      if (currentRequest !== requestId.current) return;
+      if (!current) {
+        setPlan(null);
+        setState(null);
+        setPinned(null);
+        setScreen('setup');
+        asyncState.succeed();
+        return;
+      }
+      setPlan(current.plan);
+      setState(current.state);
+      const recommendation = await getPinnedRecommendation();
+      if (currentRequest !== requestId.current) return;
+      setPinned(recommendation);
+      setScreen('home');
+      asyncState.succeed();
+    } catch {
+      if (currentRequest === requestId.current) asyncState.fail();
     }
-    setPlan(current.plan);
-    setState(current.state);
-    setPinned(await getPinnedRecommendation());
-    setScreen('home');
-  }
+  // The request id, rather than callback identity, owns freshness for this controller.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void refresh();
+    return () => { requestId.current += 1; };
+  }, [refresh]);
 
   const toHome = () => navigate('/home');
 
@@ -60,6 +78,19 @@ export function PlannerFlow() {
     navigate('/practice', {
       state: { entry: 'verify', subjectLabel: topic.subjectName, topic: topic.topicTitle, plannerTopicKey: topic.key },
     });
+  }
+
+  if (asyncState.state !== 'success') {
+    return (
+      <KairoStateView
+        state={asyncState.state === 'idle' ? 'loading' : asyncState.state}
+        loadingMessage="Preparing your study plan…"
+        slowMessage="Your plan is taking longer than usual."
+        errorMessage="We couldn’t load your study plan."
+        onRetry={() => void refresh()}
+        onContinueOffline={() => { asyncState.succeed(); setScreen(plan ? 'home' : 'setup'); }}
+      />
+    );
   }
 
   if (screen === 'setup') {
