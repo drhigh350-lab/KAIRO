@@ -550,13 +550,130 @@ export function KairoPointsInfo({ iconColor = 'var(--dark-text-faint)' }: { icon
 }
 
 
-export function KairoLoading({ message = 'KAIRO is getting things ready', detail }: { message?: string; detail?: string }) {
+export function AlertIcon() {
+  return <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>;
+}
+export function OfflineIcon() {
+  return <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l22 22" /><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" /></svg>;
+}
+
+/**
+ * KAIRO's shared LOADING surface. On its own it renders the branded
+ * "preparing…" state; if the work is still going after `slowAfterMs` it
+ * automatically escalates to the reassuring SLOW copy ("taking longer than
+ * usual / your saved progress is safe") so every flow that already uses
+ * <KairoLoading> gains the SLOW state for free.
+ */
+export function KairoLoading({
+  message = 'KAIRO is getting things ready',
+  detail,
+  slowAfterMs = 6000,
+}: {
+  message?: string;
+  detail?: string;
+  slowAfterMs?: number;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    const t = setTimeout(() => setSlow(true), slowAfterMs);
+    return () => clearTimeout(t);
+  }, [slowAfterMs, message]);
+
   return (
     <div className="kairo-loading-state" role="status" aria-live="polite">
       <div className="kairo-loading-mark" aria-hidden="true"><KairoMark tone="white" size={88} /></div>
       <div className="kairo-loading-message">{message}</div>
-      {detail && <div className="kairo-loading-detail">{detail}</div>}
+      {slow ? (
+        <>
+          <div className="kairo-loading-detail">This is taking longer than usual.</div>
+          <div className="kairo-state-reassure">Your saved progress is safe.</div>
+        </>
+      ) : (
+        detail && <div className="kairo-loading-detail">{detail}</div>
+      )}
       <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>
+    </div>
+  );
+}
+
+export interface KairoScreenStateProps {
+  /** Drive this straight from useAsyncResource().status. */
+  status: 'idle' | 'loading' | 'slow' | 'success' | 'error' | 'offline';
+  /** LOADING/SLOW headline, e.g. "Preparing your practice session…". */
+  message?: string;
+  /** Optional sub-copy shown under the headline while loading. */
+  detail?: string;
+  /** The specific error to show in the ERROR state. */
+  errorMessage?: string | null;
+  /** Primary action — wire to useAsyncResource().retry. */
+  onRetry?: () => void;
+  retryLabel?: string;
+  /** Secondary (ghost) action, e.g. "Continue offline" or "Back to Home". */
+  onSecondary?: () => void;
+  secondaryLabel?: string;
+  /** Render compact, inside an existing screen, instead of full-height. */
+  inline?: boolean;
+}
+
+/**
+ * The single shared renderer for KAIRO's async state machine. Answers the
+ * three questions every screen must: what is KAIRO doing, is my data safe,
+ * and what should I do. Returns null for idle/success so the caller renders
+ * its real content.
+ */
+export function KairoScreenState({
+  status,
+  message = 'KAIRO is getting things ready',
+  detail,
+  errorMessage,
+  onRetry,
+  retryLabel = 'Retry',
+  onSecondary,
+  secondaryLabel = 'Continue offline',
+  inline = false,
+}: KairoScreenStateProps) {
+  if (status === 'idle' || status === 'success') return null;
+
+  const actions = (onRetry || onSecondary) && (
+    <div className="kairo-state-actions">
+      {onRetry && <button type="button" className="kairo-state-btn kairo-state-btn--primary" onClick={onRetry}>{retryLabel}</button>}
+      {onSecondary && <button type="button" className="kairo-state-btn kairo-state-btn--ghost" onClick={onSecondary}>{secondaryLabel}</button>}
+    </div>
+  );
+
+  if (status === 'loading' || status === 'slow') {
+    const slow = status === 'slow';
+    return (
+      <div className={inline ? 'kairo-state kairo-state--inline' : 'kairo-loading-state'} role="status" aria-live="polite">
+        <div className="kairo-loading-mark" aria-hidden="true"><KairoMark tone="white" size={inline ? 56 : 88} /></div>
+        <div className="kairo-loading-message">{message}</div>
+        {slow ? (
+          <>
+            <div className="kairo-loading-detail">This is taking longer than usual.</div>
+            <div className="kairo-state-reassure">Your saved progress is safe.</div>
+          </>
+        ) : (
+          detail && <div className="kairo-loading-detail">{detail}</div>
+        )}
+        {!slow && <div className="kairo-loading-dots" aria-hidden="true"><span /><span /><span /></div>}
+        {slow && actions}
+      </div>
+    );
+  }
+
+  const offline = status === 'offline';
+  return (
+    <div className={`kairo-state${inline ? ' kairo-state--inline' : ''}`} role="alert" aria-live="assertive">
+      <div className={`kairo-state-icon kairo-state-icon--${offline ? 'offline' : 'error'}`} aria-hidden="true">
+        {offline ? <OfflineIcon /> : <AlertIcon />}
+      </div>
+      <div className="kairo-state-message">{offline ? "You're offline" : 'Something went wrong'}</div>
+      <div className="kairo-state-detail">
+        {offline ? "We can't reach KAIRO right now — check your connection." : (errorMessage || 'We hit a snag loading this.')}
+      </div>
+      <div className="kairo-state-reassure">Your saved progress is safe.</div>
+      {actions}
     </div>
   );
 }

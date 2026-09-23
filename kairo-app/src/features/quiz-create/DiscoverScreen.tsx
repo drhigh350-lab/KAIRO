@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ScreenHeader } from '../learning/shared';
-import { getDiscoverQuizzes, getDiscoverChallenges, type DiscoverQuiz, type DiscoverChallenge } from '../../lib/discoverApi';
+import { ScreenHeader, KairoScreenState } from '../learning/shared';
+import { getDiscoverQuizzes, getDiscoverChallenges } from '../../lib/discoverApi';
 import { REAL_SUBJECTS } from '../../lib/quizApi';
+import { useAsyncResource } from '../../lib/useAsyncResource';
 
 function pillStyle(active: boolean): React.CSSProperties {
   return {
@@ -17,19 +18,15 @@ function pillStyle(active: boolean): React.CSSProperties {
 export function DiscoverScreen() {
   const navigate = useNavigate();
   const [subject, setSubject] = useState<string | null>(null);
-  const [quizzes, setQuizzes] = useState<DiscoverQuiz[]>([]);
-  const [challenges, setChallenges] = useState<DiscoverChallenge[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([
+  const { status, data, error, retry } = useAsyncResource(
+    () => Promise.all([
       getDiscoverQuizzes(subject ?? undefined),
       getDiscoverChallenges(subject ?? undefined),
-    ])
-      .then(([q, c]) => { setQuizzes(q); setChallenges(c); })
-      .finally(() => setLoading(false));
-  }, [subject]);
+    ]).then(([quizzes, challenges]) => ({ quizzes, challenges })),
+    { deps: [subject], fallbackError: 'Could not load Discover.' },
+  );
+  const quizzes = data?.quizzes ?? [];
+  const challenges = data?.challenges ?? [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
@@ -43,8 +40,8 @@ export function DiscoverScreen() {
       </div>
 
       <div style={{ padding: '0 20px 40px', flex: 1 }}>
-        {loading ? (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', textAlign: 'center', padding: '40px 0' }}>Loading…</div>
+        {status !== 'success' ? (
+          <KairoScreenState status={status} inline message="Loading Discover…" errorMessage={error} onRetry={retry} />
         ) : (
           <>
             <section style={{ marginBottom: 28 }}>

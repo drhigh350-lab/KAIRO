@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ScreenHeader } from '../learning/shared';
+import { ScreenHeader, KairoScreenState } from '../learning/shared';
 import { ArenaTabs, ArenaBottomSpace } from '../challenges/ArenaTabs';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getArenaHomeSummary, getDailyArenaChallenges, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
+import { getArenaHomeSummary, getDailyArenaChallenges, getTrendingChallenges, getRecentActivity } from '../../lib/arenaHomeApi';
+import { useAsyncResource } from '../../lib/useAsyncResource';
 
 function activityLine(item: RecentActivityItem): string {
   const who = item.studentName ?? 'A Kairo student';
@@ -25,14 +25,8 @@ function timeAgo(iso: string): string {
 
 export function ArenaHomeScreen() {
   const navigate = useNavigate();
-  const [summary, setSummary] = useState<ArenaHomeSummary | null>(null);
-  const [today, setToday] = useState<Challenge[]>([]);
-  const [trending, setTrending] = useState<TrendingChallenge[]>([]);
-  const [activity, setActivity] = useState<RecentActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([
+  const { status, data, error, retry } = useAsyncResource(
+    () => Promise.all([
       getArenaHomeSummary(),
       Promise.all([getDailyArenaChallenges(), listChallenges()]).then(([daily, rows]) => {
         const mapped = rows.map(mapDbChallenge);
@@ -40,10 +34,13 @@ export function ArenaHomeScreen() {
       }),
       getTrendingChallenges(5),
       getRecentActivity(8),
-    ])
-      .then(([s, t, tr, a]) => { setSummary(s); setToday(t); setTrending(tr); setActivity(a); })
-      .finally(() => setLoading(false));
-  }, []);
+    ]).then(([summary, today, trending, activity]) => ({ summary, today, trending, activity })),
+    { fallbackError: 'Could not load the Arena.' },
+  );
+  const summary = data?.summary ?? null;
+  const today = data?.today ?? [];
+  const trending = data?.trending ?? [];
+  const activity = data?.activity ?? [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh', fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>

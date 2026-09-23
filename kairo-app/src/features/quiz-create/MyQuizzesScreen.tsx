@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components';
-import { ScreenHeader } from '../learning/shared';
+import { ScreenHeader, KairoScreenState } from '../learning/shared';
 import { getMyQuizzes, reviewQuiz, createChallengeFromQuiz, type MyQuiz } from '../../lib/quizApi';
 import { getCurrentStudentId } from '../../lib/challengesApi';
+import { useAsyncResource } from '../../lib/useAsyncResource';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft', processing: 'Processing', needs_fixes: 'Needs Fixes',
@@ -21,18 +22,17 @@ export function MyQuizzesScreen() {
   const location = useLocation();
   const justCreated = (location.state as { justCreated?: boolean } | null)?.justCreated;
 
-  const [quizzes, setQuizzes] = useState<MyQuiz[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const { status, data, error, retry, setData } = useAsyncResource(
+    () => getMyQuizzes(),
+    { fallbackError: 'Could not load your quizzes.' },
+  );
+  const quizzes = data ?? [];
 
   async function refresh() {
     const rows = await getMyQuizzes();
-    setQuizzes(rows);
+    setData(rows);
   }
-
-  useEffect(() => {
-    refresh().finally(() => setLoading(false));
-  }, []);
 
   async function handleApprove(quiz: MyQuiz) {
     setBusyId(quiz.id);
@@ -77,8 +77,8 @@ export function MyQuizzesScreen() {
 
         {!studentId ? (
           <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', textAlign: 'center', padding: '40px 0' }}>Sign in to see your quizzes.</div>
-        ) : loading ? (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', textAlign: 'center', padding: '40px 0' }}>Loading…</div>
+        ) : status !== 'success' ? (
+          <KairoScreenState status={status} inline message="Loading your quizzes…" errorMessage={error} onRetry={retry} />
         ) : quizzes.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 16 }}>You haven't created any quizzes yet.</div>

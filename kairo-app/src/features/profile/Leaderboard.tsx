@@ -26,6 +26,9 @@ export function Leaderboard() {
   const [error, setError] = useState<string | null>(null);
   const signedIn = !!getConsentSummary();
 
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey((k) => k + 1);
+
   useEffect(() => {
     if (!optedIn) return;
     let cancelled = false;
@@ -40,7 +43,7 @@ export function Leaderboard() {
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load the leaderboard.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [optedIn]);
+  }, [optedIn, reloadKey]);
 
   async function toggle() {
     setBusy(true);
@@ -76,11 +79,14 @@ export function Leaderboard() {
           </div>
         </Card>
 
-        {optedIn && loading && (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', padding: '20px 0' }}>Loading…</div>
-        )}
-        {optedIn && error && (
-          <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', padding: '20px 0' }}>{error}</div>
+        {optedIn && (loading || error) && (
+          <KairoScreenState
+            status={error ? 'error' : 'loading'}
+            inline
+            message="Loading the leaderboard…"
+            errorMessage={error}
+            onRetry={reload}
+          />
         )}
 
         {optedIn && !loading && !error && (

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { ScreenHeader, OptionRow } from '../learning/shared';
+import { ScreenHeader, OptionRow, KairoScreenState } from '../learning/shared';
 import type { Subject } from './data';
-import { getRealSubtopics, type SubtopicInfo } from '../../lib/kairoEngine';
+import { getRealSubtopics } from '../../lib/kairoEngine';
+import { useAsyncResource } from '../../lib/useAsyncResource';
 
 export interface SubtopicSelectProps {
   subject: Subject;
@@ -12,22 +12,19 @@ export interface SubtopicSelectProps {
 }
 
 export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: SubtopicSelectProps) {
-  const [subtopics, setSubtopics] = useState<SubtopicInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getRealSubtopics(subject.label, topic)
-      .then(setSubtopics)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load subtopics.'));
-  }, [subject.label, topic]);
+  const { status, data: subtopics, error, retry } = useAsyncResource(
+    () => getRealSubtopics(subject.label, topic),
+    { deps: [subject.label, topic], fallbackError: 'Could not load subtopics.' },
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title={topic} tone="dark" />
       <div style={{ padding: '10px 20px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 18 }}>Narrow it down, or practise the whole topic.</div>
-        {error && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>{error}</div>}
-        {!error && subtopics === null && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>Loading…</div>}
+        {status !== 'success' && (
+          <KairoScreenState status={status} inline message="Loading subtopics…" errorMessage={error} onRetry={retry} />
+        )}
         {subtopics?.map((s) => (
           <OptionRow
             key={s.subtopic}

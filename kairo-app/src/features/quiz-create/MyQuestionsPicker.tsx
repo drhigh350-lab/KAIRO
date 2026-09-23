@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { getMyCommunityQuestions, type MyCommunityQuestion, type QuestionRef } from '../../lib/quizApi';
+import { getMyCommunityQuestions, type QuestionRef } from '../../lib/quizApi';
+import { useAsyncResource } from '../../lib/useAsyncResource';
+import { KairoScreenState } from '../learning/shared';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft', processing: 'Processing', needs_fixes: 'Needs Fixes',
@@ -12,14 +13,15 @@ export function MyQuestionsPicker({
   selected: QuestionRef[];
   onToggle: (ref: QuestionRef) => void;
 }) {
-  const [questions, setQuestions] = useState<MyCommunityQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { status, data, error, retry } = useAsyncResource(
+    () => getMyCommunityQuestions(),
+    { fallbackError: 'Could not load your questions.' },
+  );
+  const questions = data ?? [];
 
-  useEffect(() => {
-    getMyCommunityQuestions().then(setQuestions).finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', padding: '20px 0', textAlign: 'center' }}>Loading…</div>;
+  if (status !== 'success') {
+    return <KairoScreenState status={status} inline message="Loading your questions…" errorMessage={error} onRetry={retry} />;
+  }
   if (questions.length === 0) {
     return <div style={{ fontSize: 13, color: 'var(--dark-text-faint)', padding: '20px 0', textAlign: 'center' }}>You haven't written any questions yet — try "Write New".</div>;
   }
