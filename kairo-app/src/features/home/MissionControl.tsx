@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { DashboardOption } from '../../lib/kairoEngine';
 import type { AsyncState } from '../../components/feedback/AsyncState';
-import { KairoStateView } from '../../components/feedback/AsyncState';
+import { Button } from '../../components/core/Button';
 
 interface MissionControlProps {
   primaryOption: DashboardOption | null;
@@ -39,6 +39,43 @@ function SignalIcon({ kind }: { kind: 'focus' | 'repair' | 'plan' }) {
   return (
     <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(46,124,246,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-accent-blue)" strokeWidth="2"><path d={path} /></svg>
+    </span>
+  );
+}
+
+function RepairStatus({
+  state,
+  onRetry,
+  onContinueOffline,
+}: {
+  state: Exclude<AsyncState, 'idle' | 'success'>;
+  onRetry: () => void;
+  onContinueOffline: () => void;
+}) {
+  const message = state === 'retry'
+    ? 'Retrying repair data…'
+    : state === 'slow'
+      ? 'Repair data is taking longer than usual.'
+      : state === 'offline'
+        ? 'You’re offline. Your saved progress is safe.'
+        : 'Loading repair data…';
+
+  return (
+    <span
+      role="status"
+      aria-live={state === 'error' || state === 'offline' ? 'assertive' : 'polite'}
+      aria-busy={state === 'loading' || state === 'retry'}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: 'var(--dark-text-muted)', fontSize: 12 }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <span>{message}</span>
+      {(state === 'slow' || state === 'error') && <Button variant="ghost" size="sm" onClick={onRetry}>Retry</Button>}
+      {state === 'offline' && (
+        <>
+          <Button variant="ghost" size="sm" onClick={onContinueOffline}>Continue Offline</Button>
+          <Button variant="ghost" size="sm" onClick={onRetry}>Retry</Button>
+        </>
+      )}
     </span>
   );
 }
@@ -82,18 +119,24 @@ export function MissionControl({
           <Arrow />
         </button>
 
-        <button type="button" onClick={onOpenReview} style={{ ...rowStyle, width: '100%', textAlign: 'left', background: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onOpenReview}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenReview(); } }}
+          style={{ ...rowStyle, width: '100%', textAlign: 'left', background: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+        >
           <SignalIcon kind="repair" />
           <span style={{ flex: 1, minWidth: 0 }}>
             <strong style={{ display: 'block', color: 'var(--dark-text-heading)', fontSize: 13 }}>Repair your mistakes</strong>
             {repairsState === 'success' ? (
               <span style={{ display: 'block', marginTop: 3, color: 'var(--dark-text-muted)', fontSize: 12 }}>{pendingRepairs == null ? 'No repair questions are due right now.' : pendingRepairs > 0 ? `${pendingRepairs} question${pendingRepairs === 1 ? '' : 's'} ready for review.` : 'No repair questions are due right now.'}</span>
             ) : (
-              <KairoStateView state={repairsState} compact onRetry={onRetryRepairs} onContinueOffline={onContinueOfflineRepairs} />
+              <RepairStatus state={repairsState} onRetry={onRetryRepairs} onContinueOffline={onContinueOfflineRepairs} />
             )}
           </span>
           <Arrow />
-        </button>
+        </div>
 
         <button type="button" onClick={onOpenPlanner} style={{ ...rowStyle, width: '100%', textAlign: 'left', background: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
           <SignalIcon kind="plan" />
