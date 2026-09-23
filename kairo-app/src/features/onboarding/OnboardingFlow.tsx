@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { AboutYou } from './AboutYou';
 import { DiagnosticIntro } from './DiagnosticIntro';
@@ -41,9 +42,14 @@ export function OnboardingFlow() {
   const [history, setHistory] = useState<Screen[]>([]);
   const [data, setData] = useState<OnboardingData>({ name: googleName || freshName || '', email: routerState?.email || '', examDate: null, course: null, subjects: [] });
   const [diagnosticIntroStep, setDiagnosticIntroStep] = useState<OnboardingKaiStep>({});
-  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
-  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+  const diagnosticQuestionsState = useAsyncState('idle', 7000);
+  const diagnosticCompletionState = useAsyncState('idle', 10000);
   const [diagnosticQuestions, setDiagnosticQuestions] = useState<EngineFlatQuestion[] | null>(null);
+  const [diagnosticEmpty, setDiagnosticEmpty] = useState(false);
+  const diagnosticRequest = useRef(0);
+  const diagnosticCompletionRequest = useRef(0);
+  const lastDiagnosticAnswers = useRef<DiagnosticAnswer[]>([]);
+  const mounted = useRef(true);
   const [diagnosticSummary, setDiagnosticSummary] = useState<{ total: number; correct: number; accuracy: number; message: string } | null>(null);
   const [diagnosticPointsEarned, setDiagnosticPointsEarned] = useState(0);
   const startedGoogleOnboarding = useRef(false);
@@ -60,6 +66,10 @@ export function OnboardingFlow() {
     startedGoogleOnboarding.current = true;
     beginOnboarding(googleName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => () => {
+    mounted.current = false;
   }, []);
 
   useEffect(() => {
@@ -121,6 +131,72 @@ export function OnboardingFlow() {
     });
   }
 
+  async function loadDiagnosticQuestions() {
+    const requestId = ++diagnosticRequest.current;
+    if (!diagnosticQuestionsState.isOnline) {
+      diagnosticQuestionsState.setState('offline');
+      return;
+    }
+    diagnosticQuestionsState.start();
+    try {
+      const questions = await getDiagnosticQuestions(data.subjects);
+      if (!mounted.current || requestId !== diagnosticRequest.current) return;
+      if (questions.length === 0) {
+        setDiagnosticEmpty(true);
+        diagnosticQuestionsState.succeed();
+        return;
+      }
+      setDiagnosticEmpty(false);
+      setDiagnosticQuestions(questions);
+      diagnosticQuestionsState.succeed();
+      go('diagnosticQuiz');
+    } catch {
+      if (mounted.current && requestId === diagnosticRequest.current) diagnosticQuestionsState.fail();
+    }
+  }
+
+  async function completeDiagnostic(answers: DiagnosticAnswer[]) {
+    const requestId = ++diagnosticCompletionRequest.current;
+    if (!diagnosticCompletionState.isOnline) {
+      diagnosticCompletionState.setState('offline');
+      return;
+    }
+    diagnosticCompletionState.start();
+    try {
+      const { diagnosticSummary: summary, pointsEarned } = await completeOnboardingFlow(answers);
+      if (!mounted.current || requestId !== diagnosticCompletionRequest.current) return;
+      setDiagnosticSummary(summary);
+      setDiagnosticPointsEarned(pointsEarned);
+      diagnosticCompletionState.succeed();
+      go('diagnosticResults');
+    } catch {
+      if (!mounted.current || requestId !== diagnosticCompletionRequest.current) return;
+      const correct = answers.filter((a) => a.correct).length;
+      setDiagnosticSummary({
+        total: answers.length,
+        correct,
+        accuracy: answers.length ? Math.round((correct / answers.length) * 100) : 0,
+        message: "Kairo couldn't finish building your plan just now, but your answers are saved — we'll pick up from here.",
+      });
+      setDiagnosticPointsEarned(0);
+      diagnosticCompletionState.fail();
+    }
+  }
+
+  function showDiagnosticTally() {
+    const answers = lastDiagnosticAnswers.current;
+    const correct = answers.filter((a) => a.correct).length;
+    setDiagnosticSummary({
+      total: answers.length,
+      correct,
+      accuracy: answers.length ? Math.round((correct / answers.length) * 100) : 0,
+      message: "Kairo couldn't finish building your plan just now, but your answers are saved — we'll pick up from here.",
+    });
+    setDiagnosticPointsEarned(0);
+    diagnosticCompletionState.succeed();
+    go('diagnosticResults');
+  }
+
   const total = 3;
   // Step 1 is /signup's own screen — this flow only ever renders steps 2-3.
   const stepIndex = screen === 'about' ? 2 : screen === 'ready' ? 3 : 0;
@@ -167,55 +243,31 @@ export function OnboardingFlow() {
       <DiagnosticIntro
         title={diagnosticIntroStep.title}
         body={diagnosticIntroStep.body}
-        loading={diagnosticLoading}
-        error={diagnosticError}
-        onContinue={() => {
-          setDiagnosticLoading(true);
-          setDiagnosticError(null);
-          getDiagnosticQuestions(data.subjects)
-            .then((questions) => {
-              setDiagnosticLoading(false);
-              if (questions.length === 0) {
-                setDiagnosticError("Kairo couldn't find any questions to check in with just yet.");
-                return;
-              }
-              setDiagnosticQuestions(questions);
-              go('diagnosticQuiz');
-            })
-            .catch((err) => {
-              setDiagnosticLoading(false);
-              setDiagnosticError(err instanceof Error ? err.message : 'Could not load your check-in.');
-            });
-        }}
+        state={diagnosticQuestionsState.state}
+        empty={diagnosticEmpty}
+        onRetry={() => void loadDiagnosticQuestions()}
+        onContinue={() => void loadDiagnosticQuestions()}
+        onContinueOffline={() => diagnosticQuestionsState.succeed()}
       />
     );
   } else if (screen === 'diagnosticQuiz' && diagnosticQuestions) {
-    body = (
+    body = diagnosticCompletionState.state !== 'idle' && diagnosticCompletionState.state !== 'success' ? (
+      <KairoStateView
+        state={diagnosticCompletionState.state}
+        loadingMessage="Saving your diagnostic results…"
+        slowMessage="Your diagnostic is ready, but saving it is taking longer than usual."
+        errorMessage="Kairo could not finish saving your diagnostic."
+        offlineMessage="Your diagnostic answers are saved on this device."
+        onRetry={() => void completeDiagnostic(lastDiagnosticAnswers.current)}
+        onContinueOffline={showDiagnosticTally}
+      />
+    ) : (
       <DiagnosticQuiz
         questions={diagnosticQuestions}
         onExit={() => navigate('/dashboard')}
         onComplete={(answers: DiagnosticAnswer[]) => {
-          completeOnboardingFlow(answers)
-            .then(({ diagnosticSummary: summary, pointsEarned }) => {
-              setDiagnosticSummary(summary);
-              setDiagnosticPointsEarned(pointsEarned);
-              go('diagnosticResults');
-            })
-            .catch(() => {
-              // completeOnboarding() failed to build the real plan (e.g. content catalog load error) — the
-              // answers themselves are still real, so show the genuine tally rather than inventing a summary.
-              // The Kairo Points bonus never ran either (it's awarded inside the same buildInitialPlan() call
-              // that failed), so it stays 0 rather than claiming a reward that was never actually credited.
-              const correct = answers.filter((a) => a.correct).length;
-              setDiagnosticSummary({
-                total: answers.length,
-                correct,
-                accuracy: answers.length ? Math.round((correct / answers.length) * 100) : 0,
-                message: "Kairo couldn't finish building your plan just now, but your answers are saved — we'll pick up from here.",
-              });
-              setDiagnosticPointsEarned(0);
-              go('diagnosticResults');
-            });
+          lastDiagnosticAnswers.current = answers;
+          void completeDiagnostic(answers);
         }}
       />
     );

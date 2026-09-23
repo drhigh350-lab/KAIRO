@@ -1,15 +1,19 @@
 import { Button } from '../../components';
+import type { AsyncState } from '../../components/feedback/AsyncState';
+import { KairoStateView } from '../../components/feedback/AsyncState';
 
 export interface DiagnosticIntroProps {
   /** Real Kai copy from the engine's own 'diagnostic_intro' onboarding step — never hardcoded here. */
   title?: string;
   body?: string;
-  loading: boolean;
-  error: string | null;
+  state: AsyncState;
+  empty?: boolean;
   onContinue: () => void;
+  onRetry: () => void;
+  onContinueOffline: () => void;
 }
 
-export function DiagnosticIntro({ title, body, loading, error, onContinue }: DiagnosticIntroProps) {
+export function DiagnosticIntro({ title, body, state, empty = false, onContinue, onRetry, onContinueOffline }: DiagnosticIntroProps) {
   return (
     <div style={{ padding: '20px 24px 32px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--dark-bg-canvas)' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 20 }}>
@@ -20,10 +24,13 @@ export function DiagnosticIntro({ title, body, loading, error, onContinue }: Dia
             {body || "Let's find out exactly what you already know — and what needs work. A few quick questions, no wrong answers."}
           </div>
         </div>
-        {error && <div style={{ fontSize: 13, color: 'var(--dark-danger)' }}>{error}</div>}
+        {state === 'error' && <KairoStateView state="error" compact onRetry={onRetry} />}
+        {state === 'offline' && <KairoStateView state="offline" compact onRetry={onRetry} onContinueOffline={onContinueOffline} />}
+        {(state === 'loading' || state === 'slow' || state === 'retry') && <KairoStateView state={state} compact onRetry={onRetry} />}
+        {empty && state === 'success' && <div style={{ fontSize: 13, color: 'var(--dark-text-muted)' }}>Your check-in is ready when question content is available.</div>}
       </div>
-      <Button variant="darkAccent" size="lg" fullWidth disabled={loading} onClick={onContinue}>
-        {loading ? 'Preparing your questions…' : "Let's go"}
+      <Button variant="darkAccent" size="lg" fullWidth disabled={state === 'loading' || state === 'retry'} onClick={onContinue}>
+        {state === 'loading' || state === 'retry' ? 'Preparing your questions…' : "Let's go"}
       </Button>
     </div>
   );
