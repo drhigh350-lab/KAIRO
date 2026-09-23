@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
 import { Modal, KairoScoreInfo } from '../learning/shared';
@@ -9,6 +9,7 @@ import { getEngine, getTodayProgress, getInsightsSummary, setDailyGoal, hasCompl
 import { getPinnedDashboardOptions } from '../../lib/dailyRecommendation';
 import { InstallAppBanner } from './InstallAppBanner';
 import { MissionControl } from './MissionControl';
+import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 
 interface EarnedBadge { id: string; name: string; desc: string }
 
@@ -100,21 +101,42 @@ export function HomeDashboard() {
   const latestBadge = earnedBadges.length ? earnedBadges[earnedBadges.length - 1] : null;
   const [todayProgress, setTodayProgress] = useState(getTodayProgress());
   const [pendingRepairs, setPendingRepairs] = useState<number | null>(null);
+  const repairsState = useAsyncState('idle');
+  const repairsRequest = useRef(0);
+  const repairsOnline = repairsState.isOnline;
+  const loadRepairs = useCallback(async (allowOffline = false) => {
+    const requestId = ++repairsRequest.current;
+    if (!allowOffline && !repairsOnline) {
+      repairsState.setState('offline');
+      return;
+    }
+    repairsState.start();
+    try {
+      await loadReviewData();
+      if (requestId !== repairsRequest.current) return;
+      setPendingRepairs(getPendingRepairsCount());
+      repairsState.succeed();
+    } catch {
+      if (requestId !== repairsRequest.current) return;
+      setPendingRepairs(0);
+      repairsState.fail();
+    }
+  }, [repairsOnline]);
+
   useEffect(() => {
-    let cancelled = false;
-    loadReviewData()
-      .then(() => {
-        if (!cancelled) setPendingRepairs(getPendingRepairsCount());
-      })
-      .catch(() => {
-        // Keep Mission Control useful when review content is unavailable
-        // offline; the loading state is not a reason to block the dashboard.
-        if (!cancelled) setPendingRepairs(0);
-      });
+    void loadRepairs();
     return () => {
-      cancelled = true;
+      repairsRequest.current += 1;
     };
-  }, []);
+  }, [loadRepairs]);
+  // A retry starts the same review-data operation; the generation guard keeps
+  // an older response from replacing the latest dashboard value.
+  const retryRepairs = useCallback(() => {
+    void loadRepairs();
+  }, [loadRepairs]);
+  const continueOfflineRepairs = useCallback(() => {
+    void loadRepairs(true);
+  }, [loadRepairs]);
   // Home is one of only three places the total Kairo Score is allowed to
   // show (with Profile and Insights) — everywhere else shows session-scoped
   // gained points instead, so this doesn't repeat a slow-moving 0-100
@@ -157,11 +179,34 @@ export function HomeDashboard() {
   }
 
   const [liveChallenge, setLiveChallenge] = useState<Challenge | null>(null);
+  const challengeState = useAsyncState('idle');
+  const challengeRequest = useRef(0);
+  const loadChallenge = useCallback(async () => {
+    const requestId = ++challengeRequest.current;
+    if (!challengeState.isOnline) {
+      challengeState.setState('offline');
+      return;
+    }
+    challengeState.start();
+    try {
+      const rows = await listChallenges();
+      if (requestId !== challengeRequest.current) return;
+      setLiveChallenge(rows.map(mapDbChallenge).find((c) => c.status === 'live') || null);
+      challengeState.succeed();
+    } catch {
+      if (requestId !== challengeRequest.current) return;
+      setLiveChallenge(null);
+      challengeState.fail();
+    }
+  }, [challengeState.isOnline]);
+
   useEffect(() => {
-    listChallenges()
-      .then((rows) => setLiveChallenge(rows.map(mapDbChallenge).find((c) => c.status === 'live') || null))
-      .catch(() => setLiveChallenge(null));
-  }, []);
+    void loadChallenge();
+    return () => {
+      challengeRequest.current += 1;
+    };
+  }, [loadChallenge]);
+  const challengeViewState = challengeState.state === 'idle' ? 'loading' : challengeState.state === 'success' ? 'success' : challengeState.state;
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
@@ -210,6 +255,9 @@ export function HomeDashboard() {
           <MissionControl
             primaryOption={primaryOption}
             pendingRepairs={pendingRepairs}
+            repairsState={repairsState.state === 'idle' ? 'loading' : repairsState.state === 'success' ? 'success' : repairsState.state}
+            onRetryRepairs={retryRepairs}
+            onContinueOfflineRepairs={continueOfflineRepairs}
             questionsToday={todayProgress.questionsToday}
             dailyGoal={todayProgress.dailyGoal}
             daysToGo={daysToGo}
@@ -245,7 +293,9 @@ export function HomeDashboard() {
                 KAIRO ARENA
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 7, lineHeight: 1.4 }}>
-                {liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.'}
+                {challengeViewState === 'success' ? (liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.') : (
+                  <KairoStateView state={challengeViewState} compact onRetry={() => void loadChallenge()} onContinueOffline={() => challengeState.succeed()} />
+                )}
               </div>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>

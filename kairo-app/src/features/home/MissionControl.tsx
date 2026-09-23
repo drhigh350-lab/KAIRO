@@ -1,9 +1,14 @@
 import type { CSSProperties } from 'react';
 import type { DashboardOption } from '../../lib/kairoEngine';
+import type { AsyncState } from '../../components/feedback/AsyncState';
+import { KairoStateView } from '../../components/feedback/AsyncState';
 
 interface MissionControlProps {
   primaryOption: DashboardOption | null;
   pendingRepairs: number | null;
+  repairsState: Exclude<AsyncState, 'idle'>;
+  onRetryRepairs: () => void;
+  onContinueOfflineRepairs: () => void;
   questionsToday: number;
   dailyGoal: number | null;
   daysToGo: number | null;
@@ -47,6 +52,9 @@ export function MissionControl({
   onStartRecommendation,
   onOpenReview,
   onOpenPlanner,
+  repairsState,
+  onRetryRepairs,
+  onContinueOfflineRepairs,
 }: MissionControlProps) {
   const goalRemaining = dailyGoal == null ? null : Math.max(0, dailyGoal - questionsToday);
   const recommendationLabel = primaryOption?.topic
@@ -78,7 +86,11 @@ export function MissionControl({
           <SignalIcon kind="repair" />
           <span style={{ flex: 1, minWidth: 0 }}>
             <strong style={{ display: 'block', color: 'var(--dark-text-heading)', fontSize: 13 }}>Repair your mistakes</strong>
-            <span style={{ display: 'block', marginTop: 3, color: 'var(--dark-text-muted)', fontSize: 12 }}>{pendingRepairs == null ? 'Gathering your repair queue…' : pendingRepairs > 0 ? `${pendingRepairs} question${pendingRepairs === 1 ? '' : 's'} ready for review.` : 'No repair questions are due right now.'}</span>
+            {repairsState === 'success' ? (
+              <span style={{ display: 'block', marginTop: 3, color: 'var(--dark-text-muted)', fontSize: 12 }}>{pendingRepairs == null ? 'No repair questions are due right now.' : pendingRepairs > 0 ? `${pendingRepairs} question${pendingRepairs === 1 ? '' : 's'} ready for review.` : 'No repair questions are due right now.'}</span>
+            ) : (
+              <KairoStateView state={repairsState} compact onRetry={onRetryRepairs} onContinueOffline={onContinueOfflineRepairs} />
+            )}
           </span>
           <Arrow />
         </button>
