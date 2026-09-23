@@ -239,10 +239,15 @@ export function Review() {
     }
   }
 
-  if (asyncState.state !== 'success') {
+  // The Review shell must not be gated on the catalog refresh. The catalog is
+  // needed to calculate the live repair metrics, but the previously working
+  // screen rendered immediately and filled each section as its own data became
+  // available. Keep loading as the existing inline placeholders; reserve the
+  // full state view for a real failure or an offline recovery choice.
+  if (asyncState.state === 'error' || asyncState.state === 'offline') {
     return (
       <KairoStateView
-        state={asyncState.state === 'idle' ? 'loading' : asyncState.state}
+        state={asyncState.state}
         loadingMessage="Preparing your review…"
         slowMessage="Your review is taking longer than usual."
         errorMessage="We couldn’t load your review data."
