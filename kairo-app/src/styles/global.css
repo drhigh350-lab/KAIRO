@@ -71,6 +71,26 @@ img, svg, video, canvas { max-width: 100%; }
 .kairo-pressable:active { transform: scale(0.97); }
 .kairo-pressable:focus-visible { outline: 2px solid var(--dark-accent-blue); outline-offset: 3px; }
 
+.kairo-state-view {
+  flex: 1;
+  width: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--dark-text-body);
+  background: var(--dark-bg-canvas);
+}
+.kairo-state-view--compact { min-height: 280px; border-radius: var(--radius-lg); }
+.kairo-state-mark { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 28px; background: rgba(46,124,246,.08); box-shadow: 0 0 0 1px rgba(46,124,246,.12), 0 18px 55px rgba(0,0,0,.2); }
+.kairo-state-view h2 { margin: 8px 0 0; color: var(--dark-text-heading); font-size: 16px; line-height: 1.35; }
+.kairo-state-view p { max-width: 320px; margin: 0; color: var(--dark-text-muted); font-size: 13px; line-height: 1.55; }
+.kairo-state-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
 .kairo-loading-state {
   flex: 1;
   width: 100%;

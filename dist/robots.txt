@@ -1,0 +1,42 @@
+# Kairo (kairo.techmedng.com)
+#
+# This is a client-side SPA behind Supabase Auth — almost every real
+# screen requires a signed-in, onboarded student. The routes below are
+# grouped to match src/App.tsx exactly; keep the two in sync when routes
+# change. See public/sitemap.xml's own comment for why the authenticated
+# routes are disallowed rather than just omitted from the sitemap: an
+# indexed URL that always shows a login gate actively hurts Search
+# Console's read on the site, it doesn't just fail to help.
+
+User-agent: *
+
+# Public, indexable
+Allow: /$
+Allow: /login
+Allow: /signup
+Allow: /privacy
+Allow: /terms
+
+# Auth callback routes — real content only when a real Supabase redirect
+# lands here with a token in the URL; nothing for a crawler to index.
+Disallow: /onboarding/google
+Disallow: /onboarding/reset-password
+# Protected: new-signup-only profile setup (see OnboardingFlow.tsx)
+Disallow: /onboarding/
+Disallow: /onboarding
+
+# Authenticated app — every screen below requires a signed-in, onboarded student
+Disallow: /home
+Disallow: /dashboard
+Disallow: /practice
+Disallow: /cbt
+Disallow: /review
+Disallow: /profile
+Disallow: /leaderboard
+Disallow: /challenges
+Disallow: /learn
+Disallow: /rapid-fire
+Disallow: /planner
+Disallow: /streak-savior
+
+Sitemap: https://kairo.techmedng.com/sitemap.xml

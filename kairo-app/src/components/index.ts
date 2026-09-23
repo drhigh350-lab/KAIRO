@@ -12,6 +12,7 @@ export * from './feedback/ProgressBar';
 export * from './feedback/ScoreBadge';
 export * from './feedback/StreakBadge';
 export * from './feedback/Toast';
+export * from './feedback/AsyncState';
 
 export * from './kairo/AvoidanceInterventionModal';
 export * from './kairo/KaiMessage';

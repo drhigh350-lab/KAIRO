@@ -29,7 +29,7 @@ import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
 import { PlannerFlow } from './features/planner/PlannerFlow';
 import { StreakSavior } from './features/home/StreakSavior';
 import { NotificationCenter } from './features/notifications/NotificationCenter';
-import { KairoLoading } from './features/learning/shared';
+import { KairoLoading } from './components/feedback/AsyncState';
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
