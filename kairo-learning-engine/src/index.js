@@ -524,6 +524,12 @@ export class KairoEngine {
 
     if (catalogRefreshed) await this.store.clearPrefetchedQueues();
     this.questionGraph.autoBuildRelationships();
+    // The question mirror is persisted per subject above, but the concept
+    // graph is the source for Practice's topic/subtopic picker. Persist it at
+    // the same successful catalog boundary so a later mobile/offline reload
+    // can render the taxonomy instead of falling back to "Topics could not be
+    // loaded" despite having previously synchronized real content.
+    if (catalogRefreshed) await this.store.saveGraph(this.graph);
 
     // A concept becoming a local ConceptNode for the first time (e.g. right
     // after sign-in, before any sync() has run) previously left it "unseen"
