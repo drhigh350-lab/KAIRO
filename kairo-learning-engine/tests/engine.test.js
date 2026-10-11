@@ -11,6 +11,7 @@ import { MomentumStreak } from "../src/motivation/MomentumStreak.js";
 import { RecommendationEngine } from "../src/engine/RecommendationEngine.js";
 import { PlannerBridge } from "../src/engine/PlannerBridge.js";
 import { LocalStore, STORES } from "../src/data/LocalStore.js";
+import { QuestionRelationshipGraph } from "../src/qim/QuestionRelationshipGraph.js";
 import { EliteScore } from "../src/engine/EliteScore.js";
 import { calculateReadinessProfile } from "../src/insights/ReadinessProfile.js";
 
@@ -2860,6 +2861,81 @@ test('Supabase adapter: configured static question catalog provider bypasses the
   assertEqual(receivedFilter.subject, 'Biology', 'subject filter should reach the static provider');
   assertEqual(receivedFilter.topic, 'Cells', 'topic filter should reach the static provider');
   assertEqual(result[0].id, 'static_q1', 'provider result should be returned unchanged');
+});
+
+test('LocalStore: reconcileQuestionQueue batches the subject mirror in one write transaction', async () => {
+  let rows = [
+    { id: 'bio_old', queueId: 'bio_old', subject: 'Biology' },
+    { id: 'chem_keep', queueId: 'chem_keep', subject: 'Chemistry' },
+  ];
+  let writeTransactions = 0;
+  const db = {
+    transaction(_stores, mode) {
+      if (mode === 'readonly') {
+        return {
+          objectStore() {
+            return {
+              getAll() {
+                const request = {};
+                queueMicrotask(() => { request.result = [...rows]; request.onsuccess?.(); });
+                return request;
+              },
+            };
+          },
+        };
+      }
+      writeTransactions++;
+      const transaction = {
+        error: null,
+        objectStore() {
+          return {
+            delete(id) { rows = rows.filter((row) => row.id !== id); },
+            put(question) {
+              rows = rows.filter((row) => row.id !== question.id);
+              rows.push(question);
+            },
+          };
+        },
+      };
+      queueMicrotask(() => transaction.oncomplete?.());
+      return transaction;
+    },
+  };
+  const store = new LocalStore();
+  store.db = db;
+  await store.reconcileQuestionQueue('Biology', [
+    { id: 'bio_new', queueId: 'bio_new', subject: 'Biology' },
+  ]);
+  assertEqual(writeTransactions, 1, 'all per-subject writes should share one transaction');
+  assertEqual(rows.some((row) => row.id === 'bio_old'), false, 'stale subject rows should be deleted');
+  assertEqual(rows.some((row) => row.id === 'bio_new'), true, 'new subject rows should be stored');
+  assertEqual(rows.some((row) => row.id === 'chem_keep'), true, 'other subjects should remain untouched');
+});
+
+test('QuestionRelationshipGraph: indexed builder preserves overlap, difficulty, and bridge relationships', () => {
+  const graph = new QuestionRelationshipGraph();
+  const makeQuestion = (id, conceptIds, difficultyRating) => new Question({
+    id,
+    conceptsTested: conceptIds.map((conceptId) => ({ conceptId, weight: 1 })),
+    difficultyRating,
+    lifecycleState: 'live',
+  });
+  for (const question of [
+    makeQuestion('q1', ['c1'], 2),
+    makeQuestion('q2', ['c1'], 3),
+    makeQuestion('q3', ['c1', 'c2'], 4),
+    makeQuestion('q4', ['c1', 'c2'], 4),
+    makeQuestion('q5', ['unrelated'], 2),
+  ]) graph.addQuestion(question);
+
+  graph.autoBuildRelationships();
+  const ids = (questionId, type) => graph.getRelated(questionId, type).map((question) => question.id);
+  assertEqual(ids('q1', 'alternativeWording').includes('q2'), true, 'similar same-concept questions should be alternatives');
+  assertEqual(ids('q1', 'higherDifficulty').includes('q2'), true, 'harder same-concept questions should be linked upward');
+  assertEqual(ids('q2', 'lowerDifficulty').includes('q1'), true, 'easier same-concept questions should be linked downward');
+  assertEqual(ids('q3', 'bridge').includes('q4'), true, 'pairs sharing two concepts should be bridge-linked');
+  assertEqual(ids('q1', 'bridge').includes('q2'), false, 'one shared concept should not create a bridge');
+  assertEqual(ids('q1', 'alternativeWording').includes('q5'), false, 'disjoint questions should not be linked');
 });
 
 test('Supabase adapter: kairo.sessions row maps correctly to profile.sessions shape', () => {

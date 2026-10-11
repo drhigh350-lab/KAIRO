@@ -477,7 +477,6 @@ export async function signOutAndDisconnect(): Promise<void> {
   }
   engine = null;
   contentLoadedFor = [];
-  contentLoadedAt = 0;
   contentLoadPromise = null;
   mistakePatchesLoaded = false;
 }
@@ -494,9 +493,7 @@ export function hasSeededContent(subjectLabel: string): boolean {
 }
 
 let contentLoadedFor: string[] = [];
-let contentLoadedAt = 0;
 let contentLoadPromise: Promise<void> | null = null;
-const CONTENT_CACHE_TTL_MS = 60_000;
 
 async function ensureContentLoaded(subjects: string[]): Promise<void> {
   const kairo = getEngine();
@@ -513,24 +510,24 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   // no course/subject scope has been saved yet, never to a scoped student.
   const target = wanted.length ? wanted : profileSubjects.length ? profileSubjects : SEEDED_SUBJECTS;
 
-  // Multiple UI paths can request the same catalog during one tap (for
-  // example Review -> repair while the Review data is still settling). Share
-  // the same promise instead of opening duplicate catalog requests.
-  const targetKey = [...new Set(target)].sort().join('|');
-  const cachedKey = [...contentLoadedFor].sort().join('|');
-  if (cachedKey === targetKey && Date.now() - contentLoadedAt < CONTENT_CACHE_TTL_MS) return;
-  if (contentLoadPromise) return contentLoadPromise;
-
-  // The configured shared-content source is authoritative while online (the
-  // KAIRO app uses versioned static question packs and Supabase concepts).
-  // Recheck after the short TTL so refreshed catalog files are picked up;
-  // when offline, keep using the existing IndexedDB mirror instead.
+  // These catalog URLs are versioned and immutable. Load each subject once
+  // per engine; do not repeat thousands of local writes after a short TTL.
+  const missing = [...new Set(target)].filter((subject) => !contentLoadedFor.includes(subject));
+  if (missing.length === 0) return;
+  // Multiple UI paths can request the catalog during one tap. Share the
+  // in-flight work rather than duplicating network reads and IndexedDB writes.
+  if (contentLoadPromise) {
+    await contentLoadPromise;
+    return ensureContentLoaded(subjects);
+  }
+  // When offline, keep using the existing IndexedDB mirror instead.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   contentLoadPromise = withTimeout((async () => {
-    await ensureMistakePatchesLoaded();
-    await kairo.loadContentCatalog({ subjects: target });
-    contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
-    contentLoadedAt = Date.now();
+    await Promise.all([
+      ensureMistakePatchesLoaded(),
+      kairo.loadContentCatalog({ subjects: missing }),
+    ]);
+    contentLoadedFor = [...new Set([...contentLoadedFor, ...missing])];
   })(), 15_000, 'KAIRO could not load practice content in time.');
   try {
     await contentLoadPromise;
