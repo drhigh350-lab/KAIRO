@@ -10,6 +10,7 @@ import { getSeededCourseSubjects } from './subjectScope';
 type Engine = any;
 
 let engine: Engine | null = null;
+const LAST_STUDENT_ID_KEY = 'kairo:last_student_id';
 
 /** Prevent a stalled network/IndexedDB promise from trapping a student in a loading state forever. */
 export class KairoTimeoutError extends Error {
@@ -111,9 +112,9 @@ export function isOnboarded(): boolean {
   return engine?.profile?.diagnosticCompleted === true;
 }
 
-function createEngine(name: string): Engine {
+function createEngine(name: string, studentId = 'pending'): Engine {
   engine = new KairoEngine({
-    studentId: 'pending',
+    studentId,
     name,
     examDate: null,
     targetSubjects: [],
@@ -139,6 +140,11 @@ async function clearStaleSession(supabase: Engine): Promise<void> {
   } catch {
     // best-effort — a signOut() failure here just means there was nothing to clear
   }
+}
+
+function rememberStudentId(kairo: Engine): void {
+  const id = kairo?.profile?.studentId;
+  if (id && typeof localStorage !== 'undefined') localStorage.setItem(LAST_STUDENT_ID_KEY, id);
 }
 
 /**
@@ -212,6 +218,7 @@ export async function signUpAndConnect({ name, email, password }: SignUpArgs): P
     return { needsEmailVerification: true, email };
   }
   await kairo.connectSupabase(supabase, { email, password });
+  rememberStudentId(kairo);
   return kairo;
 }
 
@@ -235,6 +242,7 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
   const kairo = createEngine('');
   await kairo.init();
   await kairo.connectSupabase(supabase, { email, password });
+  rememberStudentId(kairo);
   await purgeDeletedEmptyDiagramCache(kairo);
   await kairo.sync.sync();
   return kairo;
@@ -248,6 +256,16 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
  * or the session no longer being valid.
  */
 export async function restoreSession(): Promise<boolean> {
+  // A Supabase auth refresh is a network operation even when a valid session
+  // is already present in browser storage. On mobile, `navigator.onLine` can
+  // be false (or the refresh can simply hang) while the student's complete
+  // profile/catalog is safely available in IndexedDB. Restore that local
+  // session first so an offline reload can still reach Practice, Review, and
+  // other cached surfaces instead of blocking on the splash screen.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return restoreLocalSession();
+  }
+
   let supabase;
   try {
     supabase = getSupabase();
@@ -280,6 +298,7 @@ export async function restoreSession(): Promise<boolean> {
         await kairo.init();
         // No email/password — connectSupabase() reuses the session getSession() already restored.
         await kairo.connectSupabase(supabase, {});
+        rememberStudentId(kairo);
         await purgeDeletedEmptyDiagramCache(kairo);
         // The profile is already hydrated at this point — a sync hiccup
         // right after a successful reconnect shouldn't undo it, so this
@@ -295,13 +314,49 @@ export async function restoreSession(): Promise<boolean> {
       }
       if (attempt === maxAttempts) {
         engine = null;
-        return false;
+        return restoreLocalSession();
       }
       await new Promise((resolve) => setTimeout(resolve, 400));
     }
   }
   engine = null;
-  return false;
+  return restoreLocalSession();
+}
+
+/** Restore a previously hydrated local account without contacting Supabase. */
+async function restoreLocalSession(): Promise<boolean> {
+  try {
+    const rememberedId = typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_STUDENT_ID_KEY) : null;
+    if (rememberedId) {
+      const localEngine = createEngine('', rememberedId);
+      await localEngine.init();
+      if (localEngine.profile.authUserId && localEngine.profile.diagnosticCompleted) return true;
+      engine = null;
+    }
+
+    // Compatibility path for users who signed in before the remembered-ID
+    // marker existed: inspect the local profile store and select the first
+    // fully hydrated student profile, excluding content-pack metadata.
+    const probe = createEngine('');
+    await probe.init();
+    const profiles = await probe.store.getAll('profile');
+    const saved = profiles.find((profile: Engine) => profile?.studentId !== 'content_pack_meta' && profile?.authUserId && profile?.diagnosticCompleted);
+    if (!saved?.studentId) {
+      engine = null;
+      return false;
+    }
+    const localEngine = createEngine('', saved.studentId);
+    await localEngine.init();
+    if (!localEngine.profile.authUserId || !localEngine.profile.diagnosticCompleted) {
+      engine = null;
+      return false;
+    }
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LAST_STUDENT_ID_KEY, saved.studentId);
+    return true;
+  } catch {
+    engine = null;
+    return false;
+  }
 }
 
 /** True when a sign-in attempt failed because the account exists but hasn't clicked its confirmation link yet — Supabase's stable error_code, not message-sniffing first. */
@@ -401,6 +456,7 @@ export async function connectGoogleAccount(): Promise<GoogleSignInResult> {
   const kairo = createEngine(googleName);
   await kairo.init();
   const remoteProfile = await kairo.connectSupabase(supabase, {});
+  rememberStudentId(kairo);
   await purgeDeletedEmptyDiagramCache(kairo);
   await kairo.sync.sync();
   return { isNewStudent: remoteProfile.isNewStudent, name: remoteProfile.name || googleName };
