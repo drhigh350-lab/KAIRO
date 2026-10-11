@@ -5,6 +5,43 @@ import type { PracticeExplanation } from '../features/practice/PracticeQuestion'
 import type { SessionRewards } from '../features/practice/PracticeSummary';
 import { getSeededCourseSubjects } from './subjectScope';
 
+const STATIC_QUESTION_PACKS: Record<string, string> = {
+  Biology: 'biology',
+  Chemistry: 'chemistry',
+  Mathematics: 'mathematics',
+  Physics: 'physics',
+  'Use of English': 'use-of-english',
+};
+const staticQuestionPacks = new Map<string, Promise<Engine[]>>();
+
+/** Load one immutable, subject-scoped public catalog pack instead of querying thousands of shared rows through Supabase. */
+async function fetchStaticQuestions(filter: { subject?: string; topic?: string; conceptId?: string } = {}): Promise<Engine[]> {
+  const requestedSubjects = filter.subject
+    ? [normalizeSubjectName(filter.subject)]
+    : Object.keys(STATIC_QUESTION_PACKS);
+  const packResults = await Promise.all(requestedSubjects.map(async (subject) => {
+    const slug = STATIC_QUESTION_PACKS[subject];
+    if (!slug) return [];
+    let pack = staticQuestionPacks.get(subject);
+    if (!pack) {
+      const url = `${import.meta.env.BASE_URL}question-catalog/v1/${slug}.json`;
+      pack = fetch(url, { cache: 'force-cache' }).then(async (response) => {
+        if (!response.ok) throw new Error(`Question catalog download failed for ${subject} (${response.status}).`);
+        return response.json() as Promise<Engine[]>;
+      }).catch((error) => {
+        staticQuestionPacks.delete(subject);
+        throw error;
+      });
+      staticQuestionPacks.set(subject, pack);
+    }
+    return pack;
+  }));
+  return packResults.flat().filter((question) =>
+    (!filter.topic || question.topic === filter.topic)
+    && (!filter.conceptId || question.conceptsTested?.some((concept: Engine) => concept.conceptId === filter.conceptId))
+  );
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Engine = any;
 
@@ -118,6 +155,7 @@ function createEngine(name: string): Engine {
     targetSubjects: [],
     targetCourse: null,
     targetUniversity: null,
+    questionCatalogProvider: fetchStaticQuestions,
   });
   return engine;
 }
@@ -439,7 +477,6 @@ export async function signOutAndDisconnect(): Promise<void> {
   }
   engine = null;
   contentLoadedFor = [];
-  contentLoadedAt = 0;
   contentLoadPromise = null;
   mistakePatchesLoaded = false;
 }
@@ -456,9 +493,7 @@ export function hasSeededContent(subjectLabel: string): boolean {
 }
 
 let contentLoadedFor: string[] = [];
-let contentLoadedAt = 0;
 let contentLoadPromise: Promise<void> | null = null;
-const CONTENT_CACHE_TTL_MS = 60_000;
 
 async function ensureContentLoaded(subjects: string[]): Promise<void> {
   const kairo = getEngine();
@@ -475,24 +510,24 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   // no course/subject scope has been saved yet, never to a scoped student.
   const target = wanted.length ? wanted : profileSubjects.length ? profileSubjects : SEEDED_SUBJECTS;
 
-  // Multiple UI paths can request the same catalog during one tap (for
-  // example Review -> repair while the Review data is still settling). Share
-  // the same promise instead of opening duplicate Supabase requests.
-  const targetKey = [...new Set(target)].sort().join('|');
-  const cachedKey = [...contentLoadedFor].sort().join('|');
-  if (cachedKey === targetKey && Date.now() - contentLoadedAt < CONTENT_CACHE_TTL_MS) return;
-  if (contentLoadPromise) return contentLoadPromise;
-
-  // Supabase is authoritative whenever the browser is online. Do not use the
-  // old process-lifetime guard here: an admin edit or deletion must be seen
-  // by the next Practice/CBT/recommendation entry point. When offline, keep
-  // using the last successfully synchronized IndexedDB mirror instead.
+  // These catalog URLs are versioned and immutable. Load each subject once
+  // per engine; do not repeat thousands of local writes after a short TTL.
+  const missing = [...new Set(target)].filter((subject) => !contentLoadedFor.includes(subject));
+  if (missing.length === 0) return;
+  // Multiple UI paths can request the catalog during one tap. Share the
+  // in-flight work rather than duplicating network reads and IndexedDB writes.
+  if (contentLoadPromise) {
+    await contentLoadPromise;
+    return ensureContentLoaded(subjects);
+  }
+  // When offline, keep using the existing IndexedDB mirror instead.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   contentLoadPromise = withTimeout((async () => {
-    await ensureMistakePatchesLoaded();
-    await kairo.loadContentCatalog({ subjects: target });
-    contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
-    contentLoadedAt = Date.now();
+    await Promise.all([
+      ensureMistakePatchesLoaded(),
+      kairo.loadContentCatalog({ subjects: missing }),
+    ]);
+    contentLoadedFor = [...new Set([...contentLoadedFor, ...missing])];
   })(), 15_000, 'KAIRO could not load practice content in time.');
   try {
     await contentLoadPromise;

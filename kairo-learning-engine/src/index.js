@@ -71,8 +71,9 @@ import { ExplanationEngine } from "./qim/ExplanationEngine.js";
 import { QuestionLifecycle } from "./qim/QuestionLifecycle.js";
 
 export class KairoEngine {
-  constructor({ studentId, name, examDate = null, targetSubjects = [], targetCourse = null, targetUniversity = null }) {
+  constructor({ studentId, name, examDate = null, targetSubjects = [], targetCourse = null, targetUniversity = null, questionCatalogProvider = null }) {
     this.profile = new StudentProfile({ studentId, name, examDate, targetSubjects, targetCourse, targetUniversity });
+    this.questionCatalogProvider = questionCatalogProvider;
     this.graph = new KnowledgeGraph();
     this.decayModel = new DecayModel(this.profile);
     this.recommendation = null;
@@ -270,7 +271,7 @@ export class KairoEngine {
    * instead of returning { status: 'offline' }.
    */
   async connectSupabase(supabaseClient, { email, password } = {}) {
-    const adapter = new SupabaseSyncAdapter(supabaseClient, this.store);
+    const adapter = new SupabaseSyncAdapter(supabaseClient, this.store, this.questionCatalogProvider);
 
     if (email && password) {
       await adapter.signIn(email, password).catch(async (err) => {
@@ -434,12 +435,13 @@ export class KairoEngine {
   }
 
   /**
-   * Pull the shared content catalog — kairo.concepts and live
-   * kairo.questions — from Supabase into this engine. Until this runs,
+   * Pull the shared content catalog — kairo.concepts and live questions
+   * supplied by the adapter (Supabase by default, or a configured static
+   * catalog provider) — into this engine. Until this runs,
    * this.graph/this.questionGraph only ever contain whatever a caller
    * added by hand, and every "which question do I show for concept X"
    * lookup (Practice, RapidFire, CBT) comes back empty even though the
-   * question bank is fully seeded server-side.
+   * question bank is fully seeded in the configured content source.
    *
    * Concept/question IDs are taken verbatim from the row — kairo.concepts
    * IDs are already the canonical conceptId() hash computed at seed time,
@@ -464,16 +466,40 @@ export class KairoEngine {
     const newConceptIds = [];
     let catalogRefreshed = false;
 
-    for (const filter of filters) {
-      const concepts = await this.sync.adapter.fetchConcepts(filter);
+    // Concepts are still in Supabase, while the app can serve questions from
+    // static packs. Start reads together so latency is bounded by the slowest
+    // request instead of the sum of every per-subject round trip.
+    const subjectCatalogs = await Promise.all(filters.map(async filter => {
+      const [concepts, questions] = await Promise.all([
+        this.sync.adapter.fetchConcepts(filter),
+        this.sync.adapter.fetchQuestions(filter)
+      ]);
+      return { filter, concepts, questions };
+    }));
+
+    for (const { concepts } of subjectCatalogs) {
       for (const data of concepts) {
         if (this.graph.hasConcept(data.id)) continue;
         this.graph.addConcept(new ConceptNode(data));
         conceptsLoaded++;
         newConceptIds.push(data.id);
       }
+    }
 
-      const questions = await this.sync.adapter.fetchQuestions(filter);
+    // Fetch this student's history as soon as the new concept IDs are known,
+    // while the much larger question packs are being mirrored locally.
+    const hydrateConceptHistory = newConceptIds.length > 0
+      ? Promise.all([
+          this.sync.adapter.pullConceptStatesForConcepts(this.profile.studentId, newConceptIds),
+          this.sync.adapter.pullAttemptsForConcepts(this.profile.studentId, newConceptIds)
+        ]).then(([remoteConceptStates, remoteAttempts]) => {
+          this.sync.applyRemoteConceptStates(remoteConceptStates, remoteAttempts);
+        }).catch(() => {
+          // offline or failed fetch — concepts stay fresh (unseen) this boot, not fatal
+        })
+      : Promise.resolve();
+
+    for (const { filter, questions } of subjectCatalogs) {
       const subject = filter.subject || null;
       const catalogVersion = this._questionCatalogVersion(questions);
       const flattenedQuestions = questions.map(data => ({
@@ -500,27 +526,7 @@ export class KairoEngine {
     if (catalogRefreshed) await this.store.clearPrefetchedQueues();
     this.questionGraph.autoBuildRelationships();
 
-    // A concept becoming a local ConceptNode for the first time (e.g. right
-    // after sign-in, before any sync() has run) previously left it "unseen"
-    // even when the student has real history on it: sync()'s own pull is
-    // time-cursor-scoped (profile.lastSessionAt) and races this method, so
-    // it silently skips concepts that aren't in the graph yet at the moment
-    // it runs. Fetching this device's real history for exactly the concepts
-    // just added — independent of any time cursor or the sync() race —
-    // makes Active Traps/Weak Topics reliable after signing back in on any
-    // device. Best-effort: offline or a failed fetch just leaves these
-    // concepts fresh (unseen), not fatal.
-    if (newConceptIds.length > 0) {
-      try {
-        const [remoteConceptStates, remoteAttempts] = await Promise.all([
-          this.sync.adapter.pullConceptStatesForConcepts(this.profile.studentId, newConceptIds),
-          this.sync.adapter.pullAttemptsForConcepts(this.profile.studentId, newConceptIds)
-        ]);
-        this.sync.applyRemoteConceptStates(remoteConceptStates, remoteAttempts);
-      } catch {
-        // offline or failed fetch — concepts stay fresh (unseen) this boot, not fatal
-      }
-    }
+    await hydrateConceptHistory;
 
     return { conceptsLoaded, questionsLoaded };
   }

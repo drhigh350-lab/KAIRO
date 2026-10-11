@@ -176,12 +176,32 @@ export class LocalStore {
   async reconcileQuestionQueue(subject, questions) {
     const current = await this.getAll(STORES.QUEUE);
     const liveIds = new Set(questions.map(q => q.id || q.questionId || q.queueId));
-    for (const record of current) {
-      if (record.subject === subject && !liveIds.has(record.id || record.questionId || record.queueId)) {
-        await this.delete(STORES.QUEUE, record.queueId);
+    const stale = current.filter(record =>
+      record.subject === subject && !liveIds.has(record.id || record.questionId || record.queueId)
+    );
+    if (this.useMemory) {
+      const queue = this.memoryFallback.get(STORES.QUEUE) || new Map();
+      for (const record of stale) queue.delete(String(record.id || record.questionId || record.queueId));
+      for (const question of questions) {
+        const key = question.id || question.sessionId || question.attemptId || question.studentId || question.queueId || Date.now();
+        queue.set(String(key), question);
       }
+      this.memoryFallback.set(STORES.QUEUE, queue);
+      return;
     }
-    for (const question of questions) await this.put(STORES.QUEUE, question);
+
+    // A separate IndexedDB transaction for every question made a cold
+    // catalog load take tens of seconds on mobile. Reconcile the whole
+    // subject in one readwrite transaction instead.
+    await new Promise((resolve, reject) => {
+      const tx = this.db.transaction([STORES.QUEUE], 'readwrite');
+      const queue = tx.objectStore(STORES.QUEUE);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Question catalog transaction aborted.'));
+      for (const record of stale) queue.delete(record.queueId || record.id || record.questionId);
+      for (const question of questions) queue.put(question);
+    });
   }
 
   /** Invalidate resolved recommendation queues after any catalog refresh. */

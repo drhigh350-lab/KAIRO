@@ -176,48 +176,64 @@ export class QuestionRelationshipGraph {
 
   /**
    * Auto-build relationships based on concept overlap and difficulty.
+   * Indexing questions by concept avoids checking every possible question
+   * pair; only pairs that share at least one concept are considered.
    */
   autoBuildRelationships() {
     const questions = Array.from(this.questions.values());
+    if (questions.length < 2) return;
 
-    for (let i = 0; i < questions.length; i++) {
-      for (let j = i + 1; j < questions.length; j++) {
-        const a = questions[i];
-        const b = questions[j];
+    const conceptBuckets = new Map();
+    const primaryConcepts = questions.map(question => question.getPrimaryConcept()?.conceptId);
+    for (let index = 0; index < questions.length; index++) {
+      for (const conceptId of new Set(questions[index].getAllConceptIds())) {
+        const bucket = conceptBuckets.get(conceptId) || [];
+        bucket.push(index);
+        conceptBuckets.set(conceptId, bucket);
+      }
+    }
 
-        if (a.id === b.id) continue;
-
-        const aConcepts = new Set(a.getAllConceptIds());
-        const bConcepts = new Set(b.getAllConceptIds());
-
-        // Check concept overlap
-        const shared = [...aConcepts].filter(id => bConcepts.has(id));
-        if (shared.length === 0) continue;
-
-        // Alternative wording: same primary concept, similar difficulty
-        const aPrimary = a.getPrimaryConcept()?.conceptId;
-        const bPrimary = b.getPrimaryConcept()?.conceptId;
-        if (aPrimary === bPrimary && Math.abs(a.difficultyRating - b.difficultyRating) <= 1) {
-          this.link(a.id, b.id, 'alternativeWording');
-          this.link(b.id, a.id, 'alternativeWording');
+    // Count shared concepts for candidate pairs. A numeric composite key is
+    // cheaper to allocate than a string and is safe for this in-memory graph.
+    const sharedConceptCounts = new Map();
+    for (const bucket of conceptBuckets.values()) {
+      for (let left = 0; left < bucket.length; left++) {
+        for (let right = left + 1; right < bucket.length; right++) {
+          const pairKey = bucket[left] * questions.length + bucket[right];
+          sharedConceptCounts.set(pairKey, (sharedConceptCounts.get(pairKey) || 0) + 1);
         }
+      }
+    }
 
-        // Higher/lower difficulty
-        if (aPrimary === bPrimary) {
-          if (b.difficultyRating > a.difficultyRating) {
-            this.link(a.id, b.id, 'higherDifficulty');
-            this.link(b.id, a.id, 'lowerDifficulty');
-          } else if (a.difficultyRating > b.difficultyRating) {
-            this.link(b.id, a.id, 'higherDifficulty');
-            this.link(a.id, b.id, 'lowerDifficulty');
-          }
-        }
+    for (const [pairKey, sharedCount] of sharedConceptCounts) {
+      const left = Math.floor(pairKey / questions.length);
+      const right = pairKey % questions.length;
+      const a = questions[left];
+      const b = questions[right];
+      const aPrimary = primaryConcepts[left];
+      const bPrimary = primaryConcepts[right];
 
-        // Bridge: multiple shared concepts
-        if (shared.length >= 2) {
-          this.link(a.id, b.id, 'bridge');
-          this.link(b.id, a.id, 'bridge');
+      // Alternative wording: same primary concept, similar difficulty.
+      if (aPrimary === bPrimary && Math.abs(a.difficultyRating - b.difficultyRating) <= 1) {
+        this.link(a.id, b.id, 'alternativeWording');
+        this.link(b.id, a.id, 'alternativeWording');
+      }
+
+      // Higher/lower difficulty.
+      if (aPrimary === bPrimary) {
+        if (b.difficultyRating > a.difficultyRating) {
+          this.link(a.id, b.id, 'higherDifficulty');
+          this.link(b.id, a.id, 'lowerDifficulty');
+        } else if (a.difficultyRating > b.difficultyRating) {
+          this.link(b.id, a.id, 'higherDifficulty');
+          this.link(a.id, b.id, 'lowerDifficulty');
         }
+      }
+
+      // Bridge: multiple shared concepts.
+      if (sharedCount >= 2) {
+        this.link(a.id, b.id, 'bridge');
+        this.link(b.id, a.id, 'bridge');
       }
     }
   }
