@@ -502,6 +502,17 @@ async function ensureContentLoaded(subjects: string[]): Promise<void> {
   })(), 15_000, 'KAIRO could not load practice content in time.');
   try {
     await contentLoadPromise;
+  } catch (error) {
+    // navigator.onLine can remain true through a captive portal, flaky mobile
+    // data connection, or a dropped Supabase request. If the requested
+    // subjects already exist in the restored IndexedDB concept mirror, keep
+    // Practice usable rather than showing a fatal "topics could not be
+    // loaded" screen. Supabase remains authoritative and will refresh the
+    // catalog on the next successful online request.
+    const hasCachedTopics = target.every((subject) => kairo.graph.filter({ subject }).length > 0);
+    if (!hasCachedTopics) throw error;
+    contentLoadedFor = [...new Set([...contentLoadedFor, ...target])];
+    contentLoadedAt = Date.now();
   } finally {
     contentLoadPromise = null;
   }

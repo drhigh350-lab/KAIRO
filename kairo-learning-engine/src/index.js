@@ -249,6 +249,31 @@ export class KairoEngine {
       this.decayModel.refreshAll(this.graph);
     }
 
+    // Restore the question mirror alongside the concept graph. The graph was
+    // already persisted, but questions were only written to the offline queue
+    // and never rehydrated into questionGraph after a reload. That left Topic
+    // Practice with topics but no selectable questions whenever Supabase was
+    // unavailable during the next boot — especially common on mobile.
+    const savedQuestions = await this.store.getAll(STORES.QUEUE);
+    for (const record of savedQuestions) {
+      if (!record?.id || this.questionGraph.getQuestion(record.id)) continue;
+      this.questionGraph.addQuestion(new Question({
+        id: record.id,
+        subject: record.subject,
+        topic: record.topic,
+        subtopic: record.subtopic,
+        stem: record.text ?? record.stem ?? '',
+        options: record.options || [],
+        correctOption: record.correctOption,
+        explanation: record.explanation || '',
+        conceptsTested: record.conceptsTested || (record.conceptId ? [{ conceptId: record.conceptId, weight: 1 }] : []),
+        difficultyRating: record.difficulty ?? record.difficultyRating ?? 1,
+        imageUrl: record.imageUrl || null,
+        lifecycleState: record.lifecycleState || 'live'
+      }));
+    }
+    if (savedQuestions.length > 0) this.questionGraph.autoBuildRelationships();
+
     // Anything queued for Supabase before the app closed/reloaded while
     // still offline — without this, those attempts/sessions/cbt_results
     // were silently lost forever (SyncManager.pendingSync is otherwise
