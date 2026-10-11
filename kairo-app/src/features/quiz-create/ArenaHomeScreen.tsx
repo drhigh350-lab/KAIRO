@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import { ScreenHeader } from '../learning/shared';
 import { ArenaTabs, ArenaBottomSpace } from '../challenges/ArenaTabs';
-import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
 import type { Challenge } from '../challenges/data';
-import { getArenaHomeSummary, getDailyArenaChallenges, getTrendingChallenges, getRecentActivity, type ArenaHomeSummary, type TrendingChallenge, type RecentActivityItem } from '../../lib/arenaHomeApi';
+import type { ArenaHomeSummary, TrendingChallenge, RecentActivityItem } from '../../lib/arenaHomeApi';
+import { fetchQuery, peekQuery } from '../../lib/queryCache';
+import { ARENA_HOME_KEY, fetchArenaHome, type ArenaHomeData } from '../../lib/screenQueries';
 
 function activityLine(item: RecentActivityItem): string {
   const who = item.studentName ?? 'A Kairo student';
@@ -26,28 +27,22 @@ function timeAgo(iso: string): string {
 
 export function ArenaHomeScreen() {
   const navigate = useNavigate();
-  const [summary, setSummary] = useState<ArenaHomeSummary | null>(null);
-  const [today, setToday] = useState<Challenge[]>([]);
-  const [trending, setTrending] = useState<TrendingChallenge[]>([]);
-  const [activity, setActivity] = useState<RecentActivityItem[]>([]);
-  const { state, setState } = useAsyncState('idle');
+  const [cached] = useState(() => peekQuery<ArenaHomeData>(ARENA_HOME_KEY));
+  const [summary, setSummary] = useState<ArenaHomeSummary | null>(cached?.summary ?? null);
+  const [today, setToday] = useState<Challenge[]>(cached?.today ?? []);
+  const [trending, setTrending] = useState<TrendingChallenge[]>(cached?.trending ?? []);
+  const [activity, setActivity] = useState<RecentActivityItem[]>(cached?.activity ?? []);
+  const { state, setState } = useAsyncState(cached ? 'success' : 'idle');
 
   const loadArena = useCallback(async (isRetry = false) => {
-    setState(isRetry ? 'retry' : 'loading');
+    const hasData = !!peekQuery(ARENA_HOME_KEY);
+    if (!hasData || isRetry) setState(isRetry ? 'retry' : 'loading');
     try {
-      const [s, t, tr, a] = await Promise.all([
-        getArenaHomeSummary(),
-        Promise.all([getDailyArenaChallenges(), listChallenges()]).then(([daily, rows]) => {
-          const mapped = rows.map(mapDbChallenge);
-          return daily.map(({ id }) => mapped.find((challenge) => challenge.id === id)).filter((challenge): challenge is Challenge => !!challenge);
-        }),
-        getTrendingChallenges(5),
-        getRecentActivity(8),
-      ]);
-      setSummary(s); setToday(t); setTrending(tr); setActivity(a);
+      const data = await fetchQuery(ARENA_HOME_KEY, fetchArenaHome);
+      setSummary(data.summary); setToday(data.today); setTrending(data.trending); setActivity(data.activity);
       setState('success');
     } catch {
-      setState('error');
+      if (!hasData) setState('error');
     }
   }, [setState]);
 

@@ -5,7 +5,9 @@ import { PlannerSetup } from './PlannerSetup';
 import { PlannerHome } from './PlannerHome';
 import { getSubjects } from '../../lib/planner/syllabus';
 import { toLocalIso, type PlannedTopic, type PlannerInput, type PlannerPlan } from '../../lib/planner/plannerEngine';
-import { loadCurrentPlan, saveAndBuildPlan, markTopicComplete, getPinnedRecommendation, type PlannerState, type DueTopic } from '../../lib/planner/plannerApi';
+import { saveAndBuildPlan, markTopicComplete, type PlannerState, type DueTopic } from '../../lib/planner/plannerApi';
+import { fetchQuery, peekQuery, setQuery } from '../../lib/queryCache';
+import { PLANNER_KEY, fetchPlanner, type PlannerData } from '../../lib/screenQueries';
 import { getEngine } from '../../lib/kairoEngine';
 import { getCourseSubjects } from '../../lib/subjectScope';
 
@@ -14,37 +16,29 @@ type Screen = 'loading' | 'setup' | 'home';
 /** Controller for the Study Planner: setup (once) -> home (weekly checklist + Batch 3's pinned recommendation), mirroring the simple screen-stack pattern CbtFlow/RapidFireFlow already use. */
 export function PlannerFlow() {
   const navigate = useNavigate();
-  const [screen, setScreen] = useState<Screen>('loading');
-  const [plan, setPlan] = useState<PlannerPlan | null>(null);
-  const [state, setState] = useState<PlannerState | null>(null);
-  const [pinned, setPinned] = useState<DueTopic | null>(null);
+  const [cached] = useState(() => peekQuery<PlannerData>(PLANNER_KEY));
+  const [screen, setScreen] = useState<Screen>(cached ? (cached.plan ? 'home' : 'setup') : 'loading');
+  const [plan, setPlan] = useState<PlannerPlan | null>(cached?.plan ?? null);
+  const [state, setState] = useState<PlannerState | null>(cached?.state ?? null);
+  const [pinned, setPinned] = useState<DueTopic | null>(cached?.pinned ?? null);
   const [submitting, setSubmitting] = useState(false);
   const requestId = useRef(0);
-  const asyncState = useAsyncState('loading');
+  const asyncState = useAsyncState(cached ? 'success' : 'loading');
 
   const refresh = useCallback(async () => {
     const currentRequest = ++requestId.current;
-    asyncState.start();
+    const hasData = !!peekQuery(PLANNER_KEY);
+    if (!hasData) asyncState.start();
     try {
-      const current = await loadCurrentPlan();
+      const data = await fetchQuery(PLANNER_KEY, fetchPlanner);
       if (currentRequest !== requestId.current) return;
-      if (!current) {
-        setPlan(null);
-        setState(null);
-        setPinned(null);
-        setScreen('setup');
-        asyncState.succeed();
-        return;
-      }
-      setPlan(current.plan);
-      setState(current.state);
-      const recommendation = await getPinnedRecommendation();
-      if (currentRequest !== requestId.current) return;
-      setPinned(recommendation);
-      setScreen('home');
+      setPlan(data.plan);
+      setState(data.state);
+      setPinned(data.pinned);
+      setScreen(data.plan ? 'home' : 'setup');
       asyncState.succeed();
     } catch {
-      if (currentRequest === requestId.current) asyncState.fail();
+      if (currentRequest === requestId.current && !hasData) asyncState.fail();
     }
   // The request id, rather than callback identity, owns freshness for this controller.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,7 +64,9 @@ export function PlannerFlow() {
   async function handleToggleTopic(topic: PlannedTopic, done: boolean) {
     if (!state) return;
     const { completedTopicKeys, pendingVerificationKeys } = await markTopicComplete(topic.key, done);
-    setState({ ...state, completedTopicKeys, pendingVerificationKeys });
+    const nextState = { ...state, completedTopicKeys, pendingVerificationKeys };
+    setState(nextState);
+    setQuery<PlannerData>(PLANNER_KEY, { plan, state: nextState, pinned });
   }
 
   /** Bypasses every custom-configuration modal (subject/topic/subtopic pickers) — the Batch 2 "Trust, but Verify" loop launches straight into a scoped 10-question session on this exact topic. */

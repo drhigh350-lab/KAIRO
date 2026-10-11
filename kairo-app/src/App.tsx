@@ -47,15 +47,41 @@ const PlannerFlow = lazyNamed(() => import('./features/planner/PlannerFlow'), 'P
 const StreakSavior = lazyNamed(() => import('./features/home/StreakSavior'), 'StreakSavior');
 const NotificationCenter = lazyNamed(() => import('./features/notifications/NotificationCenter'), 'NotificationCenter');
 
-/** Warms the most-used screens in the background once the browser is idle, so tapping them later is instant. */
-function prefetchCoreScreens(signedIn: boolean) {
-  const loaders = signedIn
+const loadSecondaryScreens = [
+  () => import('./features/quiz-create/ArenaHomeScreen'),
+  () => import('./features/planner/PlannerFlow'),
+  () => import('./features/learn/LearnHome'),
+  () => import('./features/learn/LearnLesson'),
+  () => import('./features/challenges/ChallengesFlow'),
+  () => import('./features/rapidfire/RapidFireFlow'),
+  () => import('./features/profile/Leaderboard'),
+  () => import('./features/quiz-create/DiscoverScreen'),
+  () => import('./features/quiz-create/CreateQuizFlow'),
+  () => import('./features/quiz-create/MyQuizzesScreen'),
+  () => import('./features/profile/EditProfile'),
+  () => import('./features/profile/NotificationSettings'),
+  () => import('./features/home/StreakSavior'),
+];
+
+function whenIdle(run: () => void, fallbackMs: number) {
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+  if (idle) idle(run, { timeout: fallbackMs * 2 });
+  else setTimeout(run, fallbackMs);
+}
+
+/** Warms every screen's code (core tabs first, then the rest) plus the data behind the most-visited ones, so tapping anything from Home opens instantly. */
+function prefetchScreens(signedIn: boolean) {
+  const core = signedIn
     ? [loadHome, loadPractice, loadReview, loadProfile, loadCbt]
     : [loadLogin, loadSignup, loadOnboarding];
-  const run = () => loaders.forEach((load) => load().catch(() => {}));
-  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-  if (idle) idle(run);
-  else setTimeout(run, 1200);
+  whenIdle(() => {
+    core.forEach((load) => load().catch(() => {}));
+    if (!signedIn) return;
+    whenIdle(() => {
+      loadSecondaryScreens.forEach((load) => load().catch(() => {}));
+      import('./lib/screenQueries').then((m) => m.prefetchScreenData()).catch(() => {});
+    }, 800);
+  }, 600);
 }
 
 function RouteFallback() {
@@ -158,7 +184,7 @@ export default function App() {
   // ready rather than racing restoreSession() above.
   useEffect(() => {
     if (ready && getEngine()) triggerRecommendationPrefetch();
-    if (ready) prefetchCoreScreens(!!getEngine());
+    if (ready) prefetchScreens(!!getEngine());
   }, [ready]);
 
   return (

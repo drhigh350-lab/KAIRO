@@ -1,3 +1,4 @@
+import { clearQueryCache } from './queryCache';
 import { KairoEngine, SupabaseSyncAdapter, CBTExamMode, getPrestigeTier } from 'kairo-learning-engine';
 import { getSupabase } from './supabaseClient';
 import { selectedOptionLabel, type EngineFlatQuestion } from './engineAdapter';
@@ -440,6 +441,7 @@ export async function signOutAndDisconnect(): Promise<void> {
     // best-effort — still drop the local session below even if the network call fails
   }
   engine = null;
+  clearQueryCache();
   contentLoadedFor = [];
   contentLoadedAt = 0;
   contentLoadPromise = null;
