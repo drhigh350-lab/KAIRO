@@ -230,6 +230,7 @@ export function PracticeFlow() {
   const sessionRequestRef = useRef(0);
   const mountedRef = useRef(true);
   const retrySessionRef = useRef<(() => void) | null>(null);
+  const startingSessionRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -243,6 +244,8 @@ export function PracticeFlow() {
     onQuestions: (questions: EngineFlatQuestion[]) => void,
     emptyMessage: string,
   ) {
+    if (startingSessionRef.current) return;
+    startingSessionRef.current = true;
     const requestId = ++sessionRequestRef.current;
     sessionState.start();
     setEngineQuestions(null);
@@ -253,15 +256,18 @@ export function PracticeFlow() {
       .then(({ questions }) => {
         if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
         if (questions.length === 0) {
+          startingSessionRef.current = false;
           setEngineEmptyMessage(emptyMessage);
           sessionState.succeed();
           return;
         }
         onQuestions(questions);
+        startingSessionRef.current = false;
         sessionState.succeed();
       })
       .catch((err) => {
         if (!mountedRef.current || requestId !== sessionRequestRef.current) return;
+        startingSessionRef.current = false;
         setEngineLoadError('Kairo could not start this session. Your saved progress is safe.');
         sessionState.fail();
       });

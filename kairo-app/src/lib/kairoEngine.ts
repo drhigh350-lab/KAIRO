@@ -1085,12 +1085,23 @@ export async function startTopicPracticeSession(subjectLabel: string, topic: str
   const kairo = getEngine();
   if (!kairo) throw new Error('No active engine — sign in first.');
   const subject = normalizeSubjectName(subjectLabel);
-  await ensureContentLoaded([subject]);
-
-  const concepts = (subtopic
+  const getScopedConcepts = () => (subtopic
     ? kairo.getAllConcepts({ subject, topic, subtopic })
     : kairo.getAllConcepts({ subject, topic })
   ).slice().sort((a: Engine, b: Engine) => (a.state === 'fading' ? -1 : 1) - (b.state === 'fading' ? -1 : 1));
+
+  // The Practice picker often follows Topics/Subtopics, which already loaded
+  // this subject's catalog. Resolve from the live local graph first so the
+  // first question does not wait on a redundant Supabase refresh. A cold
+  // start still loads the authoritative catalog before resolving the scope.
+  let concepts = getScopedConcepts();
+  if (concepts.length === 0) {
+    await ensureContentLoaded([subject]);
+    concepts = getScopedConcepts();
+  }
+
+  
+
 
   // A subtopic maps to exactly one concept in almost all seeded content,
   // so the old queue — distinct concepts sliced to `limit` — capped every
