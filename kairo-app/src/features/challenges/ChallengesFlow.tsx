@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ChallengesHub } from './ChallengesHub';
 import { ChallengePreview } from './ChallengePreview';
@@ -29,6 +29,16 @@ export function ChallengesFlow() {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<SubmitAttemptResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  const actionInFlight = useRef(false);
+  const contextRequest = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      mounted.current = false;
+      contextRequest.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     const shared = location.pathname.match(/^\/arena\/challenge\/([^/]+)$/);
@@ -86,6 +96,7 @@ export function ChallengesFlow() {
   const selected: Challenge | null = selectedDb ? mapDbChallenge(selectedDb) : null;
 
   async function selectChallenge(id: string, directDb?: DbChallenge) {
+    const request = ++contextRequest.current;
     const db = directDb || (dbChallenges || []).find((c) => c.id === id);
     if (!db) { setLoadError('This Arena match is unavailable, expired, or the link is incorrect.'); return; }
     setSelectedDb(db);
@@ -102,16 +113,19 @@ export function ChallengesFlow() {
         const guestAttempt = saved ? await getGuestAttempt(saved) : null;
         return guestAttempt?.challenge_id === id ? guestAttempt : null;
       })();
+      if (request !== contextRequest.current || !mounted.current) return;
       setMyAttempt(attempt);
     } catch {
-      setMyAttempt(null);
+      if (request === contextRequest.current && mounted.current) setMyAttempt(null);
     } finally {
-      setBusy(false);
+      if (request === contextRequest.current && mounted.current) setBusy(false);
     }
   }
 
   async function handleJoin() {
-    if (!selectedDb) return;
+    if (!selectedDb || actionInFlight.current) return;
+    const challengeId = selectedDb.id;
+    actionInFlight.current = true;
     setBusy(true);
     try {
       if (!getCurrentStudentId() && !getGuestToken()) {
@@ -138,9 +152,10 @@ export function ChallengesFlow() {
       setQuestions(qs);
       go('getReady');
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Could not join this challenge.');
+      if (mounted.current) setLoadError(err instanceof Error ? err.message : 'Could not join this challenge.');
     } finally {
-      setBusy(false);
+      actionInFlight.current = false;
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -183,8 +198,10 @@ export function ChallengesFlow() {
   }
 
   async function handleFinish(finalAnswers: Record<number, number>, timeTakenMs: number) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setAnswers(finalAnswers);
-    if (!attemptId) { go('results'); return; }
+    if (!attemptId) { actionInFlight.current = false; go('results'); return; }
     setBusy(true);
     try {
       const questionResults = questions.map((q, i) => ({
@@ -201,10 +218,13 @@ export function ChallengesFlow() {
       trackArenaEvent('arena_completed', { challenge_id: selectedDb?.id, attempt_id: attemptId, score: submitted.score, accuracy_pct: submitted.accuracyPct, guest: !getCurrentStudentId() }).catch(() => {});
       setResult(submitted);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Could not submit this attempt.');
+      if (mounted.current) setLoadError(err instanceof Error ? err.message : 'Could not submit this attempt.');
     } finally {
-      setBusy(false);
-      go('results');
+      actionInFlight.current = false;
+      if (mounted.current) {
+        setBusy(false);
+        go('results');
+      }
     }
   }
 

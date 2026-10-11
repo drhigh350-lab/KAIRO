@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, Input } from '../../components';
 import { ScreenHeader } from '../learning/shared';
@@ -27,6 +27,7 @@ export function CreateQuizFlow() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
   const [submitting, setSubmitting] = useState(false);
+  const publishInFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
@@ -45,6 +46,8 @@ export function CreateQuizFlow() {
   }
 
   async function handlePublish() {
+    if (publishInFlight.current) return;
+    publishInFlight.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -57,6 +60,7 @@ export function CreateQuizFlow() {
     } catch (err) {
       setError('This quiz could not be created. Your draft is still here; please try again.');
     } finally {
+      publishInFlight.current = false;
       setSubmitting(false);
     }
   }
