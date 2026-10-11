@@ -111,9 +111,79 @@ export function isOnboarded(): boolean {
   return engine?.profile?.diagnosticCompleted === true;
 }
 
-function createEngine(name: string): Engine {
+export const SESSION_VERIFIED_EVENT = 'kairo:session-verified';
+export const SESSION_REVOKED_EVENT = 'kairo:session-revoked';
+
+const REMEMBERED_STUDENT_KEY = 'kairo:last-student';
+
+interface RememberedStudent {
+  authUserId: string;
+  studentId: string;
+}
+
+function rememberStudent(kairo: Engine): void {
+  const { authUserId, studentId } = kairo?.profile || {};
+  if (!authUserId || !studentId || studentId === 'pending') return;
+  try {
+    localStorage.setItem(REMEMBERED_STUDENT_KEY, JSON.stringify({ authUserId, studentId }));
+  } catch {
+    // storage unavailable (private mode) — next load just takes the server path
+  }
+}
+
+function forgetStudent(): void {
+  try {
+    localStorage.removeItem(REMEMBERED_STUDENT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function readRememberedStudent(): RememberedStudent | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(REMEMBERED_STUDENT_KEY) || 'null');
+    return parsed?.authUserId && parsed?.studentId ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function findStoredAuthTokenKey(): string | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) return key;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/** Synchronous, network-free check for a persisted Supabase session, so signed-out visitors never wait on auth at all. */
+export function hasStoredAuthSession(): boolean {
+  return findStoredAuthTokenKey() !== null;
+}
+
+function readStoredAuthUserId(): string | null {
+  const key = findStoredAuthTokenKey();
+  if (!key) return null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+    return parsed?.user?.id || parsed?.currentSession?.user?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+function isAuthRedirectUrl(): boolean {
+  const { search, hash } = window.location;
+  return /[?&#](code|access_token|refresh_token)=/.test(`${search}${hash}`);
+}
+
+function createEngine(name: string, studentId = 'pending'): Engine {
   engine = new KairoEngine({
-    studentId: 'pending',
+    studentId,
     name,
     examDate: null,
     targetSubjects: [],
@@ -212,6 +282,7 @@ export async function signUpAndConnect({ name, email, password }: SignUpArgs): P
     return { needsEmailVerification: true, email };
   }
   await kairo.connectSupabase(supabase, { email, password });
+  rememberStudent(kairo);
   return kairo;
 }
 
@@ -235,6 +306,7 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
   const kairo = createEngine('');
   await kairo.init();
   await kairo.connectSupabase(supabase, { email, password });
+  rememberStudent(kairo);
   await purgeDeletedEmptyDiagramCache(kairo);
   await kairo.sync.sync();
   return kairo;
@@ -247,13 +319,97 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
  * nothing to restore — no configured Supabase env vars, no existing session,
  * or the session no longer being valid.
  */
-export async function restoreSession(): Promise<boolean> {
+let restorePromise: Promise<boolean> | null = null;
+
+export function restoreSession(): Promise<boolean> {
+  if (engine) return Promise.resolve(true);
+  // Splash, Onboarding and the App boot hook can all ask at once on a cold
+  // load — share one restore instead of racing three engines.
+  if (!restorePromise) {
+    restorePromise = doRestoreSession().finally(() => {
+      restorePromise = null;
+    });
+  }
+  return restorePromise;
+}
+
+async function doRestoreSession(): Promise<boolean> {
   let supabase;
   try {
     supabase = getSupabase();
   } catch {
     return false;
   }
+
+  if (!hasStoredAuthSession() && !isAuthRedirectUrl()) return false;
+
+  const fastEngine = await restoreFromLocalCache();
+  if (fastEngine) {
+    verifySessionInBackground(supabase, fastEngine);
+    return true;
+  }
+
+  return restoreFromServer(supabase);
+}
+
+/**
+ * Instant path for a returning student on this device: rebuild the engine
+ * from IndexedDB with no network round trip, but only when the locally
+ * stored Supabase session belongs to the same auth user whose profile we
+ * cached. The server still verifies the token right after (see
+ * verifySessionInBackground) and every remote read/write is gated by RLS
+ * on that JWT, so this only ever shows the student their own on-device data.
+ */
+async function restoreFromLocalCache(): Promise<Engine | null> {
+  const remembered = readRememberedStudent();
+  const storedUserId = readStoredAuthUserId();
+  if (!remembered || !storedUserId || remembered.authUserId !== storedUserId) return null;
+
+  const kairo = createEngine('', remembered.studentId);
+  try {
+    await withTimeout(kairo.init(), 2_500, 'Local profile took too long to load.');
+  } catch {
+    engine = null;
+    return null;
+  }
+  if (kairo.profile.authUserId !== storedUserId) {
+    engine = null;
+    return null;
+  }
+  return kairo;
+}
+
+function verifySessionInBackground(supabase: Engine, kairo: Engine): void {
+  void (async () => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await withTimeout(kairo.connectSupabase(supabase, {}), 10_000, 'Session verification timed out.');
+        if (engine !== kairo) return;
+        rememberStudent(kairo);
+        await purgeDeletedEmptyDiagramCache(kairo);
+        kairo.sync.sync().catch(() => {});
+        triggerRecommendationPrefetch();
+        window.dispatchEvent(new Event(SESSION_VERIFIED_EVENT));
+        return;
+      } catch (err) {
+        if (engine !== kairo) return;
+        if (isAuthRejection(err)) {
+          await clearStaleSession(supabase);
+          forgetStudent();
+          engine = null;
+          clearQueryCache();
+          window.dispatchEvent(new Event(SESSION_REVOKED_EVENT));
+          return;
+        }
+        // Offline or flaky: keep the student working on local data and try
+        // again shortly; the online listener also resyncs once they're back.
+        await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+      }
+    }
+  })();
+}
+
+async function restoreFromServer(supabase: Engine): Promise<boolean> {
 
   // A single flaky request on a weak mobile connection used to end the
   // whole restore attempt permanently — one dropped packet during either
@@ -278,16 +434,18 @@ export async function restoreSession(): Promise<boolean> {
         await kairo.init();
         // No email/password — connectSupabase() reuses the session getSession() already restored.
         await kairo.connectSupabase(supabase, {});
-        await purgeDeletedEmptyDiagramCache(kairo);
+        rememberStudent(kairo);
+        void purgeDeletedEmptyDiagramCache(kairo);
         // The profile is already hydrated at this point — a sync hiccup
         // right after a successful reconnect shouldn't undo it, so this
         // runs in the background rather than gating the restore's result.
         kairo.sync.sync().catch(() => {});
         return true;
-      })(), 8_000, 'KAIRO could not restore the session in time.');
+      })(), 6_000, 'KAIRO could not restore the session in time.');
     } catch (err) {
       if (isAuthRejection(err)) {
         await clearStaleSession(supabase);
+        forgetStudent();
         engine = null;
         return false;
       }
@@ -399,6 +557,7 @@ export async function connectGoogleAccount(): Promise<GoogleSignInResult> {
   const kairo = createEngine(googleName);
   await kairo.init();
   const remoteProfile = await kairo.connectSupabase(supabase, {});
+  rememberStudent(kairo);
   await purgeDeletedEmptyDiagramCache(kairo);
   await kairo.sync.sync();
   return { isNewStudent: remoteProfile.isNewStudent, name: remoteProfile.name || googleName };
@@ -440,6 +599,7 @@ export async function signOutAndDisconnect(): Promise<void> {
   } catch {
     // best-effort — still drop the local session below even if the network call fails
   }
+  forgetStudent();
   engine = null;
   clearQueryCache();
   contentLoadedFor = [];

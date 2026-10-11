@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KairoWordmark } from '../../components';
 import { LandingPage } from '../onboarding/LandingPage';
-import { restoreSession, isOnboarded } from '../../lib/kairoEngine';
+import { restoreSession, isOnboarded, hasStoredAuthSession } from '../../lib/kairoEngine';
 
 /**
  * The public "/" route. A returning, signed-in student gets the same
@@ -15,9 +15,19 @@ import { restoreSession, isOnboarded } from '../../lib/kairoEngine';
  */
 export function Splash() {
   const navigate = useNavigate();
-  const [checking, setChecking] = useState(true);
+  // No persisted session means nothing to restore — render the landing page
+  // on the very first frame instead of waiting on any auth call.
+  const [checking, setChecking] = useState(() => hasStoredAuthSession() || /[?&#](code|access_token)=/.test(window.location.search + window.location.hash));
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
+    if (!checking) return;
+    const timer = setTimeout(() => setSlow(true), 3_000);
+    return () => clearTimeout(timer);
+  }, [checking]);
+
+  useEffect(() => {
+    if (!checking) return;
     let cancelled = false;
     const startedAt = Date.now();
     restoreSession().catch(() => false).then((restored) => {
@@ -45,6 +55,8 @@ export function Splash() {
     return () => {
       cancelled = true;
     };
+    // Only the initial check matters; flipping `checking` off cancels navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   if (!checking) {
@@ -77,6 +89,22 @@ export function Splash() {
             background: i === 1 ? 'var(--dark-accent-blue)' : 'rgba(46,124,246,0.45)',
           }} />
         ))}
+      </div>
+      <div aria-live="polite" style={{ minHeight: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        {slow && (
+          <>
+            <div style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
+              Slow connection — still signing you in…
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 999, padding: '8px 18px', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            >
+              Sign in manually
+            </button>
+          </>
+        )}
       </div>
       <div style={{
         position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',

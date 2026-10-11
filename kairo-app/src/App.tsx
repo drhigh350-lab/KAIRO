@@ -87,7 +87,7 @@ function prefetchScreens(signedIn: boolean) {
 function RouteFallback() {
   return <div aria-busy="true" style={{ minHeight: '60dvh' }} />;
 }
-import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
+import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch, SESSION_REVOKED_EVENT } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
 // themselves before deciding where to go — this list is every *other*
@@ -173,9 +173,19 @@ export default function App() {
   const location = useLocation();
   const wide = WIDE_ROUTES.includes(location.pathname);
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     setupOnlineSync();
   }, []);
+
+  // The instant local restore is verified against Supabase right after the
+  // first paint; if the server rejects the token, bounce to sign-in.
+  useEffect(() => {
+    const onRevoked = () => navigate('/login', { replace: true });
+    window.addEventListener(SESSION_REVOKED_EVENT, onRevoked);
+    return () => window.removeEventListener(SESSION_REVOKED_EVENT, onRevoked);
+  }, [navigate]);
 
   // The other half of "when the app detects an online state and executes
   // the daily sync/init" (setupOnlineSync's own online-event listener
