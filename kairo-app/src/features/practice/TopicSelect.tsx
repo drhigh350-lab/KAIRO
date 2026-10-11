@@ -3,6 +3,7 @@ import { ScreenHeader, OptionRow } from '../learning/shared';
 import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import type { Subject } from './data';
 import { getRealTopics, type TopicInfo } from '../../lib/kairoEngine';
+import { fetchQuery, peekQuery } from '../../lib/queryCache';
 
 export interface TopicSelectProps {
   subject: Subject;
@@ -11,17 +12,24 @@ export interface TopicSelectProps {
 }
 
 export function TopicSelect({ subject, onBack, onPick }: TopicSelectProps) {
-  const [topics, setTopics] = useState<TopicInfo[] | null>(null);
+  const cacheKey = `topics:${subject.label}`;
+  const [topics, setTopics] = useState<TopicInfo[] | null>(() => peekQuery<TopicInfo[]>(cacheKey) ?? null);
   const [error, setError] = useState<string | null>(null);
-  const { state, start, retry, succeed, fail } = useAsyncState();
+  const { state, start, retry, succeed, fail } = useAsyncState(peekQuery(cacheKey) ? 'success' : 'idle');
 
   const loadTopics = () => {
-    start();
-    setTopics(null);
+    const cached = peekQuery<TopicInfo[]>(cacheKey);
     setError(null);
-    getRealTopics(subject.label)
+    if (cached) {
+      setTopics(cached);
+      succeed();
+    } else {
+      start();
+      setTopics(null);
+    }
+    fetchQuery(cacheKey, () => getRealTopics(subject.label))
       .then((nextTopics) => { setTopics(nextTopics); succeed(); })
-      .catch((err) => { setError('Topics could not be loaded. Please try again.'); fail(); });
+      .catch(() => { if (!cached) { setError('Topics could not be loaded. Please try again.'); fail(); } });
   };
 
   useEffect(() => {

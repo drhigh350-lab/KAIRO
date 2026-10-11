@@ -8,6 +8,8 @@ import {
   getBookmarkedQuestions, removeBookmark, getSessionHistory, getCbtHistory, getSessionQuestionReview,
   type MistakeTicket, type WeakTopicForReview, type BookmarkedQuestion, type SessionHistoryEntry, type CbtHistoryEntry, type CbtPaperQuestion, type SessionQuestionReview,
 } from '../../lib/kairoEngine';
+import { fetchQuery, peekQuery } from '../../lib/queryCache';
+import { REVIEW_KEY, fetchReview, type ReviewData } from '../../lib/screenQueries';
 
 function relativeDay(ts: number): string {
   const days = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
@@ -160,14 +162,20 @@ export function Review() {
 
   const loadData = useCallback(async () => {
     const currentRequest = ++requestId.current;
-    asyncState.start();
+    const cached = peekQuery<ReviewData>(REVIEW_KEY);
+    if (cached) {
+      setPendingCount(getPendingRepairsCount());
+      setWeakTopics(getWeakTopicsForReview());
+      setMistakes(cached.mistakes);
+      setBookmarks(cached.bookmarks);
+      setHistory(cached.history);
+      setDataLoaded(true);
+      asyncState.succeed();
+    } else {
+      asyncState.start();
+    }
     try {
-      await loadReviewData();
-      const [recentMistakes, savedBookmarks, sessionHistory] = await Promise.all([
-        getRecentMistakes(20).catch(() => [] as MistakeTicket[]),
-        getBookmarkedQuestions(20).catch(() => [] as BookmarkedQuestion[]),
-        getSessionHistory(20).catch(() => [] as SessionHistoryEntry[]),
-      ]);
+      const { mistakes: recentMistakes, bookmarks: savedBookmarks, history: sessionHistory } = await fetchQuery(REVIEW_KEY, fetchReview);
       if (currentRequest !== requestId.current) return;
       setPendingCount(getPendingRepairsCount());
       setWeakTopics(getWeakTopicsForReview());

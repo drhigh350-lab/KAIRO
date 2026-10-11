@@ -20,28 +20,28 @@ const EXPERIENCE_STEPS: ExperienceStep[] = [
     step: '01',
     title: 'YOU PRACTISE',
     quote: 'Start with deliberate practice.',
-    image: '/assets/kairo-step-1-practice.png',
+    image: '/assets/kairo-step-1-practice.webp',
     alt: 'Kairo Practice Hub showing topic and session selection',
   },
   {
     step: '02',
     title: 'KAIRO READS YOUR PERFORMANCE',
     quote: 'Your results become useful information.',
-    image: '/assets/kairo-step-2-performance.png',
+    image: '/assets/kairo-step-2-performance.webp',
     alt: 'Kairo Session Summary breaking down accuracy and strengthened areas',
   },
   {
     step: '03',
     title: 'KAIRO FINDS THE PATTERN',
     quote: 'See where the real gap is.',
-    image: '/assets/kairo-step-3-insight.png',
+    image: '/assets/kairo-step-3-insight.webp',
     alt: 'Kairo explanation screen detailing concept gaps and common traps',
   },
   {
     step: '04',
     title: 'KNOW WHAT TO FIX NEXT',
     quote: 'Turn the insight into your next action.',
-    image: '/assets/kairo-step-4-weak-topics.png',
+    image: '/assets/kairo-step-4-weak-topics.webp',
     alt: 'Kairo recommended next steps and targeted weak area drills',
   },
 ];
@@ -251,7 +251,7 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
           }}
         />
 
-        {/* ─────────────────────────────────────────────────────────────
+        {/* ────────────────────────────────────────��────────────────────
             SECTION 2: THE REAL PROBLEM
             ───────────────────────────────────────────────────────────── */}
         <section
@@ -486,7 +486,7 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
 
         {/* ─────────────────────────────────────────────────────────────
             SECTION 3: SHOW THE KAIRO EXPERIENCE
-            ───────────────────────────────────────────────────────────── */}
+            ──��────────────────────────────────────────────────────────── */}
         <section
           id="kairo-experience-section"
           style={{
@@ -675,6 +675,9 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
                         src={item.image}
                         alt={item.alt}
                         loading="lazy"
+                        decoding="async"
+                        width={560}
+                        height={1126}
                         style={{
                           width: '100%',
                           height: 'auto',
@@ -877,7 +880,7 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
             </div>
 
             <img
-              src="/assets/techmed-mark.png"
+              src="/assets/techmed-mark.webp"
               alt="TECHMED"
               style={{
                 height: 18,
@@ -1062,7 +1065,7 @@ export function LandingPage({ onGetStarted, onSignIn }: LandingPageProps) {
           <KairoWordmark tone="white" width={90} />
           <span style={{ color: 'var(--dark-text-faint)', fontSize: 13 }}>•</span>
           <img
-            src="/assets/techmed-lockup-white.png"
+            src="/assets/techmed-lockup-white.webp"
             alt="TECHMED"
             style={{ height: 16, width: 'auto', opacity: 0.75 }}
           />

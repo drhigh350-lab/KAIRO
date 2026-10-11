@@ -1,35 +1,92 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './layout/AppShell';
 import { AppTabs } from './layout/AppTabs';
 import { Splash } from './features/splash/Splash';
-import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
-import { LoginPage } from './features/onboarding/LoginPage';
-import { SignupPage } from './features/onboarding/SignupPage';
-import { GoogleAuthCallback } from './features/onboarding/GoogleAuthCallback';
-import { ResetPasswordCallback } from './features/onboarding/ResetPassword';
-import { PrivacyPage } from './features/legal/PrivacyPage';
-import { TermsPage } from './features/legal/TermsPage';
-import { HomeDashboard } from './features/home/HomeDashboard';
-import { PracticeFlow } from './features/practice/PracticeFlow';
-import { CbtFlow } from './features/cbt/CbtFlow';
-import { Review } from './features/review/Review';
-import { Profile } from './features/profile/Profile';
-import { EditProfile } from './features/profile/EditProfile';
-import { NotificationSettings } from './features/profile/NotificationSettings';
-import { Leaderboard } from './features/profile/Leaderboard';
-import { ChallengesFlow } from './features/challenges/ChallengesFlow';
-import { CreateQuizFlow } from './features/quiz-create/CreateQuizFlow';
-import { MyQuizzesScreen } from './features/quiz-create/MyQuizzesScreen';
-import { DiscoverScreen } from './features/quiz-create/DiscoverScreen';
-import { ArenaHomeScreen } from './features/quiz-create/ArenaHomeScreen';
-import { LearnLesson } from './features/learn/LearnLesson';
-import { LearnHome } from './features/learn/LearnHome';
-import { RapidFireFlow } from './features/rapidfire/RapidFireFlow';
-import { PlannerFlow } from './features/planner/PlannerFlow';
-import { StreakSavior } from './features/home/StreakSavior';
-import { NotificationCenter } from './features/notifications/NotificationCenter';
 import { KairoStateView, useAsyncState } from './components/feedback/AsyncState';
+
+// Every screen is its own chunk so the first paint only downloads the shell
+// + the screen actually being opened, instead of the entire app (~1.2 MB).
+function lazyNamed<M extends Record<string, unknown>, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(() => load().then((m) => ({ default: m[name] as ComponentType })));
+}
+
+const loadOnboarding = () => import('./features/onboarding/OnboardingFlow');
+const loadLogin = () => import('./features/onboarding/LoginPage');
+const loadSignup = () => import('./features/onboarding/SignupPage');
+const loadHome = () => import('./features/home/HomeDashboard');
+const loadPractice = () => import('./features/practice/PracticeFlow');
+const loadCbt = () => import('./features/cbt/CbtFlow');
+const loadReview = () => import('./features/review/Review');
+const loadProfile = () => import('./features/profile/Profile');
+
+const OnboardingFlow = lazyNamed(loadOnboarding, 'OnboardingFlow');
+const LoginPage = lazyNamed(loadLogin, 'LoginPage');
+const SignupPage = lazyNamed(loadSignup, 'SignupPage');
+const GoogleAuthCallback = lazyNamed(() => import('./features/onboarding/GoogleAuthCallback'), 'GoogleAuthCallback');
+const ResetPasswordCallback = lazyNamed(() => import('./features/onboarding/ResetPassword'), 'ResetPasswordCallback');
+const PrivacyPage = lazyNamed(() => import('./features/legal/PrivacyPage'), 'PrivacyPage');
+const TermsPage = lazyNamed(() => import('./features/legal/TermsPage'), 'TermsPage');
+const HomeDashboard = lazyNamed(loadHome, 'HomeDashboard');
+const PracticeFlow = lazyNamed(loadPractice, 'PracticeFlow');
+const CbtFlow = lazyNamed(loadCbt, 'CbtFlow');
+const Review = lazyNamed(loadReview, 'Review');
+const Profile = lazyNamed(loadProfile, 'Profile');
+const EditProfile = lazyNamed(() => import('./features/profile/EditProfile'), 'EditProfile');
+const NotificationSettings = lazyNamed(() => import('./features/profile/NotificationSettings'), 'NotificationSettings');
+const Leaderboard = lazyNamed(() => import('./features/profile/Leaderboard'), 'Leaderboard');
+const ChallengesFlow = lazyNamed(() => import('./features/challenges/ChallengesFlow'), 'ChallengesFlow');
+const CreateQuizFlow = lazyNamed(() => import('./features/quiz-create/CreateQuizFlow'), 'CreateQuizFlow');
+const MyQuizzesScreen = lazyNamed(() => import('./features/quiz-create/MyQuizzesScreen'), 'MyQuizzesScreen');
+const DiscoverScreen = lazyNamed(() => import('./features/quiz-create/DiscoverScreen'), 'DiscoverScreen');
+const ArenaHomeScreen = lazyNamed(() => import('./features/quiz-create/ArenaHomeScreen'), 'ArenaHomeScreen');
+const LearnLesson = lazyNamed(() => import('./features/learn/LearnLesson'), 'LearnLesson');
+const LearnHome = lazyNamed(() => import('./features/learn/LearnHome'), 'LearnHome');
+const RapidFireFlow = lazyNamed(() => import('./features/rapidfire/RapidFireFlow'), 'RapidFireFlow');
+const PlannerFlow = lazyNamed(() => import('./features/planner/PlannerFlow'), 'PlannerFlow');
+const StreakSavior = lazyNamed(() => import('./features/home/StreakSavior'), 'StreakSavior');
+const NotificationCenter = lazyNamed(() => import('./features/notifications/NotificationCenter'), 'NotificationCenter');
+
+const loadSecondaryScreens = [
+  () => import('./features/quiz-create/ArenaHomeScreen'),
+  () => import('./features/planner/PlannerFlow'),
+  () => import('./features/learn/LearnHome'),
+  () => import('./features/learn/LearnLesson'),
+  () => import('./features/challenges/ChallengesFlow'),
+  () => import('./features/rapidfire/RapidFireFlow'),
+  () => import('./features/profile/Leaderboard'),
+  () => import('./features/quiz-create/DiscoverScreen'),
+  () => import('./features/quiz-create/CreateQuizFlow'),
+  () => import('./features/quiz-create/MyQuizzesScreen'),
+  () => import('./features/profile/EditProfile'),
+  () => import('./features/profile/NotificationSettings'),
+  () => import('./features/home/StreakSavior'),
+];
+
+function whenIdle(run: () => void, fallbackMs: number) {
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+  if (idle) idle(run, { timeout: fallbackMs * 2 });
+  else setTimeout(run, fallbackMs);
+}
+
+/** Warms every screen's code (core tabs first, then the rest) plus the data behind the most-visited ones, so tapping anything from Home opens instantly. */
+function prefetchScreens(signedIn: boolean) {
+  const core = signedIn
+    ? [loadHome, loadPractice, loadReview, loadProfile, loadCbt]
+    : [loadLogin, loadSignup, loadOnboarding];
+  whenIdle(() => {
+    core.forEach((load) => load().catch(() => {}));
+    if (!signedIn) return;
+    whenIdle(() => {
+      loadSecondaryScreens.forEach((load) => load().catch(() => {}));
+      import('./lib/screenQueries').then((m) => m.prefetchScreenData()).catch(() => {});
+    }, 800);
+  }, 600);
+}
+
+function RouteFallback() {
+  return <div aria-busy="true" style={{ minHeight: '60dvh' }} />;
+}
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
 
 // Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
@@ -127,12 +184,18 @@ export default function App() {
   // ready rather than racing restoreSession() above.
   useEffect(() => {
     if (ready && getEngine()) triggerRecommendationPrefetch();
+    if (ready) prefetchScreens(!!getEngine());
   }, [ready]);
 
   return (
     <AppShell wide={wide}>
-      {ready && <NotificationCenter />}
+      {ready && (
+        <Suspense fallback={null}>
+          <NotificationCenter />
+        </Suspense>
+      )}
       {ready ? (
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Splash />} />
           {/* Real, dedicated, indexable auth routes — Sign In/Sign Up used
@@ -189,6 +252,7 @@ export default function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       ) : (
         <KairoStateView
           state={boot.state === 'idle' || boot.state === 'success' ? 'loading' : boot.state}
