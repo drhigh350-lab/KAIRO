@@ -8,7 +8,7 @@ export interface KaiMarkProps {
 }
 
 /**
- * Kai's own portrait (the goat mascot, /assets/kai-avatar.png — same asset
+ * Kai's own portrait (the goat mascot, /assets/kai-avatar.webp — same asset
  * KaiPanel/KaiMessage/ProfileInsights already use) in a ringed circle,
  * with an optional confirmation badge. Previously this rendered an
  * abstract placeholder — a plain ring/disc/dot built from CSS, no actual
@@ -26,7 +26,7 @@ export function KaiMark({ size = 64, tone = 'navy', check = false }: KaiMarkProp
         width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden',
         border: `2px solid ${ring}`, background: 'var(--dark-bg-elevated)',
       }}>
-        <img src="/assets/kai-avatar.png" alt="Kai" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <img src="/assets/kai-avatar.webp" alt="Kai" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       </div>
       {check && (
         <div style={{

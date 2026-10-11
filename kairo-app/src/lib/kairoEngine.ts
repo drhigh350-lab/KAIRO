@@ -264,7 +264,9 @@ export async function restoreSession(): Promise<boolean> {
   // gone isn't going to start existing on the next attempt) and never
   // retries simply having no session at all (nothing to restore, not a
   // failure).
-  const maxAttempts = 3;
+  // Kept short on purpose: the worst case used to be 3 x 12s + backoff
+  // (~38s) of a spinner before the student saw anything.
+  const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await withTimeout((async () => {
@@ -281,7 +283,7 @@ export async function restoreSession(): Promise<boolean> {
         // runs in the background rather than gating the restore's result.
         kairo.sync.sync().catch(() => {});
         return true;
-      })(), 12_000, 'KAIRO could not restore the session in time.');
+      })(), 8_000, 'KAIRO could not restore the session in time.');
     } catch (err) {
       if (isAuthRejection(err)) {
         await clearStaleSession(supabase);
@@ -292,7 +294,7 @@ export async function restoreSession(): Promise<boolean> {
         engine = null;
         return false;
       }
-      await new Promise((resolve) => setTimeout(resolve, attempt * 800));
+      await new Promise((resolve) => setTimeout(resolve, 400));
     }
   }
   engine = null;

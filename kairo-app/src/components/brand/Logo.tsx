@@ -31,8 +31,8 @@ function useMaskLoaded(src: string): boolean {
   return loaded;
 }
 
-const MARK_SRC = '/assets/kairo-mark-mask.png';
-const WORDMARK_SRC = '/assets/kairo-wordmark-mask.png';
+const MARK_SRC = '/assets/kairo-mark-mask.webp';
+const WORDMARK_SRC = '/assets/kairo-wordmark-mask.webp';
 
 export function KairoMark({ tone = 'navy', size = 40 }: KairoMarkProps) {
   const color = tone === 'white' ? '#fff' : 'var(--kairo-navy-900)';
