@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "source": "Supabase kairo.questions",
+  "selection": "lifecycle_state = 'live'",
+  "questionCount": 4681,
+  "subjects": {
+    "Biology": {
+      "file": "biology.json",
+      "questionCount": 1264,
+      "withImageUrl": 50
+    },
+    "Chemistry": {
+      "file": "chemistry.json",
+      "questionCount": 1268,
+      "withImageUrl": 0
+    },
+    "Mathematics": {
+      "file": "mathematics.json",
+      "questionCount": 921,
+      "withImageUrl": 0
+    },
+    "Physics": {
+      "file": "physics.json",
+      "questionCount": 873,
+      "withImageUrl": 0
+    },
+    "Use of English": {
+      "file": "use-of-english.json",
+      "questionCount": 355,
+      "withImageUrl": 0
+    }
+  }
+}

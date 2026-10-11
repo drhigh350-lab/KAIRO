@@ -46,9 +46,10 @@
 import { toLocalDateString, fromLocalDateString } from '../utils/helpers.js';
 
 export class SupabaseSyncAdapter {
-  constructor(supabaseClient, localStore) {
+  constructor(supabaseClient, localStore, questionCatalogProvider = null) {
     this.supabase = supabaseClient;
     this.store = localStore;
+    this.questionCatalogProvider = questionCatalogProvider;
     this.syncStatus = { lastSync: null, pendingCount: 0, status: 'idle' };
   }
 
@@ -600,6 +601,7 @@ export class SupabaseSyncAdapter {
   }
 
   async fetchQuestions(filter = {}) {
+    if (this.questionCatalogProvider) return this.questionCatalogProvider(filter);
     let query = this._table('questions').select('*').eq('lifecycle_state', 'live');
     if (filter.subject) query = query.eq('subject', filter.subject);
     if (filter.topic) query = query.eq('topic', filter.topic);

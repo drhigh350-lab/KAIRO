@@ -2848,6 +2848,20 @@ test('Supabase adapter: kairo.questions row maps correctly to the Question const
   assertEqual(mapped.lifecycleState, 'live', 'lifecycle_state should map to lifecycleState');
 });
 
+test('Supabase adapter: configured static question catalog provider bypasses the database query', async () => {
+  const expected = [{ id: 'static_q1', subject: 'Biology', conceptsTested: [{ conceptId: 'c1' }] }];
+  let receivedFilter = null;
+  const provider = async (filter) => {
+    receivedFilter = filter;
+    return expected;
+  };
+  const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('static question fetch should not hit Supabase'); } }, null, provider);
+  const result = await adapter.fetchQuestions({ subject: 'Biology', topic: 'Cells' });
+  assertEqual(receivedFilter.subject, 'Biology', 'subject filter should reach the static provider');
+  assertEqual(receivedFilter.topic, 'Cells', 'topic filter should reach the static provider');
+  assertEqual(result[0].id, 'static_q1', 'provider result should be returned unchanged');
+});
+
 test('Supabase adapter: kairo.sessions row maps correctly to profile.sessions shape', () => {
   const adapter = new SupabaseSyncAdapter({ schema() { throw new Error('should not hit the network in this test'); } }, null);
   const startedAt = Date.now() - 60000;

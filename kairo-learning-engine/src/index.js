@@ -71,8 +71,9 @@ import { ExplanationEngine } from "./qim/ExplanationEngine.js";
 import { QuestionLifecycle } from "./qim/QuestionLifecycle.js";
 
 export class KairoEngine {
-  constructor({ studentId, name, examDate = null, targetSubjects = [], targetCourse = null, targetUniversity = null }) {
+  constructor({ studentId, name, examDate = null, targetSubjects = [], targetCourse = null, targetUniversity = null, questionCatalogProvider = null }) {
     this.profile = new StudentProfile({ studentId, name, examDate, targetSubjects, targetCourse, targetUniversity });
+    this.questionCatalogProvider = questionCatalogProvider;
     this.graph = new KnowledgeGraph();
     this.decayModel = new DecayModel(this.profile);
     this.recommendation = null;
@@ -270,7 +271,7 @@ export class KairoEngine {
    * instead of returning { status: 'offline' }.
    */
   async connectSupabase(supabaseClient, { email, password } = {}) {
-    const adapter = new SupabaseSyncAdapter(supabaseClient, this.store);
+    const adapter = new SupabaseSyncAdapter(supabaseClient, this.store, this.questionCatalogProvider);
 
     if (email && password) {
       await adapter.signIn(email, password).catch(async (err) => {
@@ -434,12 +435,13 @@ export class KairoEngine {
   }
 
   /**
-   * Pull the shared content catalog — kairo.concepts and live
-   * kairo.questions — from Supabase into this engine. Until this runs,
+   * Pull the shared content catalog — kairo.concepts and live questions
+   * supplied by the adapter (Supabase by default, or a configured static
+   * catalog provider) — into this engine. Until this runs,
    * this.graph/this.questionGraph only ever contain whatever a caller
    * added by hand, and every "which question do I show for concept X"
    * lookup (Practice, RapidFire, CBT) comes back empty even though the
-   * question bank is fully seeded server-side.
+   * question bank is fully seeded in the configured content source.
    *
    * Concept/question IDs are taken verbatim from the row — kairo.concepts
    * IDs are already the canonical conceptId() hash computed at seed time,
