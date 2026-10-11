@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScreenHeader, OptionRow } from '../learning/shared';
 import { KairoStateView, useAsyncState } from '../../components/feedback/AsyncState';
 import type { Subject } from './data';
 import { getRealSubtopics, type SubtopicInfo } from '../../lib/kairoEngine';
+import { fetchQuery, peekQuery } from '../../lib/queryCache';
 
 export interface SubtopicSelectProps {
   subject: Subject;
@@ -13,22 +14,58 @@ export interface SubtopicSelectProps {
 }
 
 export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: SubtopicSelectProps) {
-  const [subtopics, setSubtopics] = useState<SubtopicInfo[] | null>(null);
+  const cacheKey = `subtopics:${subject.label}:${topic}`;
+  const requestId = useRef(0);
+  const cachedSubtopics = peekQuery<SubtopicInfo[]>(cacheKey);
+  const [subtopics, setSubtopics] = useState<SubtopicInfo[] | null>(cachedSubtopics ?? null);
   const [error, setError] = useState<string | null>(null);
-  const { state, start, retry, succeed, fail } = useAsyncState();
+  const { state, reset, start, retry, succeed, fail, isOnline } = useAsyncState(
+    cachedSubtopics !== undefined ? 'success' : 'idle',
+    7000,
+  );
 
   const loadSubtopics = () => {
-    start();
-    setSubtopics(null);
+    const currentRequest = ++requestId.current;
+    const cached = peekQuery<SubtopicInfo[]>(cacheKey);
+    const hasCachedSubtopics = cached !== undefined;
+
     setError(null);
-    getRealSubtopics(subject.label, topic)
-      .then((nextSubtopics) => { setSubtopics(nextSubtopics); succeed(); })
-      .catch((err) => { setError('Subtopics could not be loaded. Please try again.'); fail(); });
+    if (hasCachedSubtopics) {
+      setSubtopics(cached);
+      succeed();
+    } else {
+      setSubtopics(null);
+      start();
+    }
+
+    if (!isOnline) {
+      if (!hasCachedSubtopics) fail();
+      return;
+    }
+
+    fetchQuery(cacheKey, () => getRealSubtopics(subject.label, topic))
+      .then((nextSubtopics) => {
+        if (currentRequest !== requestId.current) return;
+        setSubtopics(nextSubtopics);
+        succeed();
+      })
+      .catch(() => {
+        if (currentRequest !== requestId.current || hasCachedSubtopics) return;
+        setError('Subtopics could not be loaded. Please try again.');
+        fail();
+      });
   };
 
   useEffect(() => {
+    reset();
     loadSubtopics();
-  }, [subject.label, topic]);
+    return () => { requestId.current += 1; };
+  }, [subject.label, topic, isOnline]);
+
+  const retrySubtopics = () => {
+    retry();
+    loadSubtopics();
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
@@ -39,8 +76,11 @@ export function SubtopicSelect({ subject, topic, onBack, onPick, onSkip }: Subto
           <KairoStateView
             state={state === 'idle' ? 'loading' : state}
             loadingMessage="Preparing your subtopics…"
+            slowMessage="Taking longer than expected."
             errorMessage={error ?? 'Could not load subtopics.'}
-            onRetry={() => { retry(); loadSubtopics(); }}
+            offlineMessage="You’re offline. Connect to the internet and try again."
+            onRetry={retrySubtopics}
+            compact
           />
         ) : subtopics?.length === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--dark-text-muted)', textAlign: 'center', marginTop: 20 }}>
