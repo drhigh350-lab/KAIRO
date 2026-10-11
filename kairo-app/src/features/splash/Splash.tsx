@@ -20,12 +20,19 @@ export function Splash() {
   useEffect(() => {
     let cancelled = false;
     const startedAt = Date.now();
+    // The public landing page is safe to show before auth finishes. Keep the
+    // secure restore running, but don't make a student stare at a spinner
+    // while a slow token refresh or profile request is in flight.
+    const responsiveFallback = window.setTimeout(() => {
+      if (!cancelled) setChecking(false);
+    }, 900);
+
     restoreSession().catch(() => false).then((restored) => {
+      window.clearTimeout(responsiveFallback);
       if (cancelled) return;
       if (!restored) {
-        // Nothing to redirect into — show the real page immediately
-        // rather than holding a signed-out visitor (or a crawler) on a
-        // branded loading beat that was only ever meaningful pre-redirect.
+        // Nothing to redirect into — show the real page immediately rather
+        // than holding a signed-out visitor (or a crawler) on a spinner.
         setChecking(false);
         return;
       }
@@ -44,6 +51,7 @@ export function Splash() {
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(responsiveFallback);
     };
   }, [navigate]);
 

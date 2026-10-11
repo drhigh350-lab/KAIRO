@@ -265,8 +265,10 @@ export async function restoreSession(): Promise<boolean> {
   // gone isn't going to start existing on the next attempt) and never
   // retries simply having no session at all (nothing to restore, not a
   // failure).
-  // Kept short on purpose: the worst case used to be 3 x 12s + backoff
-  // (~38s) of a spinner before the student saw anything.
+  // Keep each attempt bounded so a degraded connection cannot monopolize
+  // startup. Splash.tsx can show the public shell while this secure check
+  // continues in the background, so this is a recovery window, not a reason
+  // to keep the whole app visually blocked.
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
