@@ -102,8 +102,16 @@ function computeInitial(entry: string, verifyTarget: { subjectLabel: string; top
 export function PracticeFlow() {
   const navigate = useNavigate();
   const location = useLocation();
-  const profile = getEngine()?.profile;
-  const allowedSubjects = getCourseSubjects(profile?.targetCourse, profile?.targetSubjects || []);
+  const engine = getEngine();
+  const profile = engine?.profile;
+  const profileState: 'loading' | 'ready' | 'incomplete' = !engine || !profile || profile.studentId === 'pending'
+    ? 'loading'
+    : profile.targetCourse
+      ? 'ready'
+      : 'incomplete';
+  const allowedSubjects = profileState === 'ready'
+    ? getCourseSubjects(profile?.targetCourse, profile?.targetSubjects || [])
+    : undefined;
   // Tapping the Practice tab directly (no entry state) lands on Practice Home,
   // never a bare subject picker — a student should never have to choose from
   // a menu to begin (Practice Module Spec §2.1). Explicit entry kinds (from
@@ -891,9 +899,11 @@ export function PracticeFlow() {
     return (
       <SubjectSelect
         onBack={toHome}
-        recentKeys={recentKeys}
-        allowedSubjects={allowedSubjects}
-        onPick={(s) => {
+          recentKeys={recentKeys}
+          allowedSubjects={allowedSubjects}
+          profileState={profileState}
+          onRetry={() => window.location.reload()}
+          onPick={(s) => {
           setSubject(s);
           setRecentKeys((k) => [s.key, ...k.filter((x) => x !== s.key)].slice(0, 3));
           if (entryFlow === 'topic') go('topic');

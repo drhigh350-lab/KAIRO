@@ -10,6 +10,8 @@ export interface SubjectSelectProps {
   onPick: (subject: Subject) => void;
   recentKeys?: string[];
   allowedSubjects?: string[];
+  profileState?: 'loading' | 'ready' | 'incomplete';
+  onRetry?: () => void;
 }
 
 interface RowProps {
@@ -49,25 +51,41 @@ function Row({ s, active, favourite, onClick, onToggleFav }: RowProps) {
   );
 }
 
-export function SubjectSelect({ onBack, onPick, recentKeys, allowedSubjects }: SubjectSelectProps) {
+export function SubjectSelect({ onBack, onPick, recentKeys, allowedSubjects, profileState = 'ready', onRetry }: SubjectSelectProps) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<Record<string, boolean>>({});
 
-  const visibleSubjects = allowedSubjects?.length
+  const visibleSubjects = allowedSubjects
     ? subjects.filter((s) => allowedSubjects.some((allowed) => canonicalSubject(allowed) === canonicalSubject(s.label)))
-    : subjects;
+    : [];
   const recents = (recentKeys || []).map((k) => visibleSubjects.find((s) => s.key === k)).filter((s): s is Subject => Boolean(s));
   const favSubjects = visibleSubjects.filter((s) => favourites[s.key]);
   const filtered = visibleSubjects.filter((s) => s.label.toLowerCase().includes(query.toLowerCase()));
+  const showRecovery = profileState === 'incomplete' || (profileState === 'ready' && visibleSubjects.length === 0);
 
   function toggleFav(e: React.MouseEvent, key: string) { e.stopPropagation(); setFavourites((f) => ({ ...f, [key]: !f[key] })); }
+
+  function renderStateMessage(title: string, body: string, action?: string) {
+    return (
+      <div role="status" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '32px 12px', color: 'var(--dark-text-muted)' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--dark-text-heading)', marginBottom: 8 }}>{title}</div>
+        <div style={{ maxWidth: 300, fontSize: 14, lineHeight: 1.5 }}>{body}</div>
+        {action && onRetry && <div style={{ marginTop: 20 }}><Button variant="darkAccent" size="md" onClick={onRetry}>{action}</Button></div>}
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, fontFamily: 'var(--font-body)', background: 'var(--dark-bg-canvas)' }}>
       <ScreenHeader onBack={onBack} title="Practice" tone="dark" />
       <div style={{ padding: '10px 20px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 14, color: 'var(--dark-text-muted)', marginBottom: 16 }}>Choose a subject to practise.</div>
+        {profileState === 'loading'
+          ? renderStateMessage('Loading your practice subjects', 'Your profile is still being restored. This screen will be ready as soon as it is available.')
+          : showRecovery
+            ? renderStateMessage('Practice subjects unavailable', 'Your course or subject selections are incomplete, or no practice content matches them. Return and retry after your profile finishes loading.', 'Retry')
+            : <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--dark-border)', marginBottom: 20 }}>
           <span style={{ color: 'var(--dark-text-faint)', display: 'flex' }}><SearchIcon /></span>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search subjects" style={{
@@ -91,6 +109,7 @@ export function SubjectSelect({ onBack, onPick, recentKeys, allowedSubjects }: S
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dark-text-muted)', letterSpacing: '.02em', marginBottom: 8 }}>{query ? 'RESULTS' : 'SUBJECTS'}</div>
           {filtered.map((s) => <Row key={s.key} s={s} active={selected === s.key} favourite={!!favourites[s.key]} onClick={() => setSelected(s.key)} onToggleFav={(e) => toggleFav(e, s.key)} />)}
         </div>
+            </>}
       </div>
       <div style={{ padding: '0 20px 24px' }}>
         <Button variant="darkAccent" size="lg" fullWidth disabled={!selected} onClick={() => { const s = subjects.find((s) => s.key === selected); if (s) onPick(s); }}>Continue</Button>
