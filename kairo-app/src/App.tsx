@@ -96,7 +96,7 @@ import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecomme
 // so a student who refreshed (or opened a bookmark/PWA shortcut) straight
 // into /home, /profile, /review, etc. saw a genuinely empty, "signed
 // out"-looking screen even though their Supabase auth session was still
-// sitting in localStorage the whole time — this is what read as "my
+// sitting in localStorage the whole time ��� this is what read as "my
 // progress reset" / "I have to sign in again" on every refresh.
 const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/review', '/profile', '/leaderboard', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior', '/quiz-create', '/discover', '/arena'];
 
@@ -111,7 +111,10 @@ const WIDE_ROUTES = ['/home', '/dashboard', '/profile', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore() {
-  const restoreState = useAsyncState('loading', 9000);
+  // Align this UI timeout with the real restore timeout budget in kairoEngine.ts.
+  // The engine retries transient network failures twice, so the UI should allow
+  // enough time for both attempts without looking stuck.
+  const restoreState = useAsyncState('loading', 13_000);
   const [ready, setReady] = useState(() => {
     const needsRestore = ROUTES_NEEDING_RESTORE.some((p) => window.location.pathname.startsWith(p));
     return !needsRestore || !!getEngine();
