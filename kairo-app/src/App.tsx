@@ -111,9 +111,9 @@ const WIDE_ROUTES = ['/home', '/dashboard', '/profile', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore() {
-  // Align this UI timeout with the real restore timeout budget in kairoEngine.ts.
-  // The engine retries transient network failures twice, so the UI should allow
-  // enough time for both attempts without looking stuck.
+  // Keep the UI timeout consistent with the real engine restore budget below:
+  // the auth restore retries twice and falls back to a local cache, so a single
+  // 8s timeout can legitimately stretch beyond the old 9s “slow” threshold.
   const restoreState = useAsyncState('loading', 13_000);
   const [ready, setReady] = useState(() => {
     const needsRestore = ROUTES_NEEDING_RESTORE.some((p) => window.location.pathname.startsWith(p));
