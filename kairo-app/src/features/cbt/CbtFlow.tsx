@@ -67,6 +67,8 @@ export function CbtFlow() {
   const resumeStateAsync = useAsyncState('idle', 9000);
   const submitState = useAsyncState('idle', 9000);
   const mounted = useRef(true);
+  const startStarted = useRef(false);
+  const startRequestId = useRef(0);
   const submitStarted = useRef(false);
   const [resumeFailed, setResumeFailed] = useState(false);
 
@@ -77,6 +79,7 @@ export function CbtFlow() {
 
   useEffect(() => () => {
     mounted.current = false;
+    startRequestId.current += 1;
   }, []);
 
   // Anti-Refresh Wipeout (Batch 1): rebuild the live exam from the
@@ -128,6 +131,7 @@ export function CbtFlow() {
       startState.start();
       startSmartPatchSession()
         .then((started) => {
+          if (!mounted.current) return;
           if (!started) {
             setStartError("Nothing's ripe for a Smart Patch right now — check back later.");
             setScreen('setup');
@@ -140,6 +144,7 @@ export function CbtFlow() {
           setScreen('exam');
         })
         .catch((err) => {
+          if (!mounted.current) return;
           setStartError(err instanceof Error ? err.message : 'Could not start your Smart Patch session.');
           setScreen('setup');
         });
@@ -171,7 +176,9 @@ export function CbtFlow() {
   });
 
   async function handleBegin() {
-    if (startState.state === 'loading' || startState.state === 'retry') return;
+    if (!mounted.current || startStarted.current || startState.state === 'loading' || startState.state === 'retry') return;
+    startStarted.current = true;
+    const requestId = ++startRequestId.current;
     setStartError(null);
     setScreen('starting');
     startState.start();
@@ -188,7 +195,9 @@ export function CbtFlow() {
       } else {
         started = await startCbtExam({ examType: 'full' });
       }
+      if (!mounted.current || requestId !== startRequestId.current) return;
       if (started.paper.length === 0) {
+        startStarted.current = false;
         setStartError("Kairo couldn't find questions for this combination yet.");
         setScreen('setup');
         return;
@@ -198,9 +207,12 @@ export function CbtFlow() {
       setStartTime(started.startTime);
       setResumeState(null);
       startState.succeed();
+      startStarted.current = false;
       setScreen('exam');
     } catch {
+      if (!mounted.current || requestId !== startRequestId.current) return;
       startState.fail();
+      startStarted.current = false;
       setStartError('Kairo could not prepare this exam right now. Your existing exam progress is safe.');
       setScreen('setup');
     }
