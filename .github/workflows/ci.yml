@@ -1,0 +1,42 @@
+name: KAIRO CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kairo-app/**'
+      - 'kairo-learning-engine/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'kairo-app/**'
+      - 'kairo-learning-engine/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+        run: npm run build --workspace kairo-app
+
+      - name: Lint
+        run: npm run lint --workspace kairo-app
+
+      - name: Test (when configured)
+        run: npm run test --workspace kairo-app --if-present
