@@ -118,7 +118,11 @@ function useBootRestore() {
   const restoreState = useAsyncState('loading', 13_000);
   const [ready, setReady] = useState(() => {
     const needsRestore = ROUTES_NEEDING_RESTORE.some((p) => window.location.pathname.startsWith(p));
-    return !needsRestore || !!getEngine() || hasLocalSession();
+    // A local marker is only a hint that restoration should be attempted. It
+    // is not an initialized engine, so treating it as ready lets
+    // RequireOnboarded redirect to /login before restoreSession() can hydrate
+    // the cached profile. Wait for the actual engine on protected routes.
+    return !needsRestore || !!getEngine();
   });
   const [retryCount, setRetryCount] = useState(0);
 
