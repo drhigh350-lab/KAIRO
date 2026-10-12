@@ -89,32 +89,36 @@ function RouteFallback() {
 }
 import { getEngine, isOnboarded, restoreSession, setupOnlineSync, triggerRecommendationPrefetch } from './lib/kairoEngine';
 
-// Splash ("/") and Onboarding ("/onboarding*") already call restoreSession()
-// themselves before deciding where to go — this list is every *other*
-// route, which previously never restored a session at all. The in-memory
-// `engine` singleton in kairoEngine.ts is wiped on every real page reload,
-// so a student who refreshed (or opened a bookmark/PWA shortcut) straight
-// into /home, /profile, /review, etc. saw a genuinely empty, "signed
-// out"-looking screen even though their Supabase auth session was still
-// sitting in localStorage the whole time — this is what read as "my
-// progress reset" / "I have to sign in again" on every refresh.
-const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/review', '/profile', '/leaderboard', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior', '/quiz-create', '/discover', '/arena'];
+// Local-first boot: if a saved student/session is already present on this device,
+// render the app immediately and let Supabase refresh happen in the background
+// instead of blocking the shell behind a full remote restore. Many apps behave
+// this way: trust the local cache first, then quietly sync.
+function hasLocalSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  const storage = window.localStorage;
+  const savedStudentId = storage.getItem('kairo:last_student_id');
+  if (savedStudentId) return true;
 
-// Real multi-column desktop layouts exist only for these browsing/hub
-// screens (see AppShell's `wide` prop). Exact matches, not prefixes:
-// /practice and /cbt are single catch-all routes covering their whole
-// internal step machine (hub *and* the focused question screen share one
-// URL), so there's no way to tell them apart from the path alone — safer
-// to leave both at the narrow, focused width everywhere than to risk a
-// question screen rendering wide.
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (!key) continue;
+    if (key.startsWith('sb-') || key.includes('supabase') || key.includes('kairo')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+const ROUTES_NEEDING_RESTORE = ['/home', '/dashboard', '/practice', '/cbt', '/review', '/profile', '/leaderboard', '/challenges', '/learn', '/rapid-fire', '/planner', '/streak-savior', '/quiz-create', '/discover', '/arena'];
 const WIDE_ROUTES = ['/home', '/dashboard', '/profile', '/review'];
 
 /** Runs once per real page load — reconnects the engine to an existing Supabase session before any protected route renders, so a mid-app refresh never looks like a sign-out. */
 function useBootRestore() {
-  const restoreState = useAsyncState('loading', 9000);
+  const restoreState = useAsyncState('loading', 13_000);
   const [ready, setReady] = useState(() => {
     const needsRestore = ROUTES_NEEDING_RESTORE.some((p) => window.location.pathname.startsWith(p));
-    return !needsRestore || !!getEngine();
+    return !needsRestore || !!getEngine() || hasLocalSession();
   });
   const [retryCount, setRetryCount] = useState(0);
 
@@ -123,39 +127,51 @@ function useBootRestore() {
       restoreState.succeed();
       return;
     }
+
     let cancelled = false;
     restoreState.start();
-    restoreSession().then((restored) => {
-      if (!cancelled) {
-        restoreState.succeed();
+
+    void restoreSession().then((restored) => {
+      if (cancelled) return;
+      if (restored || hasLocalSession()) {
         setReady(true);
+        restoreState.succeed();
+        return;
       }
-      return restored;
+      restoreState.fail();
     }).catch(() => {
+      if (!cancelled && hasLocalSession()) {
+        setReady(true);
+        restoreState.succeed();
+        return;
+      }
       if (!cancelled) restoreState.fail();
     });
+
     return () => {
       cancelled = true;
     };
     // Intentionally empty deps — this only ever needs to run once, against
     // whatever path the browser actually loaded, not on every client-side
-    // route change (the in-memory engine survives those just fine).
+    // route change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryCount]);
 
-  return { ready, state: restoreState.state, retry: () => { setReady(false); restoreState.retry(); setRetryCount((count) => count + 1); } };
+  return {
+    ready,
+    state: restoreState.state,
+    retry: () => {
+      setReady(false);
+      restoreState.retry();
+      setRetryCount((count) => count + 1);
+    },
+  };
 }
 
 /**
  * Guards every route that assumes a signed-in, fully onboarded student —
- * by the time this renders, useBootRestore() above has already attempted
- * restoreSession() for the current path, so this only needs to read the
- * resulting state, never re-run the restore itself. Previously every
- * route below rendered unconditionally: a signed-out visitor hitting
- * /home directly saw a real (blank) dashboard instead of a boundary, and
- * a signed-in student who never finished onboarding (no targetSubjects
- * set yet) landed on the same blank Home rather than being sent back to
- * pick up onboarding where they left off.
+ * the local cache is trusted first, and the secure network restore continues
+ * in the background instead of blocking the app shell.
  */
 function RequireOnboarded() {
   if (!getEngine()) {
@@ -177,11 +193,8 @@ export default function App() {
     setupOnlineSync();
   }, []);
 
-  // The other half of "when the app detects an online state and executes
-  // the daily sync/init" (setupOnlineSync's own online-event listener
-  // covers an offline->online transition mid-session) — a normal boot
-  // that's already online, once the engine is actually signed in and
-  // ready rather than racing restoreSession() above.
+  // Once the app shell is actually ready, let the heavier data sync happen
+  // in the background instead of making the first paint wait on it.
   useEffect(() => {
     if (ready && getEngine()) triggerRecommendationPrefetch();
     if (ready) prefetchScreens(!!getEngine());
@@ -196,62 +209,45 @@ export default function App() {
       )}
       {ready ? (
         <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<Splash />} />
-          {/* Real, dedicated, indexable auth routes — Sign In/Sign Up used
-              to be internal screen states inside OnboardingFlow, reachable
-              only via /onboarding, which meant there was never a stable
-              /login or /signup URL of its own to deep-link, bookmark, or
-              list in the sitemap. */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/terms" element={<TermsPage />} />
-          <Route path="/onboarding/google" element={<GoogleAuthCallback />} />
-          <Route path="/onboarding/reset-password" element={<ResetPasswordCallback />} />
-          {/* Protected: the post-signup profile-setup flow only, not a
-              general-purpose auth gateway anymore (see OnboardingFlow's
-              own doc comment). */}
-          <Route path="/onboarding/*" element={<OnboardingFlow />} />
-          {/* Public Arena entry: guests can open a shared match link, create a temporary session, and play before registering. */}
-          <Route path="/arena/challenge/:challengeId" element={<ChallengesFlow />} />
+          <Routes>
+            <Route path="/" element={<Splash />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/onboarding/google" element={<GoogleAuthCallback />} />
+            <Route path="/onboarding/reset-password" element={<ResetPasswordCallback />} />
+            <Route path="/onboarding/*" element={<OnboardingFlow />} />
+            <Route path="/arena/challenge/:challengeId" element={<ChallengesFlow />} />
 
-          <Route element={<RequireOnboarded />}>
-            <Route element={<AppTabs />}>
-              <Route path="/home" element={<HomeDashboard />} />
-              {/* /dashboard is the canonical name going forward — /home stays
-                  live indefinitely as an alias (existing bookmarks, already-
-                  sent push/email deep links, nothing regresses). */}
-              <Route path="/dashboard" element={<HomeDashboard />} />
-              <Route path="/practice/*" element={<PracticeFlow />} />
-              <Route path="/cbt/*" element={<CbtFlow />} />
-              <Route path="/review" element={<Review />} />
-              <Route path="/profile" element={<Profile />} />
+            <Route element={<RequireOnboarded />}>
+              <Route element={<AppTabs />}>
+                <Route path="/home" element={<HomeDashboard />} />
+                <Route path="/dashboard" element={<HomeDashboard />} />
+                <Route path="/practice/*" element={<PracticeFlow />} />
+                <Route path="/cbt/*" element={<CbtFlow />} />
+                <Route path="/review" element={<Review />} />
+                <Route path="/profile" element={<Profile />} />
+              </Route>
+
+              <Route path="/profile/edit" element={<EditProfile />} />
+              <Route path="/profile/notifications" element={<NotificationSettings />} />
+              <Route path="/profile/leaderboard" element={<Leaderboard />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route path="/challenges/*" element={<ChallengesFlow />} />
+              <Route path="/quiz-create" element={<CreateQuizFlow />} />
+              <Route path="/quiz-create/my-quizzes" element={<MyQuizzesScreen />} />
+              <Route path="/discover" element={<DiscoverScreen />} />
+              <Route path="/arena" element={<ArenaHomeScreen />} />
+              <Route path="/learn" element={<LearnHome />} />
+              <Route path="/learn/:conceptId" element={<LearnLesson />} />
+              <Route path="/rapid-fire" element={<RapidFireFlow />} />
+              <Route path="/planner/*" element={<PlannerFlow />} />
+              <Route path="/streak-savior" element={<StreakSavior />} />
             </Route>
 
-            <Route path="/profile/edit" element={<EditProfile />} />
-            <Route path="/profile/notifications" element={<NotificationSettings />} />
-            <Route path="/profile/leaderboard" element={<Leaderboard />} />
-            {/* Top-level alias — same reasoning as /dashboard above; a
-                strategic section deserves a stable URL of its own instead
-                of only ever living nested under /profile. */}
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/challenges/*" element={<ChallengesFlow />} />
-            <Route path="/quiz-create" element={<CreateQuizFlow />} />
-            <Route path="/quiz-create/my-quizzes" element={<MyQuizzesScreen />} />
-            <Route path="/discover" element={<DiscoverScreen />} />
-            <Route path="/arena" element={<ArenaHomeScreen />} />
-            <Route path="/learn" element={<LearnHome />} />
-            <Route path="/learn/:conceptId" element={<LearnLesson />} />
-            <Route path="/rapid-fire" element={<RapidFireFlow />} />
-            <Route path="/planner/*" element={<PlannerFlow />} />
-            {/* Outside AppTabs — a focused, binary-choice interstitial has
-                no business showing the bottom nav (Batch 4's Streak Savior). */}
-            <Route path="/streak-savior" element={<StreakSavior />} />
-          </Route>
-
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </Suspense>
       ) : (
         <KairoStateView
