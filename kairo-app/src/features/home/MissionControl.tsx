@@ -58,7 +58,9 @@ function RepairStatus({
       ? 'Repair data is taking longer than usual.'
       : state === 'offline'
         ? 'You’re offline. Your saved progress is safe.'
-        : 'Loading repair data…';
+        : state === 'error'
+          ? 'Repair data is temporarily unavailable.'
+          : 'Loading repair data…';
 
   return (
     <span

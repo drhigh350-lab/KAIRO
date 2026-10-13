@@ -118,7 +118,9 @@ export function HomeDashboard() {
       repairsState.succeed();
     } catch {
       if (requestId !== repairsRequest.current) return;
-      setPendingRepairs(0);
+      // Review data is optional on the dashboard. Keep the rest of Home
+      // usable when a mobile connection or the remote catalog is unavailable.
+      setPendingRepairs(null);
       repairsState.fail();
     }
   }, [repairsOnline]);
@@ -293,9 +295,13 @@ export function HomeDashboard() {
                 KAIRO ARENA
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--dark-text-muted)', marginTop: 7, lineHeight: 1.4 }}>
-                {challengeViewState === 'success' ? (liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.') : (
-                  <KairoStateView state={challengeViewState} compact onRetry={() => void loadChallenge()} onContinueOffline={() => challengeState.succeed()} />
-                )}
+                {challengeViewState === 'success'
+                  ? (liveChallenge ? `${liveChallenge.title} is live now — ${liveChallenge.questionCount} question${liveChallenge.questionCount === 1 ? '' : 's'}.` : 'Compete with students across Nigeria.')
+                  : challengeViewState === 'loading'
+                    ? 'Checking today’s Arena challenge…'
+                    : challengeViewState === 'offline'
+                      ? 'Arena will be ready when you’re back online.'
+                      : 'Arena is temporarily unavailable. Tap to try again.'}
               </div>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dark-text-faint)" strokeWidth="2.5" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>

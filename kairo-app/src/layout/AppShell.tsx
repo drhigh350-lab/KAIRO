@@ -17,5 +17,5 @@ export interface AppShellProps {
  * (see layout.css) — a responsive expansion, not a separate design.
  */
 export function AppShell({ children, wide = false }: AppShellProps) {
-  return <div className={wide ? 'app-shell app-shell--wide' : 'app-shell'}>{children}</div>;
+  return <div className={wide ? 'app-shell app-shell--wide' : 'app-shell'} style={{ background: 'var(--dark-bg-canvas)' }}>{children}</div>;
 }
