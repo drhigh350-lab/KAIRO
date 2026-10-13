@@ -266,8 +266,25 @@ export async function signInAndConnect({ email, password }: SignInArgs): Promise
  * in-memory engine yet. Returns false (not an error) whenever there's simply
  * nothing to restore — no configured Supabase env vars, no existing session,
  * or the session no longer being valid.
+ *
+ * A hydrated local profile is enough to open the app immediately. The remote
+ * check still runs in the background so a valid Supabase session remains the
+ * source of truth, but a slow auth refresh can no longer strand a returning
+ * student on the restore screen.
  */
 export async function restoreSession(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.onLine !== false) {
+    const restoredLocally = await restoreLocalSession();
+    if (restoredLocally) {
+      void restoreRemoteSession();
+      return true;
+    }
+  }
+
+  return restoreRemoteSession();
+}
+
+async function restoreRemoteSession(): Promise<boolean> {
   // A Supabase auth refresh is a network operation even when a valid session
   // is already present in browser storage. On mobile, `navigator.onLine` can
   // be false (or the refresh can simply hang) while the student's complete
