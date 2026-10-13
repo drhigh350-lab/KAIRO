@@ -190,8 +190,20 @@ function validProfileName(value: unknown, email = ''): string {
 }
 
 /** Where Supabase's confirmation-link email sends the browser back to. */
+function appRedirect(path: string): string {
+  const configuredBase = import.meta.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL?.trim();
+  if (!configuredBase) return `${window.location.origin}${path}`;
+
+  try {
+    const base = new URL(configuredBase);
+    return new URL(path, base).toString();
+  } catch {
+    return `${window.location.origin}${path}`;
+  }
+}
+
 function emailConfirmRedirect(): string {
-  return `${window.location.origin}/onboarding`;
+  return appRedirect('/onboarding');
 }
 
 /**
@@ -401,7 +413,7 @@ export async function signInWithGoogle(redirectPath = '/onboarding/google'): Pro
   await clearStaleSession(supabase);
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: `${window.location.origin}${redirectPath}` },
+    options: { redirectTo: appRedirect(redirectPath) },
   });
   if (error) throw error;
 }
@@ -2359,7 +2371,7 @@ export async function finishRapidFire(): Promise<RapidFireResults> {
   return results;
 }
 
-// ─────────────────────────────────────────────
+// ──────────��──────────────────────────────────
 // Notification consent (Notifications & Communication Systems §10) —
 // this frontend never invents its own consent model; every read/write
 // here goes straight through the engine's own ConsentManager

@@ -20,15 +20,18 @@ export function Splash() {
   useEffect(() => {
     let cancelled = false;
     const startedAt = Date.now();
-    // The public landing page is safe to show before auth finishes. Keep the
-    // secure restore running, but don't make a student stare at a spinner
-    // while a slow token refresh or profile request is in flight.
-    const responsiveFallback = window.setTimeout(() => {
+    const hasStoredAuthHint = Object.keys(window.localStorage).some((key) =>
+      key === 'kairo:last_student_id' || key.startsWith('sb-') || key.includes('supabase'),
+    );
+    // A returning user must not see the public landing page while their saved
+    // session is being restored. Only visitors with no auth hint get the fast
+    // public fallback; the secure restore remains the source of truth.
+    const responsiveFallback = hasStoredAuthHint ? undefined : window.setTimeout(() => {
       if (!cancelled) setChecking(false);
     }, 900);
 
     restoreSession().catch(() => false).then((restored) => {
-      window.clearTimeout(responsiveFallback);
+      if (responsiveFallback !== undefined) window.clearTimeout(responsiveFallback);
       if (cancelled) return;
       if (!restored) {
         // Nothing to redirect into — show the real page immediately rather
@@ -51,7 +54,7 @@ export function Splash() {
     });
     return () => {
       cancelled = true;
-      window.clearTimeout(responsiveFallback);
+      if (responsiveFallback !== undefined) window.clearTimeout(responsiveFallback);
     };
   }, [navigate]);
 
