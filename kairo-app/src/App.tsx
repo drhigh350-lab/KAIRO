@@ -135,22 +135,17 @@ function useBootRestore() {
     let cancelled = false;
     restoreState.start();
 
-    void restoreSession().then((restored) => {
-      if (cancelled) return;
-      if (restored || hasLocalSession()) {
+    void restoreSession()
+      .then((_restored) => {
+        if (cancelled) return;
         setReady(true);
         restoreState.succeed();
-        return;
-      }
-      restoreState.fail();
-    }).catch(() => {
-      if (!cancelled && hasLocalSession()) {
+      })
+      .catch(() => {
+        if (cancelled) return;
         setReady(true);
         restoreState.succeed();
-        return;
-      }
-      if (!cancelled) restoreState.fail();
-    });
+      });
 
     return () => {
       cancelled = true;

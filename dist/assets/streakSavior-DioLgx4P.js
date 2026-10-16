@@ -1,1 +1,0 @@
-import{X as e}from"./index-DEeHaZ9l.js";function t(t,n){t(!n&&!e()?`/streak-savior`:`/home`)}export{t};

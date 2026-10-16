@@ -34,6 +34,7 @@ import { LocalStore, STORES } from "./data/LocalStore.js";
 import { SyncManager } from "./sync/SyncManager.js";
 import { conceptId, shuffleArray, isCalculationQuestion } from "./utils/helpers.js";
 import { KairoPointsAwards, SessionConstants, DashboardConstants } from "./utils/constants.js";
+import { bundledSeedConcepts, bundledSeedQuestions } from "./data/bundledSeedCatalog.js";
 
 // Practice Modes
 import { RapidFireEngine } from "./practice/RapidFireEngine.js";
@@ -476,84 +477,115 @@ export class KairoEngine {
    * contentPacks.getOfflineQuestions() caller see real content without
    * needing a separate "download pack" step.
    */
-  async loadContentCatalog({ subjects = null } = {}) {
-    if (!this.sync.adapter) {
-      throw new Error('loadContentCatalog requires connectSupabase() first.');
-    }
-
+  async loadLocalContentCatalog({ subjects = null } = {}) {
     const subjectList = subjects && subjects.length > 0 ? subjects : this.profile.targetSubjects;
-    const filters = subjectList && subjectList.length > 0 ? subjectList.map(subject => ({ subject })) : [{}];
+    const filterSubjects = subjectList && subjectList.length > 0 ? new Set(subjectList.map(s => s.toLowerCase())) : null;
 
     let conceptsLoaded = 0;
     let questionsLoaded = 0;
-    const newConceptIds = [];
-    let catalogRefreshed = false;
 
-    for (const filter of filters) {
-      const concepts = await this.sync.adapter.fetchConcepts(filter);
-      for (const data of concepts) {
-        if (this.graph.hasConcept(data.id)) continue;
-        this.graph.addConcept(new ConceptNode(data));
-        conceptsLoaded++;
-        newConceptIds.push(data.id);
-      }
-
-      const questions = await this.sync.adapter.fetchQuestions(filter);
-      const subject = filter.subject || null;
-      const catalogVersion = this._questionCatalogVersion(questions);
-      const flattenedQuestions = questions.map(data => ({
-        ...this._flattenQuestion(data),
-        catalogVersion
-      }));
-
-      if (subject) {
-        this.questionGraph.replaceQuestionsForSubject(subject, questions.map(data => new Question(data)));
-        await this.store.reconcileQuestionQueue(subject, flattenedQuestions);
-      } else {
-        for (const data of questions) {
-          if (!this.questionGraph.getQuestion(data.id)) {
-            this.questionGraph.addQuestion(new Question(data));
-            questionsLoaded++;
-          }
-          await this.store.put(STORES.QUEUE, this._flattenQuestion(data));
-        }
-      }
-      questionsLoaded += subject ? questions.length : 0;
-      catalogRefreshed = true;
+    for (const data of bundledSeedConcepts) {
+      if (filterSubjects && !filterSubjects.has(data.subject.toLowerCase())) continue;
+      if (this.graph.hasConcept(data.id)) continue;
+      this.graph.addConcept(new ConceptNode(data));
+      conceptsLoaded++;
     }
 
-    if (catalogRefreshed) await this.store.clearPrefetchedQueues();
-    this.questionGraph.autoBuildRelationships();
-    // The question mirror is persisted per subject above, but the concept
-    // graph is the source for Practice's topic/subtopic picker. Persist it at
-    // the same successful catalog boundary so a later mobile/offline reload
-    // can render the taxonomy instead of falling back to "Topics could not be
-    // loaded" despite having previously synchronized real content.
-    if (catalogRefreshed) await this.store.saveGraph(this.graph);
+    const filteredQuestions = filterSubjects
+      ? bundledSeedQuestions.filter(q => filterSubjects.has(q.subject.toLowerCase()))
+      : bundledSeedQuestions;
 
-    // A concept becoming a local ConceptNode for the first time (e.g. right
-    // after sign-in, before any sync() has run) previously left it "unseen"
-    // even when the student has real history on it: sync()'s own pull is
-    // time-cursor-scoped (profile.lastSessionAt) and races this method, so
-    // it silently skips concepts that aren't in the graph yet at the moment
-    // it runs. Fetching this device's real history for exactly the concepts
-    // just added — independent of any time cursor or the sync() race —
-    // makes Active Traps/Weak Topics reliable after signing back in on any
-    // device. Best-effort: offline or a failed fetch just leaves these
-    // concepts fresh (unseen), not fatal.
-    if (newConceptIds.length > 0) {
+    for (const data of filteredQuestions) {
+      if (!this.questionGraph.getQuestion(data.id)) {
+        this.questionGraph.addQuestion(new Question(data));
+        questionsLoaded++;
+      }
       try {
-        const [remoteConceptStates, remoteAttempts] = await Promise.all([
-          this.sync.adapter.pullConceptStatesForConcepts(this.profile.studentId, newConceptIds),
-          this.sync.adapter.pullAttemptsForConcepts(this.profile.studentId, newConceptIds)
-        ]);
-        this.sync.applyRemoteConceptStates(remoteConceptStates, remoteAttempts);
-      } catch {
-        // offline or failed fetch — concepts stay fresh (unseen) this boot, not fatal
-      }
+        await this.store.put(STORES.QUEUE, this._flattenQuestion(data));
+      } catch {}
     }
+
+    this.questionGraph.autoBuildRelationships();
+    try {
+      await this.store.saveGraph(this.graph);
+    } catch {}
 
     return { conceptsLoaded, questionsLoaded };
+  }
+
+  /**
+   * Pull the shared content catalog — kairo.concepts and live
+   * kairo.questions — from Supabase into this engine, or fall back to
+   * bundled seed catalog when offline or unconfigured.
+   */
+  async loadContentCatalog({ subjects = null } = {}) {
+    if (!this.sync.adapter) {
+      return this.loadLocalContentCatalog({ subjects });
+    }
+
+    try {
+      const subjectList = subjects && subjects.length > 0 ? subjects : this.profile.targetSubjects;
+      const filters = subjectList && subjectList.length > 0 ? subjectList.map(subject => ({ subject })) : [{}];
+
+      let conceptsLoaded = 0;
+      let questionsLoaded = 0;
+      const newConceptIds = [];
+      let catalogRefreshed = false;
+
+      for (const filter of filters) {
+        const concepts = await this.sync.adapter.fetchConcepts(filter);
+        for (const data of concepts) {
+          if (this.graph.hasConcept(data.id)) continue;
+          this.graph.addConcept(new ConceptNode(data));
+          conceptsLoaded++;
+          newConceptIds.push(data.id);
+        }
+
+        const questions = await this.sync.adapter.fetchQuestions(filter);
+        const subject = filter.subject || null;
+        const catalogVersion = this._questionCatalogVersion(questions);
+        const flattenedQuestions = questions.map(data => ({
+          ...this._flattenQuestion(data),
+          catalogVersion
+        }));
+
+        if (subject) {
+          this.questionGraph.replaceQuestionsForSubject(subject, questions.map(data => new Question(data)));
+          await this.store.reconcileQuestionQueue(subject, flattenedQuestions);
+        } else {
+          for (const data of questions) {
+            if (!this.questionGraph.getQuestion(data.id)) {
+              this.questionGraph.addQuestion(new Question(data));
+              questionsLoaded++;
+            }
+            await this.store.put(STORES.QUEUE, this._flattenQuestion(data));
+          }
+        }
+        questionsLoaded += subject ? questions.length : 0;
+        catalogRefreshed = true;
+      }
+
+      if (catalogRefreshed) await this.store.clearPrefetchedQueues();
+      this.questionGraph.autoBuildRelationships();
+      if (catalogRefreshed) await this.store.saveGraph(this.graph);
+
+      if (newConceptIds.length > 0) {
+        try {
+          const [remoteConceptStates, remoteAttempts] = await Promise.all([
+            this.sync.adapter.pullConceptStatesForConcepts(this.profile.studentId, newConceptIds),
+            this.sync.adapter.pullAttemptsForConcepts(this.profile.studentId, newConceptIds)
+          ]);
+          this.sync.applyRemoteConceptStates(remoteConceptStates, remoteAttempts);
+        } catch {
+          // offline or failed fetch — concepts stay fresh (unseen) this boot, not fatal
+        }
+      }
+
+      return { conceptsLoaded, questionsLoaded };
+    } catch (err) {
+      // Remote catalog load failed (e.g. offline, connection failure) — fall back to bundled catalog
+      return this.loadLocalContentCatalog({ subjects });
+    }
   }
 
   /**

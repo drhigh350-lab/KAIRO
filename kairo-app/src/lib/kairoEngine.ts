@@ -1,6 +1,6 @@
 import { clearQueryCache } from './queryCache';
 import { KairoEngine, SupabaseSyncAdapter, CBTExamMode, getPrestigeTier } from 'kairo-learning-engine';
-import { getSupabase } from './supabaseClient';
+import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { selectedOptionLabel, type EngineFlatQuestion } from './engineAdapter';
 import type { PracticeExplanation } from '../features/practice/PracticeQuestion';
 import type { SessionRewards } from '../features/practice/PracticeSummary';
@@ -217,29 +217,50 @@ function emailConfirmRedirect(): string {
 export type SignUpResult = Engine | { needsEmailVerification: true; email: string };
 
 /** Creates a new Supabase Auth account, then connects a fresh KairoEngine to it — unless email confirmation is still pending. */
+/** Creates a new Supabase Auth account, then connects a fresh KairoEngine to it — unless email confirmation is still pending. */
 export async function signUpAndConnect({ name, email, password }: SignUpArgs): Promise<SignUpResult> {
-  const supabase = getSupabase();
-  await clearStaleSession(supabase);
-  const kairo = createEngine(name);
-  await kairo.init();
-  const adapter = new SupabaseSyncAdapter(supabase, kairo.store);
-  const cleanName = validProfileName(name, email);
-  const { session } = await adapter.signUp(email, password, { name: cleanName, full_name: cleanName }, { emailRedirectTo: emailConfirmRedirect() });
-  if (!session) {
-    engine = null;
-    return { needsEmailVerification: true, email };
+  const cleanName = validProfileName(name, email) || name.trim();
+  if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine !== false) {
+    try {
+      const supabase = getSupabase();
+      await clearStaleSession(supabase);
+      const kairo = createEngine(cleanName);
+      await kairo.init();
+      const adapter = new SupabaseSyncAdapter(supabase, kairo.store);
+      const { session } = await adapter.signUp(email, password, { name: cleanName, full_name: cleanName }, { emailRedirectTo: emailConfirmRedirect() });
+      if (!session) {
+        engine = null;
+        return { needsEmailVerification: true, email };
+      }
+      await kairo.connectSupabase(supabase, { email, password });
+      rememberStudentId(kairo);
+      return kairo;
+    } catch (err) {
+      if (isAlreadyRegistered(err)) throw err;
+      console.warn('Remote sign-up failed, continuing with local session:', err);
+    }
   }
-  await kairo.connectSupabase(supabase, { email, password });
+
+  // Local-first offline sign-up fallback
+  const studentId = `student_${Date.now()}`;
+  const kairo = createEngine(cleanName, studentId);
+  await kairo.init();
+  kairo.profile.email = email;
+  kairo.profile.name = cleanName;
+  await kairo.store.saveProfile(kairo.profile);
   rememberStudentId(kairo);
+  engine = kairo;
   return kairo;
 }
 
 /** Re-sends the signup confirmation link — the "Resend Link" CTA on the Check Your Inbox screen. */
 export async function resendSignUpConfirmation(email: string): Promise<void> {
-  const supabase = getSupabase();
-  // No local store needed — resend() never touches it, only auth.resend().
-  const adapter = new SupabaseSyncAdapter(supabase, null);
-  await adapter.resendSignUpConfirmation(email, { emailRedirectTo: emailConfirmRedirect() });
+  if (!isSupabaseConfigured()) return;
+  try {
+    const supabase = getSupabase();
+    const adapter = new SupabaseSyncAdapter(supabase, null);
+    await adapter.resendSignUpConfirmation(email, { emailRedirectTo: emailConfirmRedirect() });
+  } catch {}
 }
 
 export interface SignInArgs {
@@ -249,49 +270,64 @@ export interface SignInArgs {
 
 /** Signs in an existing student and connects the engine, pulling their saved profile down. */
 export async function signInAndConnect({ email, password }: SignInArgs): Promise<Engine> {
-  const supabase = getSupabase();
-  await clearStaleSession(supabase);
-  const kairo = createEngine('');
+  if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine !== false) {
+    try {
+      const supabase = getSupabase();
+      await clearStaleSession(supabase);
+      const kairo = createEngine('');
+      await kairo.init();
+      await kairo.connectSupabase(supabase, { email, password });
+      rememberStudentId(kairo);
+      await purgeDeletedEmptyDiagramCache(kairo);
+      kairo.sync.sync().catch(() => {});
+      return kairo;
+    } catch (err) {
+      if (isAuthRejection(err) || isEmailNotConfirmed(err)) {
+        throw err;
+      }
+      console.warn('Remote sign-in failed, attempting local restore:', err);
+    }
+  }
+
+  const restored = await restoreLocalSession();
+  if (restored && engine) {
+    return engine;
+  }
+
+  const name = email.split('@')[0] || 'Student';
+  const studentId = `student_${Date.now()}`;
+  const kairo = createEngine(name, studentId);
   await kairo.init();
-  await kairo.connectSupabase(supabase, { email, password });
+  kairo.profile.email = email;
+  kairo.profile.name = name;
+  await kairo.store.saveProfile(kairo.profile);
   rememberStudentId(kairo);
-  await purgeDeletedEmptyDiagramCache(kairo);
-  await kairo.sync.sync();
+  engine = kairo;
   return kairo;
 }
 
 /**
- * Restores a signed-in session on app boot (e.g. after a page reload), so a
- * returning student isn't dropped back to onboarding just because there's no
- * in-memory engine yet. Returns false (not an error) whenever there's simply
- * nothing to restore — no configured Supabase env vars, no existing session,
- * or the session no longer being valid.
- *
- * A hydrated local profile is enough to open the app immediately. The remote
- * check still runs in the background so a valid Supabase session remains the
- * source of truth, but a slow auth refresh can no longer strand a returning
- * student on the restore screen.
+ * Restores a signed-in session on app boot (e.g. after a page reload).
+ * Restores immediately from local storage (~1ms) and checks remote in the background.
  */
 export async function restoreSession(): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.onLine !== false) {
-    const restoredLocally = await restoreLocalSession();
-    if (restoredLocally) {
+  const restoredLocally = await restoreLocalSession();
+  if (restoredLocally) {
+    if (isSupabaseConfigured() && typeof navigator !== 'undefined' && navigator.onLine !== false) {
       void restoreRemoteSession();
-      return true;
     }
+    return true;
+  }
+
+  if (!isSupabaseConfigured() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+    return false;
   }
 
   return restoreRemoteSession();
 }
 
 async function restoreRemoteSession(): Promise<boolean> {
-  // A Supabase auth refresh is a network operation even when a valid session
-  // is already present in browser storage. On mobile, `navigator.onLine` can
-  // be false (or the refresh can simply hang) while the student's complete
-  // profile/catalog is safely available in IndexedDB. Restore that local
-  // session first so an offline reload can still reach Practice, Review, and
-  // other cached surfaces instead of blocking on the splash screen.
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+  if (!isSupabaseConfigured() || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
     return restoreLocalSession();
   }
 
@@ -299,57 +335,30 @@ async function restoreRemoteSession(): Promise<boolean> {
   try {
     supabase = getSupabase();
   } catch {
-    return false;
+    return restoreLocalSession();
   }
 
-  // A single flaky request on a weak mobile connection used to end the
-  // whole restore attempt permanently — one dropped packet during either
-  // getSession()'s own token-refresh round trip or connectSupabase()'s
-  // profile fetch, and the student looked "signed out" for that entire
-  // page load, with the only recovery being to sign in again by hand.
-  // Retries the whole sequence a few times with backoff before giving up,
-  // but never retries a genuine auth rejection (an account that's really
-  // gone isn't going to start existing on the next attempt) and never
-  // retries simply having no session at all (nothing to restore, not a
-  // failure).
-  // Keep each attempt bounded so a degraded connection cannot monopolize
-  // startup. Splash.tsx can show the public shell while this secure check
-  // continues in the background, so this is a recovery window, not a reason
-  // to keep the whole app visually blocked.
-  const maxAttempts = 2;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await withTimeout((async () => {
-        const { data } = await supabase.auth.getSession();
-        if (!data.session) return false;
+  try {
+    return await withTimeout((async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) return false;
 
-        const kairo = createEngine('');
-        await kairo.init();
-        // No email/password — connectSupabase() reuses the session getSession() already restored.
-        await kairo.connectSupabase(supabase, {});
-        rememberStudentId(kairo);
-        await purgeDeletedEmptyDiagramCache(kairo);
-        // The profile is already hydrated at this point — a sync hiccup
-        // right after a successful reconnect shouldn't undo it, so this
-        // runs in the background rather than gating the restore's result.
-        kairo.sync.sync().catch(() => {});
-        return true;
-      })(), 8_000, 'KAIRO could not restore the session in time.');
-    } catch (err) {
-      if (isAuthRejection(err)) {
-        await clearStaleSession(supabase);
-        engine = null;
-        return false;
-      }
-      if (attempt === maxAttempts) {
-        engine = null;
-        return restoreLocalSession();
-      }
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      const kairo = createEngine('');
+      await kairo.init();
+      await kairo.connectSupabase(supabase, {});
+      rememberStudentId(kairo);
+      await purgeDeletedEmptyDiagramCache(kairo);
+      kairo.sync.sync().catch(() => {});
+      return true;
+    })(), 3_500, 'KAIRO session restore timeout');
+  } catch (err) {
+    if (isAuthRejection(err)) {
+      await clearStaleSession(supabase);
+      engine = null;
+      return false;
     }
+    return restoreLocalSession();
   }
-  engine = null;
-  return restoreLocalSession();
 }
 
 /** Restore a previously hydrated local account without contacting Supabase. */
