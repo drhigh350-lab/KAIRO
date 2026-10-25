@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, IconButton } from '../../components';
+import { Button, IconButton, SyncStatusIndicator } from '../../components';
 import { CalcIcon, CloseIcon, FlagIcon, InlineToast, MiniCalculator, Modal, QuestionDiagram } from '../learning/shared';
 import { submitCbtAnswer, toggleCbtFlag, getCbtSubjectTimes, type CbtPaperQuestion } from '../../lib/kairoEngine';
 import { saveSessionSnapshot } from '../../lib/sessionResume';
@@ -118,7 +118,8 @@ export function CbtExam({ paper, totalTimeMin, startTime, studentId, initialAnsw
           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark-accent-blue)', textTransform: 'uppercase', letterSpacing: '.03em' }}>{q.subject}</span>
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: timeLow ? 'var(--dark-danger)' : 'var(--dark-text-heading)' }}>{mins}:{secs.toString().padStart(2, '0')}</span>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <SyncStatusIndicator compact id="cbt-sync-indicator" />
           <IconButton dark onClick={() => setShowCalc(true)}><CalcIcon /></IconButton>
           <IconButton dark onClick={() => setShowPalette(true)}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg></IconButton>
         </div>

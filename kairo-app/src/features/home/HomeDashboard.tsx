@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MissionCard, Card, KairoWordmark, Input, Button } from '../../components';
+import { MissionCard, Card, KairoWordmark, Input, Button, SyncStatusIndicator } from '../../components';
 import { Modal, KairoScoreInfo } from '../learning/shared';
 import type { Course } from '../onboarding/data';
 import { listChallenges, mapDbChallenge } from '../../lib/challengesApi';
@@ -210,8 +210,10 @@ export function HomeDashboard() {
 
   return (
     <div style={{ padding: '4px 20px 24px', fontFamily: 'var(--font-body)', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, background: 'var(--dark-bg-canvas)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
-        <div />
+      <div id="home-top-nav" className="app-topbar" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', background: 'transparent' }}>
+        <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center' }}>
+          <SyncStatusIndicator id="home-sync-indicator" />
+        </div>
         <div style={{ justifySelf: 'center' }}><KairoWordmark tone="white" width={100} /></div>
         <div style={{ justifySelf: 'end' }}><GamificationHud points={profile?.kairoPoints ?? 0} /></div>
       </div>
